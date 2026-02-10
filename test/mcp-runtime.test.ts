@@ -1,0 +1,429 @@
+import { describe, expect, test } from "bun:test";
+import {
+  resolveMCPToolset,
+  toProviderFunctionTools,
+  executeMCPToolCalls,
+  DEFAULT_MAX_TOOL_ROUNDS,
+  normalizeMaxToolRounds,
+  parseToolArguments,
+  stringifyToolOutput,
+  formatToolExecutionDebugLine,
+} from "../src/providers/mcp-runtime";
+import type { MCPToolClient, LLMToolExecution, MCPToolSchema } from "../src/types";
+
+function createMockClient(
+  id: string,
+  tools: Array<{ name: string; description?: string; inputSchema?: unknown }>,
+  callImpl?: (params: { name: string; arguments: Record<string, unknown> }) => unknown,
+): MCPToolClient {
+  return {
+    id,
+    async listTools() {
+      return {
+        tools: tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: (t.inputSchema ?? { type: "object", properties: {} }) as MCPToolSchema,
+        })),
+      };
+    },
+    async callTool(params) {
+      if (callImpl) {
+        return callImpl({ name: params.name, arguments: params.arguments ?? {} });
+      }
+      return { result: "ok" };
+    },
+  };
+}
+
+describe("resolveMCPToolset", () => {
+  test("returns empty toolset for undefined", async () => {
+    const result = await resolveMCPToolset(undefined);
+    expect(result.tools).toEqual([]);
+    expect(result.byName.size).toBe(0);
+  });
+
+  test("returns empty toolset for empty array", async () => {
+    const result = await resolveMCPToolset([]);
+    expect(result.tools).toEqual([]);
+    expect(result.byName.size).toBe(0);
+  });
+
+  test("resolves a single client with one tool", async () => {
+    const client = createMockClient("calc", [{ name: "add", description: "Add numbers" }]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools.length).toBe(1);
+    expect(result.tools[0]!.name).toBe("add");
+    expect(result.tools[0]!.description).toBe("Add numbers");
+    expect(result.byName.has("add")).toBe(true);
+  });
+
+  test("prefixes names on collision across clients", async () => {
+    const client1 = createMockClient("alpha", [{ name: "run" }]);
+    const client2 = createMockClient("beta", [{ name: "run" }]);
+    const result = await resolveMCPToolset([client1, client2]);
+    expect(result.tools.length).toBe(2);
+    expect(result.tools[0]!.name).toBe("alpha__run");
+    expect(result.tools[1]!.name).toBe("beta__run");
+  });
+
+  test("normalizes missing inputSchema", async () => {
+    const client = createMockClient("svc", [{ name: "do", inputSchema: undefined }]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.inputSchema).toEqual({ type: "object", properties: {} });
+  });
+
+  test("normalizes schema without type", async () => {
+    const client = createMockClient("svc", [
+      { name: "do", inputSchema: { properties: { a: { type: "string" } } } },
+    ]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.inputSchema.type).toBe("object");
+  });
+
+  test("normalizes schema without properties", async () => {
+    const client = createMockClient("svc", [
+      { name: "do", inputSchema: { type: "object" } },
+    ]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.inputSchema.properties).toEqual({});
+  });
+
+  test("describeTool returns undefined when no collision and no description", async () => {
+    const client = createMockClient("svc", [{ name: "action" }]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.description).toBeUndefined();
+  });
+
+  test("describeTool adds prefix on collision with description", async () => {
+    const client1 = createMockClient("alpha", [{ name: "run", description: "Run task" }]);
+    const client2 = createMockClient("beta", [{ name: "run", description: "Run job" }]);
+    const result = await resolveMCPToolset([client1, client2]);
+    expect(result.tools[0]!.description).toBe("[alpha] Run task");
+    expect(result.tools[1]!.description).toBe("[beta] Run job");
+  });
+
+  test("describeTool adds prefix on collision without description", async () => {
+    const client1 = createMockClient("alpha", [{ name: "run" }]);
+    const client2 = createMockClient("beta", [{ name: "run" }]);
+    const result = await resolveMCPToolset([client1, client2]);
+    expect(result.tools[0]!.description).toBe("[alpha] run");
+    expect(result.tools[1]!.description).toBe("[beta] run");
+  });
+
+  test("sanitizes tool names with special characters", async () => {
+    const client = createMockClient("my-svc.v2", [{ name: "do-thing" }]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.name).toBe("do_thing");
+  });
+
+  test("sanitizes tool name starting with digit", async () => {
+    const client = createMockClient("svc", [{ name: "1abc" }]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.name).toBe("tool_1abc");
+  });
+});
+
+describe("toProviderFunctionTools", () => {
+  test("returns undefined for empty toolset", () => {
+    const result = toProviderFunctionTools({ tools: [], byName: new Map() });
+    expect(result).toBeUndefined();
+  });
+
+  test("converts non-empty toolset to function tools", async () => {
+    const client = createMockClient("calc", [{ name: "add", description: "Add" }]);
+    const toolset = await resolveMCPToolset([client]);
+    const result = toProviderFunctionTools(toolset);
+    expect(result).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "add",
+          description: "Add",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+    ]);
+  });
+});
+
+describe("executeMCPToolCalls", () => {
+  test("throws when call has no id", async () => {
+    const client = createMockClient("svc", [{ name: "run" }]);
+    const toolset = await resolveMCPToolset([client]);
+    await expect(
+      executeMCPToolCalls(
+        [{ name: "run" }],
+        toolset,
+        { round: 1, request: { prompt: "test" } },
+      ),
+    ).rejects.toThrow("without id or name");
+  });
+
+  test("throws when call has no name", async () => {
+    const client = createMockClient("svc", [{ name: "run" }]);
+    const toolset = await resolveMCPToolset([client]);
+    await expect(
+      executeMCPToolCalls(
+        [{ id: "c1" }],
+        toolset,
+        { round: 1, request: { prompt: "test" } },
+      ),
+    ).rejects.toThrow("without id or name");
+  });
+
+  test("throws when tool name is unknown", async () => {
+    const client = createMockClient("svc", [{ name: "run" }]);
+    const toolset = await resolveMCPToolset([client]);
+    await expect(
+      executeMCPToolCalls(
+        [{ id: "c1", name: "unknown" }],
+        toolset,
+        { round: 1, request: { prompt: "test" } },
+      ),
+    ).rejects.toThrow('No MCP tool registered for "unknown"');
+  });
+
+  test("executes tool successfully", async () => {
+    const client = createMockClient("svc", [{ name: "run" }], () => ({ done: true }));
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
+      toolset,
+      { round: 1, request: { prompt: "test" } },
+    );
+    expect(results.length).toBe(1);
+    expect(results[0]!.execution.output).toEqual({ done: true });
+    expect(results[0]!.execution.handledLocally).toBe(true);
+    expect(results[0]!.execution.error).toBeUndefined();
+  });
+
+  test("captures error when callTool throws Error", async () => {
+    const client = createMockClient("svc", [{ name: "run" }], () => {
+      throw new Error("tool failed");
+    });
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      { round: 1, request: { prompt: "test" } },
+    );
+    expect(results[0]!.execution.error).toBe("tool failed");
+    expect(results[0]!.call.error).toBe("tool failed");
+  });
+
+  test("captures error when callTool throws non-Error", async () => {
+    const client = createMockClient("svc", [{ name: "run" }], () => {
+      throw "oops";
+    });
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      { round: 1, request: { prompt: "test" } },
+    );
+    expect(results[0]!.execution.error).toBe("oops");
+  });
+
+  test("invokes onToolExecution callback", async () => {
+    const executions: LLMToolExecution[] = [];
+    const client = createMockClient("svc", [{ name: "run" }]);
+    const toolset = await resolveMCPToolset([client]);
+    await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          onToolExecution: (exec) => executions.push(exec),
+        },
+      },
+    );
+    expect(executions.length).toBe(1);
+    expect(executions[0]!.callId).toBe("c1");
+  });
+
+  test("emits debug lines when toolDebug is true", async () => {
+    const logs: string[] = [];
+    const client = createMockClient("svc", [{ name: "run" }]);
+    const toolset = await resolveMCPToolset([client]);
+    await executeMCPToolCalls(
+      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          toolDebug: {
+            enabled: true,
+            logger: (line) => logs.push(line),
+          },
+        },
+        provider: "test",
+        model: "m1",
+      },
+    );
+    expect(logs.some((l) => l.includes("[tool:mcp:ok]"))).toBe(true);
+    expect(logs.some((l) => l.includes("[tool:mcp:request]"))).toBe(true);
+    expect(logs.some((l) => l.includes("[tool:mcp:result:ok]"))).toBe(true);
+  });
+
+  test("emits error debug lines on failure", async () => {
+    const logs: string[] = [];
+    const client = createMockClient("svc", [{ name: "run" }], () => {
+      throw new Error("boom");
+    });
+    const toolset = await resolveMCPToolset([client]);
+    await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          toolDebug: {
+            enabled: true,
+            logger: (line) => logs.push(line),
+            includeResultOnError: true,
+          },
+        },
+      },
+    );
+    expect(logs.some((l) => l.includes("[tool:mcp:error]"))).toBe(true);
+    expect(logs.some((l) => l.includes("[tool:mcp:result:error]"))).toBe(true);
+  });
+});
+
+describe("normalizeMaxToolRounds", () => {
+  test("returns DEFAULT_MAX_TOOL_ROUNDS for undefined", () => {
+    expect(normalizeMaxToolRounds(undefined)).toBe(DEFAULT_MAX_TOOL_ROUNDS);
+  });
+
+  test("returns DEFAULT_MAX_TOOL_ROUNDS for NaN", () => {
+    expect(normalizeMaxToolRounds(NaN)).toBe(DEFAULT_MAX_TOOL_ROUNDS);
+  });
+
+  test("returns DEFAULT_MAX_TOOL_ROUNDS for Infinity", () => {
+    expect(normalizeMaxToolRounds(Infinity)).toBe(DEFAULT_MAX_TOOL_ROUNDS);
+  });
+
+  test("clamps negative to 0", () => {
+    expect(normalizeMaxToolRounds(-3)).toBe(0);
+  });
+
+  test("floors fractional values", () => {
+    expect(normalizeMaxToolRounds(2.7)).toBe(2);
+  });
+
+  test("passes through normal values", () => {
+    expect(normalizeMaxToolRounds(5)).toBe(5);
+  });
+
+  test("returns 0 for 0", () => {
+    expect(normalizeMaxToolRounds(0)).toBe(0);
+  });
+});
+
+describe("parseToolArguments", () => {
+  test("parses valid JSON string", () => {
+    expect(parseToolArguments('{"a":1}')).toEqual({ a: 1 });
+  });
+
+  test("returns empty object for invalid JSON string", () => {
+    expect(parseToolArguments("not json")).toEqual({});
+  });
+
+  test("returns object as-is", () => {
+    expect(parseToolArguments({ a: 1 })).toEqual({ a: 1 });
+  });
+
+  test("returns empty object for undefined", () => {
+    expect(parseToolArguments(undefined)).toEqual({});
+  });
+
+  test("returns empty object for null", () => {
+    expect(parseToolArguments(null)).toEqual({});
+  });
+});
+
+describe("stringifyToolOutput", () => {
+  test("returns string as-is", () => {
+    expect(stringifyToolOutput("hello")).toBe("hello");
+  });
+
+  test("JSON-stringifies object", () => {
+    expect(stringifyToolOutput({ x: 1 })).toBe('{"x":1}');
+  });
+
+  test("returns null for undefined", () => {
+    expect(stringifyToolOutput(undefined)).toBe("null");
+  });
+
+  test("returns null for null", () => {
+    expect(stringifyToolOutput(null)).toBe("null");
+  });
+});
+
+describe("formatToolExecutionDebugLine", () => {
+  test("formats successful execution", () => {
+    const execution: LLMToolExecution = {
+      callId: "c1",
+      type: "function",
+      name: "run",
+      clientId: "svc",
+      handledLocally: true,
+      provider: "openai",
+      model: "gpt-4",
+      startedAt: new Date().toISOString(),
+      durationMs: 42,
+    };
+    const result = formatToolExecutionDebugLine(execution);
+    expect(result).toContain("[tool:mcp:ok]");
+    expect(result).toContain("openai/gpt-4");
+    expect(result).toContain("svc:run");
+    expect(result).toContain("42ms");
+  });
+
+  test("formats error execution", () => {
+    const execution: LLMToolExecution = {
+      callId: "c1",
+      type: "function",
+      name: "run",
+      clientId: "svc",
+      handledLocally: true,
+      startedAt: new Date().toISOString(),
+      error: "boom",
+    };
+    const result = formatToolExecutionDebugLine(execution);
+    expect(result).toContain("[tool:mcp:error]");
+    expect(result).toContain("-> boom");
+  });
+
+  test("shows unknown for missing provider/model", () => {
+    const execution: LLMToolExecution = {
+      callId: "c1",
+      type: "function",
+      name: "run",
+      handledLocally: true,
+      startedAt: new Date().toISOString(),
+    };
+    const result = formatToolExecutionDebugLine(execution);
+    expect(result).toContain("unknown");
+  });
+
+  test("uses name only when no clientId", () => {
+    const execution: LLMToolExecution = {
+      callId: "c1",
+      type: "function",
+      name: "run",
+      handledLocally: true,
+      provider: "p",
+      startedAt: new Date().toISOString(),
+    };
+    const result = formatToolExecutionDebugLine(execution);
+    expect(result).toContain(" run#c1");
+    // No clientId:name pattern, just name#callId
+    expect(result).not.toMatch(/\brun:.*#c1/);
+  });
+});

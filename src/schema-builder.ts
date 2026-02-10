@@ -1,0 +1,292 @@
+import { z } from "zod";
+
+type ZodLike = z.ZodTypeAny & {
+  _def?: {
+    typeName?: string;
+    [key: string]: unknown;
+  };
+};
+
+const NAME_SYMBOL = Symbol.for("extrait.schema.name");
+
+type MetaCarrier = z.ZodTypeAny & {
+  [NAME_SYMBOL]?: string;
+};
+
+// Extend zod types with custom methods
+declare module "zod" {
+  interface ZodNumber {
+    coerce(): z.ZodNumber;
+  }
+}
+
+let didPatchZod = false;
+
+function ensurePatchedZod(): void {
+  if (didPatchZod) {
+    return;
+  }
+
+  const zodNumberPrototype = z.ZodNumber.prototype as {
+    coerce?: (this: z.ZodNumber) => z.ZodNumber;
+  };
+
+  if (!zodNumberPrototype.coerce) {
+    zodNumberPrototype.coerce = function coerceNumber(): z.ZodNumber {
+      const coerced = z.coerce.number();
+      return coerced;
+    };
+  }
+
+  didPatchZod = true;
+}
+
+ensurePatchedZod();
+
+export interface SchemaMetadataSummary {
+  name?: string;
+  description?: string;
+  requiredFields: string[];
+  defaults: Record<string, unknown>;
+  fieldDescriptions: Record<string, string>;
+}
+
+export const s = {
+  schema<TSchema extends z.ZodTypeAny>(name: string, schema: TSchema): TSchema {
+    return setSchemaName(schema, name);
+  },
+
+  string(): z.ZodString {
+    return z.string();
+  },
+
+  number(): z.ZodNumber {
+    return z.number();
+  },
+
+  boolean(): z.ZodBoolean {
+    return z.boolean();
+  },
+
+  array<TSchema extends z.ZodTypeAny>(schema: TSchema): z.ZodArray<TSchema> {
+    return z.array(schema);
+  },
+
+  object<TShape extends z.ZodRawShape>(shape: TShape): z.ZodObject<TShape> {
+    return z.object(shape);
+  },
+};
+
+export function setSchemaName<TSchema extends z.ZodTypeAny>(schema: TSchema, name: string): TSchema {
+  (schema as MetaCarrier)[NAME_SYMBOL] = name;
+  return schema;
+}
+
+export function getSchemaName(schema: z.ZodTypeAny): string | undefined {
+  return (schema as MetaCarrier)[NAME_SYMBOL];
+}
+
+export function inspectSchemaMetadata(schema: z.ZodTypeAny): SchemaMetadataSummary {
+  const requiredFields: string[] = [];
+  const defaults: Record<string, unknown> = {};
+  const fieldDescriptions: Record<string, string> = {};
+
+  const objectShape = getObjectShape(schema);
+  if (objectShape) {
+    for (const [fieldName, fieldSchema] of Object.entries(objectShape)) {
+      const { optional } = unwrap(fieldSchema);
+      if (!optional) {
+        requiredFields.push(fieldName);
+      }
+
+      const defaultValue = readDefaultValue(fieldSchema);
+      if (defaultValue !== undefined) {
+        defaults[fieldName] = defaultValue;
+      }
+
+      const description = readSchemaDescription(fieldSchema);
+      if (description) {
+        fieldDescriptions[fieldName] = description;
+      }
+    }
+  }
+
+  return {
+    name: getSchemaName(schema),
+    description: readSchemaDescription(schema),
+    requiredFields,
+    defaults,
+    fieldDescriptions,
+  };
+}
+
+export function inferSchemaExample(schema: z.ZodTypeAny): unknown | null {
+  const objectShape = getObjectShape(schema);
+  if (!objectShape) {
+    const fallback = readDefaultValue(schema);
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    return null;
+  }
+
+  const out: Record<string, unknown> = {};
+
+  for (const [fieldName, fieldSchema] of Object.entries(objectShape)) {
+    const defaultValue = readDefaultValue(fieldSchema);
+    if (defaultValue !== undefined) {
+      out[fieldName] = defaultValue;
+    }
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function getObjectShape(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> | null {
+  const unwrapped = unwrap(schema).schema;
+  const typeName = unwrapped._def?.typeName;
+
+  if (typeName !== "ZodObject") {
+    return null;
+  }
+
+  const rawShape = unwrapped._def?.shape;
+  if (typeof rawShape === "function") {
+    return (rawShape as () => Record<string, z.ZodTypeAny>)();
+  }
+
+  return (rawShape as Record<string, z.ZodTypeAny> | undefined) ?? null;
+}
+
+function readDefaultValue(schema: z.ZodTypeAny): unknown {
+  let current = schema as ZodLike;
+
+  while (current?._def?.typeName) {
+    const typeName = current._def.typeName;
+
+    if (typeName === "ZodDefault") {
+      const raw = current._def.defaultValue;
+      if (typeof raw === "function") {
+        try {
+          return (raw as () => unknown)();
+        } catch {
+          return undefined;
+        }
+      }
+      return raw;
+    }
+
+    if (typeName === "ZodOptional" || typeName === "ZodNullable" || typeName === "ZodCatch" || typeName === "ZodReadonly") {
+      current = (current._def.innerType as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodEffects") {
+      current = (current._def.schema as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodBranded") {
+      current = (current._def.type as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodPipeline") {
+      current = (current._def.out as ZodLike) ?? current;
+      continue;
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function readSchemaDescription(schema: z.ZodTypeAny): string | undefined {
+  let current = schema as ZodLike;
+
+  while (current?._def?.typeName) {
+    const raw = current._def.description;
+    if (typeof raw === "string" && raw.trim().length > 0) {
+      return raw.trim();
+    }
+
+    const fallback = (current as { description?: unknown }).description;
+    if (typeof fallback === "string" && fallback.trim().length > 0) {
+      return fallback.trim();
+    }
+
+    const typeName = current._def.typeName;
+
+    if (typeName === "ZodOptional" || typeName === "ZodDefault" || typeName === "ZodNullable") {
+      current = (current._def.innerType as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodCatch" || typeName === "ZodReadonly") {
+      current = (current._def.innerType as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodEffects") {
+      current = (current._def.schema as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodBranded") {
+      current = (current._def.type as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodPipeline") {
+      current = (current._def.out as ZodLike) ?? current;
+      continue;
+    }
+
+    break;
+  }
+
+  return undefined;
+}
+
+function unwrap(schema: z.ZodTypeAny): { schema: ZodLike; optional: boolean } {
+  let current = schema as ZodLike;
+  let optional = false;
+
+  while (current?._def?.typeName) {
+    const typeName = current._def.typeName;
+
+    if (typeName === "ZodOptional" || typeName === "ZodDefault") {
+      optional = true;
+      current = (current._def.innerType as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodNullable" || typeName === "ZodCatch" || typeName === "ZodReadonly") {
+      current = (current._def.innerType as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodEffects") {
+      current = (current._def.schema as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodBranded") {
+      current = (current._def.type as ZodLike) ?? current;
+      continue;
+    }
+
+    if (typeName === "ZodPipeline") {
+      current = (current._def.out as ZodLike) ?? current;
+      continue;
+    }
+
+    break;
+  }
+
+  return {
+    schema: current,
+    optional,
+  };
+}

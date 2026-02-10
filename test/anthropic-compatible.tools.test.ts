@@ -1,0 +1,239 @@
+import { describe, expect, test } from "bun:test";
+import {
+  createAnthropicCompatibleAdapter,
+  DEFAULT_ANTHROPIC_MAX_TOKENS,
+} from "../src/providers/anthropic-compatible";
+import type { MCPToolClient } from "../src/types";
+
+function jsonResponse(payload: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function createSumMCP(onCall?: (args: Record<string, unknown>) => void): MCPToolClient {
+  return {
+    id: "calculator",
+    async listTools() {
+      return {
+        tools: [
+          {
+            name: "sum",
+            inputSchema: {
+              type: "object",
+              properties: {
+                a: { type: "number" },
+                b: { type: "number" },
+              },
+              required: ["a", "b"],
+            },
+          },
+        ],
+      };
+    },
+    async callTool(params) {
+      const args = params.arguments ?? {};
+      onCall?.(args);
+      return (args.a as number) + (args.b as number);
+    },
+  };
+}
+
+describe("anthropic-compatible MCP tools", () => {
+  test("executes MCP tools with local handler loop", async () => {
+    const requests: Record<string, unknown>[] = [];
+    let round = 0;
+    let argsSeen: Record<string, unknown> | undefined;
+
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      round += 1;
+
+      if (round === 1) {
+        return jsonResponse({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_sum",
+              name: "sum",
+              input: { a: 4, b: 6 },
+            },
+          ],
+          stop_reason: "tool_use",
+          usage: { input_tokens: 8, output_tokens: 3, total_tokens: 11 },
+        });
+      }
+
+      return jsonResponse({
+        content: [{ type: "text", text: "10" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "Calcule 4 + 6",
+      mcpClients: [createSumMCP((args) => (argsSeen = args))],
+    });
+
+    expect(argsSeen).toEqual({ a: 4, b: 6 });
+    expect(out.text).toBe("10");
+    expect(out.toolCalls?.[0]).toMatchObject({ id: "toolu_sum", name: "sum", output: 10 });
+    expect(out.toolExecutions?.[0]).toMatchObject({ callId: "toolu_sum", clientId: "calculator", handledLocally: true });
+    expect(out.usage).toEqual({ inputTokens: 11, outputTokens: 4, totalTokens: 15 });
+
+    const second = requests[1];
+    const messages = Array.isArray(second?.messages) ? second.messages : [];
+    expect((messages[1] as { role?: string }).role).toBe("assistant");
+    expect((messages[2] as { role?: string }).role).toBe("user");
+  });
+
+  test("returns tool calls in pass-through mode when no MCP clients are provided", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_lookup",
+            name: "lookup",
+            input: { q: "bun" },
+          },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
+      })) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "lookup",
+    });
+
+    expect(out.text).toBe("");
+    expect(out.toolCalls).toEqual([
+      {
+        id: "toolu_lookup",
+        type: "function",
+        name: "lookup",
+        arguments: { q: "bun" },
+      },
+    ]);
+  });
+
+  test("stream() falls back to complete() when MCP clients are provided", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      })) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const tokens: string[] = [];
+    const out = await adapter.stream!(
+      {
+        prompt: "hello",
+        mcpClients: [createSumMCP()],
+      },
+      {
+        onToken: (token) => tokens.push(token),
+      },
+    );
+
+    expect(tokens).toEqual(["ok"]);
+    expect(out.text).toBe("ok");
+  });
+
+  test("uses adapter defaultMaxTokens when request maxTokens is not provided", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      defaultMaxTokens: 321,
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "hello",
+    });
+
+    expect(out.text).toBe("ok");
+    expect(requests[0]?.max_tokens).toBe(321);
+  });
+
+  test("falls back to library default max tokens when adapter default is invalid", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      defaultMaxTokens: -10,
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "hello" });
+    expect(requests[0]?.max_tokens).toBe(DEFAULT_ANTHROPIC_MAX_TOKENS);
+  });
+
+  test("uses adapter defaultMaxToolRounds when request maxToolRounds is not provided", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_sum",
+            name: "sum",
+            input: { a: 1, b: 2 },
+          },
+        ],
+        stop_reason: "tool_use",
+      })) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      defaultMaxToolRounds: 0,
+      fetcher,
+    });
+
+    await expect(
+      adapter.complete({
+        prompt: "Calcule 1 + 2",
+        mcpClients: [createSumMCP()],
+      }),
+    ).rejects.toThrow("Tool call loop exceeded maxToolRounds (0).");
+  });
+});
