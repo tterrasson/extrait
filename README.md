@@ -2,7 +2,13 @@
 
 Structured JSON extraction from LLMs with validation, repair, and streaming.
 
-Features:
+<p align="left">
+  <a href="https://www.npmjs.com/package/extrait">
+    <img src="https://img.shields.io/npm/v/extrait?logo=npm&style=plastic" alt="npm package">
+  </a>
+</p>
+
+**Features:**
 - Multi-candidate JSON extraction from LLM responses
 - Automatic repair with jsonrepair
 - Zod schema validation and coercion
