@@ -228,7 +228,7 @@ Pass arguments after the example name:
 ```bash
 bun run dev streaming
 bun run dev simple "Bun.js runtime"
-bun run dev sentiment-analysis "I love this product!"
+bun run dev sentiment-analysis "I love this product."
 bun run dev multi-step-reasoning "Why is the sky blue?"
 ```
 

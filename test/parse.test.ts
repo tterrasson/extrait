@@ -69,6 +69,25 @@ describe("parseLLMOutput", () => {
     expect(result.diagnostics.every((d) => !d.usedRepair || !d.parseSuccess)).toBe(true);
   });
 
+  test("repair can recover invalid escaped punctuation inside strings", () => {
+    const input = '{"va2":"42","val":["I love this product\\!"]}';
+
+    const strict = parseLLMOutput(input, Schema, {
+      repair: false,
+    });
+    expect(strict.success).toBe(false);
+    expect(strict.errors.some((error) => error.stage === "parse")).toBe(true);
+
+    const repaired = parseLLMOutput(input, Schema, {
+      repair: true,
+    });
+    expect(repaired.success).toBe(true);
+    expect(repaired.data).toEqual({
+      va2: 42,
+      val: ["I love this product!"],
+    });
+  });
+
   test("empty input returns 0 candidates and fails", () => {
     const result = parseLLMOutput("", Schema);
 

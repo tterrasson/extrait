@@ -21,6 +21,7 @@ const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
 const model = process.env.LLM_MODEL ?? "gpt-5-nano";
 const baseURL = process.env.LLM_BASE_URL;
 const apiKey = process.env.LLM_API_KEY;
+const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
   provider,
@@ -78,7 +79,13 @@ try {
       """
 
       Be accurate with the confidence score and identify whether it's emotional or factual.
-    `
+    `,
+    {
+      // Keep strict mode, but allow lightweight JSON repair for malformed escapes.
+      parse: {
+        repair: true,
+      },
+    }
     // No streaming - get results immediately
   );
 
@@ -99,6 +106,25 @@ try {
   if (error instanceof StructuredParseError) {
     console.error("\n❌ Sentiment analysis failed.");
     console.error("Validation issues:", error.zodIssues ?? []);
+    if ((error.zodIssues?.length ?? 0) === 0) {
+      console.error(
+        "No schema issues were reported. The model response was likely not valid JSON.",
+      );
+    }
+    if (debugEnabled) {
+      console.error("\nRaw model output:");
+      console.error(error.raw);
+      if (error.candidates.length > 0) {
+        console.error("\nExtracted JSON candidates:");
+        error.candidates.forEach((candidate, index) => {
+          console.error(`  [${index + 1}] ${candidate}`);
+        });
+      }
+      if ((error.repairLog?.length ?? 0) > 0) {
+        console.error("\nRepair diagnostics:");
+        error.repairLog?.forEach((line) => console.error(`  - ${line}`));
+      }
+    }
     process.exit(1);
   }
 
