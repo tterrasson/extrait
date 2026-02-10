@@ -13,7 +13,11 @@ Features:
 ## Installation
 
 ```bash
-bun install
+bun add extrait
+# or
+npm install extrait
+# or
+deno add npm:extrait
 ```
 
 ## Quick Start
