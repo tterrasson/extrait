@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { withFormat } from "../src/format";
 import { getSchemaName, inferSchemaExample, inspectSchemaMetadata, s, setSchemaName } from "../src/schema-builder";
+import { DEFAULT_SCHEMA_INSTRUCTION} from "../src/format";
 
 describe("schema builder", () => {
   test("inspects required/defaults/descriptions", () => {
@@ -42,7 +43,7 @@ describe("schema builder", () => {
 
     const out = withFormat(schema);
 
-    expect(out).toContain("Strictly follow this schema:");
+    expect(out).toContain(DEFAULT_SCHEMA_INSTRUCTION);
     expect(out).toContain("summary: string,  // Main summary text.");
     expect(out).toContain("tags: string[],  // Associated tags.");
     expect(out).not.toContain("Schema name:");

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createLLM } from "../src/llm";
 import { createProviderRegistry } from "../src/providers/registry";
+import { DEFAULT_SCHEMA_INSTRUCTION} from "../src/format";
 
 describe("createLLM", () => {
   test("configures a single client with defaults + override per call", async () => {
@@ -46,7 +47,7 @@ describe("createLLM", () => {
 
     expect(result.data).toEqual({ value: 42 });
     expect(result.finishReason).toBe("stop");
-    expect(requests[0]).toContain("Strictly follow this schema:");
+    expect(requests[0]).toContain(DEFAULT_SCHEMA_INSTRUCTION);
   });
 
   test("merges with no defaults and no overrides", async () => {

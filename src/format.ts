@@ -5,7 +5,7 @@ export interface WithFormatOptions {
   schemaInstruction?: string;
 }
 
-export const DEFAULT_SCHEMA_INSTRUCTION = "Strictly follow this schema:";
+export const DEFAULT_SCHEMA_INSTRUCTION = "Strictly follow this JSON schema:";
 
 export function withFormat(schema: z.ZodTypeAny, options: WithFormatOptions = {}): string {
   const schemaType = formatZodSchemaLikeTypeScript(schema);

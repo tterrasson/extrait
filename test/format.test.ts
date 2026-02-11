@@ -12,7 +12,7 @@ describe("formatPrompt", () => {
     const schema = z.object({ title: z.string() });
     const result = formatPrompt(schema, "Summarize the article");
 
-    expect(result).toContain("Strictly follow this schema:");
+    expect(result).toContain(DEFAULT_SCHEMA_INSTRUCTION);
     expect(result).toContain("title: string,");
     expect(result).toContain("Summarize the article");
   });
@@ -33,7 +33,7 @@ describe("withFormat", () => {
     });
 
     expect(result).toContain("Output JSON matching this type:");
-    expect(result).not.toContain("Strictly follow this schema:");
+    expect(result).not.toContain(DEFAULT_SCHEMA_INSTRUCTION);
   });
 
   test("falls back to the default instruction if the custom instruction is empty", () => {
@@ -41,7 +41,7 @@ describe("withFormat", () => {
       schemaInstruction: "   ",
     });
 
-    expect(result).toContain("Strictly follow this schema:");
+    expect(result).toContain(DEFAULT_SCHEMA_INSTRUCTION);
   });
 });
 

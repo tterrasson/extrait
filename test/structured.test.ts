@@ -11,6 +11,7 @@ import {
   StructuredParseError,
 } from "../src/structured";
 import type { LLMAdapter, LLMRequest, LLMResponse, LLMStreamCallbacks } from "../src/types";
+import { DEFAULT_SCHEMA_INSTRUCTION} from "../src/format";
 
 class MockAdapter implements LLMAdapter {
   private readonly outputs: string[];
@@ -289,7 +290,7 @@ describe("structured", () => {
     expect(result.data.summary).toBe("ok");
 
     const sentPrompt = model.requests[0]?.prompt ?? "";
-    expect(sentPrompt).toContain("Strictly follow this schema:");
+    expect(sentPrompt).toContain(DEFAULT_SCHEMA_INSTRUCTION);
     expect(sentPrompt).toContain("summary: string,  // summary text");
     expect(sentPrompt).toContain("tags: string[],  // tag list");
     expect(sentPrompt).not.toContain("Required fields:");
@@ -343,7 +344,7 @@ describe("structured", () => {
       schema,
     });
     expect(result).toContain("Fix the following output");
-    expect(result).toContain("Strictly follow this schema:");
+    expect(result).toContain(DEFAULT_SCHEMA_INSTRUCTION);
     expect(result).toContain("name: string");
     expect(result).toContain("name: Expected string, received number");
     expect(result).toContain('{"name": 42}');
@@ -435,7 +436,7 @@ describe("structured", () => {
 
     expect(result.data).toEqual({ value: 7 });
     expect(model.requests[0]?.systemPrompt).toBe("You are a strict JSON assistant.");
-    expect(model.requests[0]?.prompt).toContain("Strictly follow this schema:");
+    expect(model.requests[0]?.prompt).toContain(DEFAULT_SCHEMA_INSTRUCTION);
     expect(model.requests[0]?.prompt).toContain("Return a value.");
   });
 
