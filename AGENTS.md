@@ -11,4 +11,4 @@ Default to using Bun instead of Node.js.
 
 ## Testing
 
-Use `bun test` to run tests.
+Use `bun run test` to run tests.
