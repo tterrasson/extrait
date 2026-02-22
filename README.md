@@ -257,5 +257,5 @@ bun run dev multi-step-reasoning "Why is the sky blue?"
 ## Testing
 
 ```bash
-bun test
+bun run test
 ```
