@@ -176,8 +176,6 @@ async function completeWithMCPToolLoop(
   path: string,
   request: LLMRequest,
 ): Promise<LLMResponse> {
-  const mcpToolset = await resolveMCPToolset(request.mcpClients);
-  const tools = toAnthropicTools(toProviderFunctionTools(mcpToolset));
   const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
 
   let messages: Array<Record<string, unknown>> = [{ role: "user", content: request.prompt }];
@@ -188,6 +186,9 @@ async function completeWithMCPToolLoop(
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
+    const mcpToolset = await resolveMCPToolset(request.mcpClients);
+    const tools = toAnthropicTools(toProviderFunctionTools(mcpToolset));
+
     const response = await fetcher(buildURL(options.baseURL, path), {
       method: "POST",
       headers: buildHeaders(options),

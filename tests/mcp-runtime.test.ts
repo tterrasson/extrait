@@ -8,6 +8,7 @@ import {
   parseToolArguments,
   stringifyToolOutput,
   formatToolExecutionDebugLine,
+  sanitizeToolName,
 } from "../src/providers/mcp-runtime";
 import type { MCPToolClient, LLMToolExecution, MCPToolSchema } from "../src/types";
 
@@ -456,6 +457,76 @@ describe("stringifyToolOutput", () => {
 
   test("returns null for null", () => {
     expect(stringifyToolOutput(null)).toBe("null");
+  });
+});
+
+describe("sanitizeToolName", () => {
+  test("leaves valid names unchanged", () => {
+    expect(sanitizeToolName("my_tool")).toBe("my_tool");
+    expect(sanitizeToolName("tool123")).toBe("tool123");
+    expect(sanitizeToolName("ABC")).toBe("ABC");
+  });
+
+  test("replaces hyphens and dots with underscores", () => {
+    expect(sanitizeToolName("my-tool")).toBe("my_tool");
+    expect(sanitizeToolName("my.tool")).toBe("my_tool");
+    expect(sanitizeToolName("my-tool.v2")).toBe("my_tool_v2");
+  });
+
+  test("collapses multiple consecutive special characters into one underscore", () => {
+    expect(sanitizeToolName("my--tool")).toBe("my_tool");
+    expect(sanitizeToolName("a...b")).toBe("a_b");
+  });
+
+  test("strips leading and trailing underscores", () => {
+    expect(sanitizeToolName("-leading")).toBe("leading");
+    expect(sanitizeToolName("trailing-")).toBe("trailing");
+    expect(sanitizeToolName("-both-")).toBe("both");
+  });
+
+  test("prefixes tool_ when name starts with a digit", () => {
+    expect(sanitizeToolName("1abc")).toBe("tool_1abc");
+    expect(sanitizeToolName("9")).toBe("tool_9");
+  });
+
+  test("returns 'tool' for empty or all-special-character input", () => {
+    expect(sanitizeToolName("")).toBe("tool");
+    expect(sanitizeToolName("---")).toBe("tool");
+    expect(sanitizeToolName("...")).toBe("tool");
+  });
+});
+
+describe("dynamic tool discovery", () => {
+  test("resolveMCPToolset called each round sees newly available tools", async () => {
+    let callCount = 0;
+    const client: MCPToolClient = {
+      id: "dynamic",
+      async listTools() {
+        callCount += 1;
+        if (callCount === 1) {
+          return { tools: [{ name: "tool_get", description: "Bootstrap", inputSchema: { type: "object", properties: {} } as MCPToolSchema }] };
+        }
+        return {
+          tools: [
+            { name: "tool_get", description: "Bootstrap", inputSchema: { type: "object", properties: {} } as MCPToolSchema },
+            { name: "websearch", description: "Search the web", inputSchema: { type: "object", properties: {} } as MCPToolSchema },
+          ],
+        };
+      },
+      async callTool() {
+        return { result: "ok" };
+      },
+    };
+
+    // Round 1: only tool_get visible
+    const toolset1 = await resolveMCPToolset([client]);
+    expect(toolset1.tools.map((t) => t.name)).toEqual(["tool_get"]);
+    expect(toolset1.byName.has("websearch")).toBe(false);
+
+    // Round 2: websearch now visible
+    const toolset2 = await resolveMCPToolset([client]);
+    expect(toolset2.tools.map((t) => t.name)).toContain("websearch");
+    expect(toolset2.byName.has("websearch")).toBe(true);
   });
 });
 

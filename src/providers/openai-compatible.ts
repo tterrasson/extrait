@@ -192,8 +192,6 @@ async function completeWithChatCompletionsWithMCP(
   path: string,
   request: LLMRequest,
 ): Promise<LLMResponse> {
-  const mcpToolset = await resolveMCPToolset(request.mcpClients);
-  const transportTools = toProviderFunctionTools(mcpToolset);
   const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
 
   let messages = buildMessages(request);
@@ -204,6 +202,9 @@ async function completeWithChatCompletionsWithMCP(
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
+    const mcpToolset = await resolveMCPToolset(request.mcpClients);
+    const transportTools = toProviderFunctionTools(mcpToolset);
+
     const response = await fetcher(buildURL(options.baseURL, path), {
       method: "POST",
       headers: buildHeaders(options),
@@ -326,8 +327,6 @@ async function completeWithResponsesAPIWithMCP(
   path: string,
   request: LLMRequest,
 ): Promise<LLMResponse> {
-  const mcpToolset = await resolveMCPToolset(request.mcpClients);
-  const transportTools = toResponsesTools(toProviderFunctionTools(mcpToolset));
   const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
 
   let input = buildResponsesInput(request);
@@ -341,6 +340,9 @@ async function completeWithResponsesAPIWithMCP(
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
+    const mcpToolset = await resolveMCPToolset(request.mcpClients);
+    const transportTools = toResponsesTools(toProviderFunctionTools(mcpToolset));
+
     const response = await fetcher(buildURL(options.baseURL, path), {
       method: "POST",
       headers: buildHeaders(options),

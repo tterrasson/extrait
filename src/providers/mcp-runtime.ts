@@ -376,7 +376,7 @@ function describeTool(clientId: string, tool: MCPToolDescriptor, hasCollision: b
   return undefined;
 }
 
-function sanitizeToolName(input: string): string {
+export function sanitizeToolName(input: string): string {
   const sanitized = input.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_");
   const trimmed = sanitized.replace(/^_+/, "").replace(/_+$/, "");
   if (!trimmed) {
