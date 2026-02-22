@@ -225,6 +225,100 @@ describe("executeMCPToolCalls", () => {
     expect(results[0]!.execution.error).toBe("oops");
   });
 
+  test("transformToolOutput transforms the output before sending to LLM", async () => {
+    const client = createMockClient("svc", [{ name: "run" }], () => ({ raw: "verbose data" }));
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          transformToolOutput: (output) => ({ cleaned: true }),
+        },
+      },
+    );
+    expect(results[0]!.execution.output).toEqual({ cleaned: true });
+    expect(results[0]!.call.output).toEqual({ cleaned: true });
+  });
+
+  test("transformToolOutput receives the raw output and execution context", async () => {
+    let capturedOutput: unknown;
+    let capturedContext: unknown;
+    const client = createMockClient("svc", [{ name: "run" }], () => ({ value: 42 }));
+    const toolset = await resolveMCPToolset([client]);
+    await executeMCPToolCalls(
+      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
+      toolset,
+      {
+        round: 2,
+        request: {
+          prompt: "test",
+          transformToolOutput: (output, context) => {
+            capturedOutput = output;
+            capturedContext = context;
+            return output;
+          },
+        },
+        provider: "openai-compatible",
+        model: "gpt-4",
+      },
+    );
+    expect(capturedOutput).toEqual({ value: 42 });
+    expect(capturedContext).toMatchObject({
+      callId: "c1",
+      name: "run",
+      round: 2,
+      provider: "openai-compatible",
+      model: "gpt-4",
+    });
+  });
+
+  test("transformToolOutput async works correctly", async () => {
+    const client = createMockClient("svc", [{ name: "run" }], () => "original");
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          transformToolOutput: async (output) => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            return "transformed";
+          },
+        },
+      },
+    );
+    expect(results[0]!.execution.output).toBe("transformed");
+  });
+
+  test("transformToolOutput is NOT called when the tool throws", async () => {
+    let called = false;
+    const client = createMockClient("svc", [{ name: "run" }], () => {
+      throw new Error("tool failed");
+    });
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          transformToolOutput: () => {
+            called = true;
+            return "should not be called";
+          },
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(results[0]!.execution.error).toBe("tool failed");
+  });
+
   test("invokes onToolExecution callback", async () => {
     const executions: LLMToolExecution[] = [];
     const client = createMockClient("svc", [{ name: "run" }]);
