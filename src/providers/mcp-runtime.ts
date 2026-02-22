@@ -145,20 +145,29 @@ export async function executeMCPToolCalls(
         arguments: args,
       });
 
-      metadata.output = output;
-      const execution: LLMToolExecution = {
+      const executionContext = {
         callId,
-        type: metadata.type,
+        type: call.type ?? "function",
         name: toolName,
         clientId: tool.clientId,
         remoteName: tool.remoteName,
         arguments: parsedArguments,
-        output,
         round: context.round,
         provider: context.provider,
         model: context.model,
-        handledLocally: true,
+        handledLocally: true as const,
         startedAt,
+        error: undefined,
+      };
+
+      const transformedOutput = context.request.transformToolOutput
+        ? await context.request.transformToolOutput(output, executionContext)
+        : output;
+
+      metadata.output = transformedOutput;
+      const execution: LLMToolExecution = {
+        ...executionContext,
+        output: transformedOutput,
         durationMs: Date.now() - startedAtMs,
       };
 

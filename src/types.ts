@@ -145,6 +145,7 @@ export interface LLMRequest {
   parallelToolCalls?: boolean;
   maxToolRounds?: number;
   onToolExecution?: (execution: LLMToolExecution) => void;
+  transformToolOutput?: LLMToolOutputTransformer;
   toolDebug?: boolean | LLMToolDebugOptions;
   body?: Record<string, unknown>;
 }
@@ -212,6 +213,11 @@ export interface LLMToolExecution {
   startedAt: string;
   durationMs?: number;
 }
+
+export type LLMToolOutputTransformer = (
+  output: unknown,
+  execution: Omit<LLMToolExecution, "output" | "durationMs">,
+) => unknown | Promise<unknown>;
 
 export interface LLMToolDebugOptions {
   enabled?: boolean;

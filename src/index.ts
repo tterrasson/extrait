@@ -84,6 +84,7 @@ export type {
   LLMToolCall,
   LLMToolDebugOptions,
   LLMToolExecution,
+  LLMToolOutputTransformer,
   LLMToolChoice,
   MCPCallToolParams,
   MCPListToolsResult,
