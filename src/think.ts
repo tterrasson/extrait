@@ -14,6 +14,8 @@ interface ThinkTagToken {
 }
 
 const THINK_TAG_NAME = "think";
+const RE_IDENTIFIER_CHAR = /[a-zA-Z0-9:_-]/;
+const RE_NON_LINE_BREAK = /[^\r\n]/g;
 
 export function sanitizeThink(input: string): SanitizeThinkResult {
   const thinkBlocks: ThinkBlock[] = [];
@@ -199,7 +201,7 @@ function matchesIgnoreCase(input: string, index: number, expected: string): bool
 }
 
 function isIdentifierChar(char: string): boolean {
-  return /[a-zA-Z0-9:_-]/.test(char);
+  return RE_IDENTIFIER_CHAR.test(char);
 }
 
 function countHiddenChars(value: string): number {
@@ -214,5 +216,5 @@ function countHiddenChars(value: string): number {
 }
 
 function maskKeepingLineBreaks(value: string): string {
-  return value.replace(/[^\r\n]/g, " ");
+  return value.replace(RE_NON_LINE_BREAK, " ");
 }

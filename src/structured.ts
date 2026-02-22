@@ -101,6 +101,9 @@ export const DEFAULT_SELF_HEAL_PROTOCOL = "extrait.self-heal.v2";
 export const DEFAULT_SELF_HEAL_MAX_CONTEXT_CHARS = 12_000;
 export const DEFAULT_SELF_HEAL_STOP_ON_NO_PROGRESS = true;
 const DEFAULT_SELF_HEAL_MAX_ERRORS = 8;
+const RE_SIMPLE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const RE_ESCAPE_QUOTE = /"/g;
+const RE_WHITESPACE = /\s+/g;
 const DEFAULT_SELF_HEAL_MAX_DIAGNOSTICS = 8;
 const structuredOutdent = createOutdent({
   trimLeadingNewline: true,
@@ -599,12 +602,12 @@ function formatIssuePath(path: Array<string | number>): string {
       continue;
     }
 
-    if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(segment)) {
+    if (RE_SIMPLE_IDENTIFIER.test(segment)) {
       out += `.${segment}`;
       continue;
     }
 
-    out += `["${segment.replace(/"/g, '\\"')}"]`;
+    out += `["${segment.replace(RE_ESCAPE_QUOTE, '\\"')}"]`;
   }
 
   return out;
@@ -674,7 +677,7 @@ function buildSelfHealFailureFingerprint<T>(attempt: StructuredAttempt<T>): stri
 }
 
 function normalizeWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return value.replace(RE_WHITESPACE, " ").trim();
 }
 
 interface NormalizedStreamConfig {

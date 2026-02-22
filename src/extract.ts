@@ -8,6 +8,10 @@ import type {
   ExtractionParseHint,
 } from "./types";
 
+const RE_EMPTY_OBJECT = /^\{\s*\}$/;
+const RE_EMPTY_ARRAY = /^\[\s*\]$/;
+const RE_BOUNDARY_CHAR = /[\s,.;:!?`"'()[\]{}<>]/;
+
 interface StackItem {
   char: "{" | "[";
   index: number;
@@ -324,7 +328,7 @@ function jsonShapeScore(
   const quoteCount = countChar(trimmed, "\"");
 
   if (root === "{") {
-    if (/^\{\s*\}$/.test(trimmed)) {
+    if (RE_EMPTY_OBJECT.test(trimmed)) {
       score += 12;
     } else if (colonCount > 0) {
       score += 22;
@@ -336,7 +340,7 @@ function jsonShapeScore(
       score += quoteCount % 2 === 0 ? 8 : -8;
     }
   } else {
-    score += /^\[\s*\]$/.test(trimmed) ? 8 : 4;
+    score += RE_EMPTY_ARRAY.test(trimmed) ? 8 : 4;
     if (colonCount > 0) {
       score += 4;
     }
@@ -378,7 +382,7 @@ function isBoundary(char: string | undefined): boolean {
     return true;
   }
 
-  return /[\s,.;:!?`"'()[\]{}<>]/.test(char);
+  return RE_BOUNDARY_CHAR.test(char);
 }
 
 function lengthScore(length: number): number {

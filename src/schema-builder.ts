@@ -176,7 +176,12 @@ function readDefaultValue(schema: z.ZodTypeAny): unknown {
       return raw;
     }
 
-    if (typeName === "ZodOptional" || typeName === "ZodNullable" || typeName === "ZodCatch" || typeName === "ZodReadonly") {
+    if (
+      typeName === "ZodOptional" ||
+      typeName === "ZodNullable" ||
+      typeName === "ZodCatch" ||
+      typeName === "ZodReadonly"
+    ) {
       current = (current._def.innerType as ZodLike) ?? current;
       continue;
     }

@@ -376,14 +376,20 @@ function describeTool(clientId: string, tool: MCPToolDescriptor, hasCollision: b
   return undefined;
 }
 
+const RE_NON_ALPHANUMERIC = /[^A-Za-z0-9_]/g;
+const RE_MULTIPLE_UNDERSCORES = /_+/g;
+const RE_LEADING_UNDERSCORES = /^_+/;
+const RE_TRAILING_UNDERSCORES = /_+$/;
+const RE_STARTS_WITH_DIGIT = /^[0-9]/;
+
 export function sanitizeToolName(input: string): string {
-  const sanitized = input.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_");
-  const trimmed = sanitized.replace(/^_+/, "").replace(/_+$/, "");
+  const sanitized = input.replace(RE_NON_ALPHANUMERIC, "_").replace(RE_MULTIPLE_UNDERSCORES, "_");
+  const trimmed = sanitized.replace(RE_LEADING_UNDERSCORES, "").replace(RE_TRAILING_UNDERSCORES, "");
   if (!trimmed) {
     return "tool";
   }
 
-  if (/^[0-9]/.test(trimmed)) {
+  if (RE_STARTS_WITH_DIGIT.test(trimmed)) {
     return `tool_${trimmed}`;
   }
 

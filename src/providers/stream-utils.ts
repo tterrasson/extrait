@@ -1,3 +1,5 @@
+const RE_LINE_ENDING = /\r?\n/;
+
 export async function consumeSSE(
   response: Response,
   onEvent: (data: string) => void,
@@ -28,7 +30,7 @@ export async function consumeSSE(
       buffer = buffer.slice(boundary + (buffer.startsWith("\r\n\r\n", boundary) ? 4 : 2));
 
       const dataLines = rawEvent
-        .split(/\r?\n/)
+        .split(RE_LINE_ENDING)
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trim());
 
@@ -43,7 +45,7 @@ export async function consumeSSE(
   const remainder = buffer.trim();
   if (remainder.length > 0) {
     const dataLines = remainder
-      .split(/\r?\n/)
+      .split(RE_LINE_ENDING)
       .filter((line) => line.startsWith("data:"))
       .map((line) => line.slice(5).trim());
 

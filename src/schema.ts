@@ -1,5 +1,8 @@
 import type { z } from "zod";
 
+const RE_SIMPLE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const RE_WHITESPACE = /\s+/g;
+
 type ZodLike = z.ZodTypeAny & {
   _def?: {
     typeName?: string;
@@ -213,7 +216,7 @@ function formatObject(schema: ZodLike, depth: number, seen: WeakSet<ZodLike>): s
 }
 
 function formatKey(key: string): string {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key);
+  return RE_SIMPLE_IDENTIFIER.test(key) ? key : JSON.stringify(key);
 }
 
 function requiresParentheses(typeText: string): boolean {
@@ -272,5 +275,5 @@ function readSchemaDescription(schema: ZodLike): string | undefined {
 }
 
 function sanitizeDescription(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return value.replace(RE_WHITESPACE, " ").trim();
 }
