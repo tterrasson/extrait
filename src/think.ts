@@ -131,6 +131,9 @@ function parseThinkTagAt(input: string, index: number): ThinkTagToken | null {
   if (input[cursor] === "/") {
     closing = true;
     cursor += 1;
+    while (cursor < input.length && isWhitespace(input[cursor])) {
+      cursor += 1;
+    }
   }
 
   if (!matchesIgnoreCase(input, cursor, THINK_TAG_NAME)) {
