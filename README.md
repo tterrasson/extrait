@@ -215,6 +215,10 @@ const result = await llm.structured(
       onToolExecution: (execution) => {
         console.log(execution.name, execution.durationMs);
       },
+      // Optional: transform tool output before it is sent back to the LLM
+      transformToolOutput: (output, execution) => {
+        return { ...output, source: execution.name };
+      },
     },
   }
 );
