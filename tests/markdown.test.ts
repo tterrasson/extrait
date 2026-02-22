@@ -115,4 +115,85 @@ const y = 2;
     expect(block).not.toBeNull();
     expect(block?.language).toBe("json");
   });
+
+  test("language filter non-matching block is excluded from results", () => {
+    const input = ["```python", "print(1)", "```", "```json", '{"ok":true}', "```"].join("\n");
+    const blocks = extractMarkdownCodeBlocks(input, { language: "json" });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.language).toBe("json");
+  });
+
+  test("unclosed fence is not extracted", () => {
+    const input = "```json\n{\"ok\": true}\nno closing fence";
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    expect(blocks).toHaveLength(0);
+  });
+
+  test("closing fence with extra non-whitespace is not a valid closer", () => {
+    const input = ["```json", '{"ok": true}', "```extra", "```"].join("\n");
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    // "```extra" is not a valid closing fence, "```" is
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.code).toContain('"ok"');
+  });
+
+  test("closing fence with fewer backticks than opening is not a valid closer", () => {
+    const input = ["````json", '{"ok": true}', "```", "````"].join("\n");
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    // 3-backtick close doesn't match 4-backtick open; 4-backtick close does
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.code).toContain('"ok"');
+  });
+
+  test("mismatched fence marker (tilde vs backtick) does not close", () => {
+    const input = ["```json", '{"ok": true}', "~~~", "```"].join("\n");
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.code).toContain('"ok"');
+  });
+
+  test("language specifier with dot prefix is normalized", () => {
+    const input = ["```.json", '{"ok": true}', "```"].join("\n");
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.language).toBe("json");
+  });
+
+  test("inline closing fence on same line as content", () => {
+    const input = "```json\n{\"ok\": true}```";
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.code).toBe('{"ok": true}');
+  });
+
+  test("closing fence with trailing spaces is valid", () => {
+    const input = "```json\n{\"ok\": true}\n```   \n";
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.code).toBe('{"ok": true}');
+  });
+
+  test("handles Windows CRLF line endings", () => {
+    const input = "```json\r\n{\"ok\": true}\r\n```\r\n";
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.language).toBe("json");
+    expect(blocks[0]?.code).toBe('{"ok": true}');
+  });
+
+  test("opening fence with 4+ spaces indent is not a valid fence", () => {
+    const input = "    ```json\n{\"ok\": true}\n```";
+    const blocks = extractMarkdownCodeBlocks(input);
+
+    expect(blocks).toHaveLength(0);
+  });
 });

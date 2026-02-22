@@ -202,6 +202,71 @@ describe("parseLLMOutput", () => {
   });
 });
 
+describe("parseLLMOutput - repair and hint edge cases", () => {
+  test("repair:false on invalid JSON returns parse-stage error without repair attempt", () => {
+    // Exercises tryParseJsonCandidate with allowRepair=false + JSON.parse failure (lines 241-249)
+    const input = "{ val: ['a'], va2: '42' }";
+    const result = parseLLMOutput(input, Schema, { repair: false });
+
+    expect(result.success).toBe(false);
+    const parseErrors = result.errors.filter((e) => e.stage === "parse");
+    expect(parseErrors.length).toBeGreaterThan(0);
+    expect(result.errors.every((e) => !e.usedRepair)).toBe(true);
+  });
+
+  test("hint with usedRepair:true is discarded when repair:false", () => {
+    // parseAttemptFromHint branch: hint.success=true && hint.usedRepair && !allowRepair → return null (line 297-298)
+    const repairableInput = '{"va2":"42","val":["I love this product\\!"]}';
+    const result = parseLLMOutput(repairableInput, Schema, {
+      repair: false,
+      maxCandidates: 5,
+    });
+
+    expect(result.success).toBe(false);
+    // No candidate should have succeeded via repair when repair is disabled
+    expect(result.candidates.every((c) => !c.parseHint?.usedRepair || !c.parseHint?.success)).toBe(true);
+  });
+
+  test("repair path is used on invalid JSON: usedRepair is true in successful repair", () => {
+    // Exercises tryParseJsonCandidate repair path (lines 253-275): invalid JSON → repaired → parsed
+    const repairable = '{"va2": 42, "val": ["I love this product\\!"]}';
+    const result = parseLLMOutput(repairable, Schema, { repair: true });
+
+    expect(result.success).toBe(true);
+    // The winning candidate should have used repair
+    const winning = result.candidates.find((c) => c.parseHint?.success && c.parseHint?.usedRepair);
+    expect(winning).toBeDefined();
+  });
+
+  test("markSelectedDiagnostic marks exactly one diagnostic when multiple exist", () => {
+    // Exercises the loop body in markSelectedDiagnostic (lines 349-352)
+    const input = [
+      '{"va2": "1"}',
+      '{"va2": "2", "val": ["a"]}',
+      '{"va2": "3", "val": ["b", "c"]}',
+    ].join(" ");
+
+    const result = parseLLMOutput(input, Schema, { repair: true, maxCandidates: 5 });
+
+    expect(result.success).toBe(true);
+    const selected = result.diagnostics.filter((d) => d.selected);
+    expect(selected).toHaveLength(1);
+    const notSelected = result.diagnostics.filter((d) => !d.selected);
+    expect(notSelected.length).toBe(result.diagnostics.length - 1);
+  });
+
+  test("hint failed without repair is forwarded as-is when repair:false (parseAttemptFromHint fallback)", () => {
+    // parseAttemptFromHint branch: hint.success=false, hint.usedRepair=false, allowRepair=false → return hint error
+    // This is achieved with invalid JSON and repair:false but with hints pre-built by extraction
+    const input = '{"va2":1} {"invalid json here';
+    const result = parseLLMOutput(input, Schema, { repair: false, maxCandidates: 5 });
+
+    // The first candidate should succeed (valid JSON), verifying parse works
+    expect(result.success).toBe(true);
+    expect(result.data?.va2).toBe(1);
+  });
+});
+
 describe("formatZodIssues", () => {
   test("formats nested paths", () => {
     const result = formatZodIssues([

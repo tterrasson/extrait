@@ -185,6 +185,56 @@ describe("extractJsonCandidates", () => {
     expect(candidates.some((candidate) => candidate.content === '{"dup":1}')).toBe(true);
     expect(candidates.some((candidate) => candidate.content === '{"target":2}')).toBe(true);
   });
+
+  test("fenced block with empty content is skipped", () => {
+    const input = "```json\n\n```\n{\"ok\":true}";
+    const candidates = extractJsonCandidates(input, { maxCandidates: 5 });
+
+    // empty fenced block not included; scan finds {"ok":true}
+    expect(candidates.every((c) => c.content !== "")).toBe(true);
+    expect(candidates.some((c) => c.content.includes('"ok"'))).toBe(true);
+  });
+
+  test("fenced block with non-JSON content is skipped", () => {
+    const input = ["```text", "just plain text", "```", '{"ok":true}'].join("\n");
+    const candidates = extractJsonCandidates(input, { maxCandidates: 5 });
+
+    expect(candidates.every((c) => c.source !== "fenced")).toBe(true);
+  });
+
+  test("javascript/typescript language gets a score bonus", () => {
+    const input = [
+      "```javascript",
+      '{"a": 1}',
+      "```",
+      "```json",
+      '{"b": 2}',
+      "```",
+    ].join("\n");
+    const candidates = extractJsonCandidates(input, { maxCandidates: 5 });
+
+    const jsCandidate = candidates.find((c) => c.content.includes('"a"'));
+    const jsonCandidate = candidates.find((c) => c.content.includes('"b"'));
+
+    expect(jsCandidate).toBeDefined();
+    expect(jsonCandidate).toBeDefined();
+    // json bonus (140) > js bonus (40), so json should score higher
+    expect(jsonCandidate!.score).toBeGreaterThan(jsCandidate!.score);
+    // both should have a higher score than an unknown language block
+    expect(jsCandidate!.score).toBeGreaterThan(0);
+  });
+
+  test("good and bad candidates: fallback shape is appended after filtered candidates", () => {
+    // This mix triggers the branch where filtered.length > 0 AND a fallback exists
+    const input = ['{"va2":1,"val":["ok"]}', '["just","array"]'].join(" ");
+    const candidates = extractJsonCandidates(input, { acceptArrays: true, maxCandidates: 5 });
+
+    // We should get both shapes
+    const hasObject = candidates.some((c) => c.content.startsWith("{"));
+    const hasArray = candidates.some((c) => c.content.startsWith("["));
+    expect(hasObject).toBe(true);
+    expect(hasArray).toBe(true);
+  });
 });
 
 describe("extractMarkdownCodeBlocks", () => {

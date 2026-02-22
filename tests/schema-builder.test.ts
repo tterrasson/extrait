@@ -167,4 +167,55 @@ describe("schema builder", () => {
     expect(metadata.defaults).toEqual({ value: "x" });
     expect(metadata.requiredFields).toEqual([]);
   });
+
+  test("readDefaultValue handles factory function default", () => {
+    const schema = z.object({
+      tags: z.array(z.string()).default(() => ["auto"]),
+    });
+    const metadata = inspectSchemaMetadata(schema);
+    expect(metadata.defaults).toEqual({ tags: ["auto"] });
+  });
+
+  test("readDefaultValue returns undefined when factory function throws", () => {
+    const schema = z.object({
+      bad: z.string().default(() => {
+        throw new Error("oops");
+      }),
+    });
+    // Should not throw; the error is swallowed and the field has no default
+    const metadata = inspectSchemaMetadata(schema);
+    expect(metadata.defaults).toEqual({});
+  });
+
+  test("readDefaultValue returns undefined for plain schema with no default", () => {
+    const schema = z.object({ name: z.string() });
+    const metadata = inspectSchemaMetadata(schema);
+    expect(metadata.defaults).toEqual({});
+    expect(metadata.requiredFields).toContain("name");
+  });
+
+  test("ensurePatchedZod is idempotent: calling schema builder multiple times does not error", () => {
+    // Re-importing via s.number() calls ensurePatchedZod; repeated usage should be safe
+    const a = s.number().coerce();
+    const b = s.number().coerce();
+    expect(a.safeParse("3").success).toBe(true);
+    expect(b.safeParse("7").success).toBe(true);
+  });
+
+  test("getObjectShape handles lazy shape function", () => {
+    // In Zod, _def.shape is already a function. inspectSchemaMetadata must call it to get fields.
+    const schema = z.object({ x: z.string(), y: z.number().optional() });
+    // The shape is a function returning the shape record — verify inspectSchemaMetadata handles it
+    expect(typeof (schema._def as { shape: unknown }).shape).toBe("function");
+    const metadata = inspectSchemaMetadata(schema);
+    expect(metadata.requiredFields).toContain("x");
+    expect(metadata.requiredFields).not.toContain("y");
+  });
+
+  test("inferSchemaExample returns non-null for non-object schema with a default", () => {
+    // A plain ZodDefault wrapping a non-object schema
+    const schema = z.string().default("hello");
+    const result = inferSchemaExample(schema);
+    expect(result).toBe("hello");
+  });
 });
