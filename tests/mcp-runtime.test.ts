@@ -173,16 +173,39 @@ describe("executeMCPToolCalls", () => {
     ).rejects.toThrow("without id or name");
   });
 
-  test("throws when tool name is unknown", async () => {
+  test("returns local error execution when tool name is unknown", async () => {
     const client = createMockClient("svc", [{ name: "run" }]);
     const toolset = await resolveMCPToolset([client]);
-    await expect(
-      executeMCPToolCalls(
-        [{ id: "c1", name: "unknown" }],
-        toolset,
-        { round: 1, request: { prompt: "test" } },
-      ),
-    ).rejects.toThrow('No MCP tool registered for "unknown"');
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "unknown", arguments: '{"x":1}' }],
+      toolset,
+      { round: 1, request: { prompt: "test" } },
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.call.error).toBe('Tool "unknown" is not registered in the current toolset.');
+    expect(results[0]!.execution.error).toBe('Tool "unknown" is not registered in the current toolset.');
+    expect(results[0]!.execution.clientId).toBe("__unregistered__");
+    expect(results[0]!.execution.remoteName).toBe("unknown");
+    expect(results[0]!.call.arguments).toEqual({ x: 1 });
+  });
+
+  test("uses custom unknownToolError message when tool name is unknown", async () => {
+    const client = createMockClient("svc", [{ name: "run" }]);
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "unknown" }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          unknownToolError: (toolName) => `Missing tool: ${toolName}`,
+        },
+      },
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]!.call.error).toBe("Missing tool: unknown");
+    expect(results[0]!.execution.error).toBe("Missing tool: unknown");
   });
 
   test("executes tool successfully", async () => {

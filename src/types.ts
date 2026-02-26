@@ -146,6 +146,7 @@ export interface LLMRequest {
   maxToolRounds?: number;
   onToolExecution?: (execution: LLMToolExecution) => void;
   transformToolOutput?: LLMToolOutputTransformer;
+  unknownToolError?: (toolName: string) => string;
   toolDebug?: boolean | LLMToolDebugOptions;
   body?: Record<string, unknown>;
 }

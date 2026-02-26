@@ -124,29 +124,54 @@ describe("openai-compatible MCP tools", () => {
     expect(messages.some((entry) => (entry as { role?: string }).role === "tool")).toBe(true);
   });
 
-  test("throws a clear error when model calls an unknown MCP tool", async () => {
-    const fetcher = (async () =>
-      jsonResponse({
+  test("surfaces unknown MCP tool as tool error and continues", async () => {
+    let round = 0;
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      round += 1;
+
+      if (round === 1) {
+        return jsonResponse({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_lookup",
+                    type: "function",
+                    function: {
+                      name: "lookup",
+                      arguments: JSON.stringify({ q: "x" }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      const toolMessage = messages.find((entry) => (entry as { role?: string }).role === "tool") as
+        | { content?: string }
+        | undefined;
+      expect(toolMessage?.content).toBe('{"error":"Tool \\"lookup\\" is not registered in the current toolset."}');
+
+      return jsonResponse({
         choices: [
           {
-            finish_reason: "tool_calls",
+            finish_reason: "stop",
             message: {
               role: "assistant",
-              content: "",
-              tool_calls: [
-                {
-                  id: "call_lookup",
-                  type: "function",
-                  function: {
-                    name: "lookup",
-                    arguments: JSON.stringify({ q: "x" }),
-                  },
-                },
-              ],
+              content: "lookup unavailable",
             },
           },
         ],
-      })) as unknown as typeof fetch;
+      });
+    }) as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
@@ -154,12 +179,23 @@ describe("openai-compatible MCP tools", () => {
       fetcher,
     });
 
-    await expect(
-      adapter.complete({
-        prompt: "lookup",
-        mcpClients: [createCalculatorMCP()],
-      }),
-    ).rejects.toThrow('No MCP tool registered for "lookup".');
+    const out = await adapter.complete({
+      prompt: "lookup",
+      mcpClients: [createCalculatorMCP()],
+    });
+
+    expect(out.text).toBe("lookup unavailable");
+    expect(out.toolCalls?.[0]).toMatchObject({
+      id: "call_lookup",
+      name: "lookup",
+      error: 'Tool "lookup" is not registered in the current toolset.',
+    });
+    expect(out.toolExecutions?.[0]).toMatchObject({
+      callId: "call_lookup",
+      name: "lookup",
+      clientId: "__unregistered__",
+      error: 'Tool "lookup" is not registered in the current toolset.',
+    });
   });
 
   test("executes MCP tools in responses API mode", async () => {

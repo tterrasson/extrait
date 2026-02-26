@@ -122,11 +122,45 @@ export async function executeMCPToolCalls(
     }
 
     const tool = toolset.byName.get(toolName);
+    const parsedArguments = parseToolArguments(call.arguments);
+
     if (!tool) {
-      throw new Error(`No MCP tool registered for \"${toolName}\".`);
+      const errorMessage = context.request.unknownToolError
+        ? context.request.unknownToolError(toolName)
+        : `Tool "${toolName}" is not registered in the current toolset.`;
+
+        const metadata: LLMToolCall = {
+        id: callId,
+        type: call.type ?? "function",
+        name: toolName,
+        arguments: parsedArguments,
+        error: errorMessage,
+      };
+
+      const startedAt = new Date().toISOString();
+
+      const execution: LLMToolExecution = {
+        callId,
+        type: metadata.type,
+        name: toolName,
+        clientId: "__unregistered__",
+        remoteName: toolName,
+        arguments: parsedArguments,
+        error: errorMessage,
+        round: context.round,
+        provider: context.provider,
+        model: context.model,
+        handledLocally: true,
+        startedAt,
+        durationMs: 0,
+      };
+
+      emitToolExecution(context.request, execution);
+      out.push({ call: metadata, execution });
+
+      continue;
     }
 
-    const parsedArguments = parseToolArguments(call.arguments);
     const args = isRecord(parsedArguments) ? (parsedArguments as Record<string, unknown>) : {};
 
     const metadata: LLMToolCall = {
