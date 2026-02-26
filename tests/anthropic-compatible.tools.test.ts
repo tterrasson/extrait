@@ -5,6 +5,14 @@ import {
 } from "../src/providers/anthropic-compatible";
 import type { MCPToolClient } from "../src/types";
 
+function sseResponse(events: string[]): Response {
+  const body = events.map((e) => `data: ${e}\n\n`).join("");
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
 function jsonResponse(payload: Record<string, unknown>): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -132,12 +140,34 @@ describe("anthropic-compatible MCP tools", () => {
     ]);
   });
 
-  test("stream() falls back to complete() when MCP clients are provided", async () => {
-    const fetcher = (async () =>
-      jsonResponse({
-        content: [{ type: "text", text: "ok" }],
-        stop_reason: "end_turn",
-      })) as unknown as typeof fetch;
+  test("stream() executes MCP tool loop and streams only assistant text deltas", async () => {
+    let round = 0;
+    const fetcher = (async () => {
+      round += 1;
+      if (round === 1) {
+        return sseResponse([
+          JSON.stringify({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "tool_use", id: "toolu_sum", name: "sum", input: { a: 1, b: 2 } },
+          }),
+          JSON.stringify({
+            type: "message_delta",
+            delta: { stop_reason: "tool_use" },
+          }),
+          "[DONE]",
+        ]);
+      }
+
+      return sseResponse([
+        JSON.stringify({ type: "content_block_delta", delta: { text: "3" } }),
+        JSON.stringify({
+          type: "message_delta",
+          delta: { stop_reason: "end_turn" },
+        }),
+        "[DONE]",
+      ]);
+    }) as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -156,8 +186,8 @@ describe("anthropic-compatible MCP tools", () => {
       },
     );
 
-    expect(tokens).toEqual(["ok"]);
-    expect(out.text).toBe("ok");
+    expect(tokens).toEqual(["3"]);
+    expect(out.text).toBe("3");
   });
 
   test("uses adapter defaultMaxTokens when request maxTokens is not provided", async () => {

@@ -50,7 +50,7 @@ const SentimentSchema = s.schema(
 );
 
 const userInput = process.argv.slice(3).join(" ").trim();
-const textToAnalyze = userInput || "J'adore ce produit, il marche très bien et me fait gagner du temps.";
+const textToAnalyze = userInput || "I love this product, it works very well and saves me time.";
 
 const snapshots: Array<{ data: unknown; done: boolean }> = [];
 
@@ -62,7 +62,7 @@ try {
   const result = await llm.structured(
     SentimentSchema,
     prompt`
-      Analyse le sentiment du texte suivant et retourne strictement un JSON valide:
+      Analyze the sentiment of the following text and return strictly valid JSON:
 
       """
       ${textToAnalyze}

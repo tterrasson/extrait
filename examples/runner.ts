@@ -7,6 +7,7 @@
 
 const availableExamples = [
   "streaming",
+  "streaming-with-tools",
   "simple",
   "data-extraction",
   "sentiment-analysis",

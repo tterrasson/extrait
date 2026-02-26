@@ -232,6 +232,7 @@ Run examples with: `bun run dev <example-name>`
 
 Available examples:
 - `streaming` - Real LLM streaming + snapshot self-check ([streaming.ts](examples/streaming.ts))
+- `streaming-with-tools` - Real text streaming with MCP tools + self-check ([streaming-with-tools.ts](examples/streaming-with-tools.ts))
 - `simple` - Basic structured output with streaming ([simple.ts](examples/simple.ts))
 - `sentiment-analysis` - Enum validation, strict mode ([sentiment-analysis.ts](examples/sentiment-analysis.ts))
 - `data-extraction` - Complex nested schemas, self-healing ([data-extraction.ts](examples/data-extraction.ts))
@@ -241,6 +242,7 @@ Available examples:
 Pass arguments after the example name:
 ```bash
 bun run dev streaming
+bun run dev streaming-with-tools
 bun run dev simple "Bun.js runtime"
 bun run dev sentiment-analysis "I love this product."
 bun run dev multi-step-reasoning "Why is the sky blue?"

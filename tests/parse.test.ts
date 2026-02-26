@@ -265,6 +265,92 @@ describe("parseLLMOutput - repair and hint edge cases", () => {
     expect(result.success).toBe(true);
     expect(result.data?.va2).toBe(1);
   });
+
+  test("falls back to runtime parsing when extraction hints are disabled", () => {
+    const input = "{ val: ['a'], va2: '42' }";
+    const result = parseLLMOutput(input, Schema, {
+      repair: true,
+      extraction: {
+        secondPassMin: 0,
+        secondPassCap: 0,
+        secondPassMultiplier: 0,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.candidates[0]?.parseHint).toBeUndefined();
+    expect(result.repaired).toBeString();
+    expect(result.data).toEqual({
+      val: ["a"],
+      va2: 42,
+    });
+  });
+
+  test("surfaces parse-stage errors when hints are disabled and repair is off", () => {
+    const result = parseLLMOutput("{ val: ['a'], va2: '42' }", Schema, {
+      repair: false,
+      extraction: {
+        secondPassMin: 0,
+        secondPassCap: 0,
+        secondPassMultiplier: 0,
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errors.some((error) => error.stage === "parse")).toBe(true);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.stage === "parse")).toBe(true);
+  });
+
+  test("propagates repair-hint failures with repair stage diagnostics", () => {
+    const result = parseLLMOutput('{"a":1,,"b":2}', Schema, {
+      repair: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errors.some((error) => error.stage === "repair")).toBe(true);
+    expect(
+      result.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.stage === "repair" &&
+          diagnostic.usedRepair &&
+          !diagnostic.parseSuccess &&
+          diagnostic.validationSuccess === false,
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps the least-bad candidate to expose the most actionable zod issues", () => {
+    const input = [
+      '{"va2":"oops","val":[1]}',
+      '{"foo":"bar"}',
+    ].join(" ");
+
+    const result = parseLLMOutput(input, Schema, {
+      repair: true,
+      maxCandidates: 5,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.zodIssues).toHaveLength(1);
+    expect(result.candidate?.content).toContain('"foo":"bar"');
+    const selected = result.diagnostics.find((diagnostic) => diagnostic.selected);
+    expect(selected?.candidateId).toBe(result.candidate?.id);
+  });
+
+  test("emits trace events for extraction and final failure", () => {
+    const traces: string[] = [];
+    parseLLMOutput("plain text without json", Schema, {
+      repair: true,
+      onTrace(event) {
+        traces.push(`${event.level}:${event.stage}:${event.message}`);
+      },
+    });
+
+    expect(traces.some((line) => line.includes("info:extract:Extracted"))).toBe(true);
+    expect(traces.some((line) => line.includes("error:result:No candidate could be validated."))).toBe(
+      true,
+    );
+  });
 });
 
 describe("formatZodIssues", () => {

@@ -47,8 +47,14 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
     async stream(request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
       const usesResponses = shouldUseResponsesAPI(options, request);
       const usesMCP = hasMCPClients(request.mcpClients);
-      if (usesResponses || usesMCP) {
-        return streamViaComplete(callbacks, () => completeOpenAIRequest(options, fetcher, path, responsesPath, request));
+      if (usesResponses) {
+        if (usesMCP) {
+          return streamWithResponsesAPIWithMCP(options, fetcher, responsesPath, request, callbacks);
+        }
+        return streamWithResponsesAPIPassThrough(options, fetcher, responsesPath, request, callbacks);
+      }
+      if (usesMCP) {
+        return streamWithChatCompletionsWithMCP(options, fetcher, path, request, callbacks);
       }
 
       const response = await fetcher(buildURL(options.baseURL, path), {
@@ -421,6 +427,400 @@ async function completeWithResponsesAPIWithMCP(
   };
 }
 
+async function streamWithChatCompletionsWithMCP(
+  options: OpenAICompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  callbacks: LLMStreamCallbacks,
+): Promise<LLMResponse> {
+  const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
+
+  let messages = buildMessages(request);
+  let aggregatedUsage: LLMUsage | undefined;
+  let finishReason: string | undefined;
+  let lastPayload: Record<string, unknown> | undefined;
+  const executedToolCalls: LLMToolCall[] = [];
+  const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+
+  callbacks.onStart?.();
+
+  for (let round = 1; round <= maxToolRounds + 1; round += 1) {
+    const mcpToolset = await resolveMCPToolset(request.mcpClients);
+    const transportTools = toProviderFunctionTools(mcpToolset);
+
+    const response = await fetcher(buildURL(options.baseURL, path), {
+      method: "POST",
+      headers: buildHeaders(options),
+      body: JSON.stringify(
+        cleanUndefined({
+          ...options.defaultBody,
+          ...request.body,
+          model: options.model,
+          messages,
+          temperature: request.temperature,
+          max_tokens: request.maxTokens,
+          tools: transportTools,
+          tool_choice: request.toolChoice,
+          parallel_tool_calls: request.parallelToolCalls,
+          stream: true,
+        }),
+      ),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`HTTP ${response.status}: ${message}`);
+    }
+
+    let roundText = "";
+    let roundUsage: LLMUsage | undefined;
+    let roundFinishReason: string | undefined;
+    const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
+
+    await consumeSSE(response, (data) => {
+      if (data === "[DONE]") {
+        return;
+      }
+
+      const json = safeJSONParse(data);
+      if (!isRecord(json)) {
+        return;
+      }
+
+      lastPayload = json;
+
+      const delta = pickAssistantDelta(json);
+      const chunkUsage = pickUsage(json);
+      const chunkFinishReason = pickFinishReason(json);
+
+      collectOpenAIStreamToolCalls(json, streamedToolCalls);
+      roundUsage = mergeUsage(roundUsage, chunkUsage);
+      if (chunkFinishReason) {
+        roundFinishReason = chunkFinishReason;
+      }
+
+      if (delta) {
+        roundText += delta;
+        callbacks.onToken?.(delta);
+      }
+
+      if (delta || chunkUsage || chunkFinishReason) {
+        const chunk: LLMStreamChunk = {
+          textDelta: delta,
+          raw: json,
+          usage: chunkUsage,
+          finishReason: chunkFinishReason,
+        };
+        callbacks.onChunk?.(chunk);
+      }
+    });
+
+    aggregatedUsage = mergeUsage(aggregatedUsage, roundUsage);
+    if (roundFinishReason) {
+      finishReason = roundFinishReason;
+    }
+
+    const calledTools = buildOpenAIStreamToolCalls(streamedToolCalls);
+    if (calledTools.length === 0) {
+      const out: LLMResponse = {
+        text: roundText,
+        raw: lastPayload,
+        usage: aggregatedUsage,
+        finishReason,
+        toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
+        toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
+      };
+      callbacks.onComplete?.(out);
+      return out;
+    }
+
+    if (round > maxToolRounds) {
+      throw new Error(`Tool call loop exceeded maxToolRounds (${maxToolRounds}).`);
+    }
+
+    const outputs = await executeMCPToolCalls(calledTools, mcpToolset, {
+      round,
+      request,
+      provider: "openai-compatible",
+      model: options.model,
+    });
+    executedToolCalls.push(...outputs.map((entry) => entry.call));
+    toolExecutions.push(...outputs.map((entry) => entry.execution));
+
+    const assistantMessage = buildOpenAIAssistantToolMessage(roundText, calledTools);
+    const toolMessages = outputs.map((entry) => ({
+      role: "tool",
+      tool_call_id: entry.call.id,
+      content: stringifyToolOutput(entry.call.error ? { error: entry.call.error } : entry.call.output),
+    }));
+    messages = [...messages, assistantMessage, ...toolMessages];
+  }
+
+  const out: LLMResponse = {
+    text: "",
+    raw: lastPayload,
+    usage: aggregatedUsage,
+    finishReason,
+    toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
+    toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
+  };
+  callbacks.onComplete?.(out);
+  return out;
+}
+
+async function streamWithResponsesAPIPassThrough(
+  options: OpenAICompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  callbacks: LLMStreamCallbacks,
+): Promise<LLMResponse> {
+  const body = isRecord(request.body) ? request.body : undefined;
+  const response = await fetcher(buildURL(options.baseURL, path), {
+    method: "POST",
+    headers: buildHeaders(options),
+    body: JSON.stringify(
+      cleanUndefined({
+        ...options.defaultBody,
+        ...request.body,
+        model: options.model,
+        input: buildResponsesInput(request),
+        previous_response_id: pickString(body?.previous_response_id),
+        temperature: request.temperature,
+        max_output_tokens: request.maxTokens,
+        stream: true,
+      }),
+    ),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`HTTP ${response.status}: ${message}`);
+  }
+
+  callbacks.onStart?.();
+
+  let text = "";
+  let usage: LLMUsage | undefined;
+  let finishReason: string | undefined;
+  let lastPayload: Record<string, unknown> | undefined;
+
+  await consumeSSE(response, (data) => {
+    if (data === "[DONE]") {
+      return;
+    }
+
+    const json = safeJSONParse(data);
+    if (!isRecord(json)) {
+      return;
+    }
+
+    const roundPayload = pickResponsesStreamPayload(json);
+    if (roundPayload) {
+      lastPayload = roundPayload;
+    }
+
+    const delta = pickResponsesStreamTextDelta(json);
+    const chunkUsage = pickResponsesStreamUsage(json);
+    const chunkFinishReason = pickResponsesStreamFinishReason(json);
+
+    usage = mergeUsage(usage, chunkUsage);
+    if (chunkFinishReason) {
+      finishReason = chunkFinishReason;
+    }
+
+    if (delta) {
+      text += delta;
+      callbacks.onToken?.(delta);
+    }
+
+    if (delta || chunkUsage || chunkFinishReason) {
+      const chunk: LLMStreamChunk = {
+        textDelta: delta,
+        raw: json,
+        usage: chunkUsage,
+        finishReason: chunkFinishReason,
+      };
+      callbacks.onChunk?.(chunk);
+    }
+  });
+
+  const finalPayload = lastPayload ?? {};
+  const out: LLMResponse = {
+    text: text.length > 0 ? text : (pickResponsesText(finalPayload) || pickAssistantText(finalPayload)),
+    raw: finalPayload,
+    usage: mergeUsage(usage, pickUsage(finalPayload)),
+    finishReason: finishReason ?? pickResponsesFinishReason(finalPayload) ?? pickFinishReason(finalPayload),
+  };
+  callbacks.onComplete?.(out);
+  return out;
+}
+
+async function streamWithResponsesAPIWithMCP(
+  options: OpenAICompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  callbacks: LLMStreamCallbacks,
+): Promise<LLMResponse> {
+  const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
+
+  let input = buildResponsesInput(request);
+  let previousResponseId = pickString(
+    isRecord(request.body) ? (request.body.previous_response_id as unknown) : undefined,
+  );
+  let aggregatedUsage: LLMUsage | undefined;
+  let finishReason: string | undefined;
+  let lastPayload: Record<string, unknown> | undefined;
+  const executedToolCalls: LLMToolCall[] = [];
+  const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+
+  callbacks.onStart?.();
+
+  for (let round = 1; round <= maxToolRounds + 1; round += 1) {
+    const mcpToolset = await resolveMCPToolset(request.mcpClients);
+    const transportTools = toResponsesTools(toProviderFunctionTools(mcpToolset));
+
+    const response = await fetcher(buildURL(options.baseURL, path), {
+      method: "POST",
+      headers: buildHeaders(options),
+      body: JSON.stringify(
+        cleanUndefined({
+          ...options.defaultBody,
+          ...request.body,
+          model: options.model,
+          input,
+          previous_response_id: previousResponseId,
+          temperature: request.temperature,
+          max_output_tokens: request.maxTokens,
+          tools: transportTools,
+          tool_choice: request.toolChoice,
+          parallel_tool_calls: request.parallelToolCalls,
+          stream: true,
+        }),
+      ),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`HTTP ${response.status}: ${message}`);
+    }
+
+    let roundText = "";
+    let roundUsage: LLMUsage | undefined;
+    let roundFinishReason: string | undefined;
+    let roundPayload: Record<string, unknown> | undefined;
+    const streamedToolCalls = new Map<string, OpenAIResponsesStreamToolCallState>();
+
+    await consumeSSE(response, (data) => {
+      if (data === "[DONE]") {
+        return;
+      }
+
+      const json = safeJSONParse(data);
+      if (!isRecord(json)) {
+        return;
+      }
+
+      const payload = pickResponsesStreamPayload(json);
+      if (payload) {
+        roundPayload = payload;
+        lastPayload = payload;
+      }
+
+      const delta = pickResponsesStreamTextDelta(json);
+      const chunkUsage = pickResponsesStreamUsage(json);
+      const chunkFinishReason = pickResponsesStreamFinishReason(json);
+
+      collectResponsesStreamToolCalls(json, streamedToolCalls);
+      roundUsage = mergeUsage(roundUsage, chunkUsage);
+      if (chunkFinishReason) {
+        roundFinishReason = chunkFinishReason;
+      }
+
+      if (delta) {
+        roundText += delta;
+        callbacks.onToken?.(delta);
+      }
+
+      if (delta || chunkUsage || chunkFinishReason) {
+        const chunk: LLMStreamChunk = {
+          textDelta: delta,
+          raw: json,
+          usage: chunkUsage,
+          finishReason: chunkFinishReason,
+        };
+        callbacks.onChunk?.(chunk);
+      }
+    });
+
+    aggregatedUsage = mergeUsage(aggregatedUsage, roundUsage);
+    const payloadUsage = roundPayload ? pickUsage(roundPayload) : undefined;
+    aggregatedUsage = mergeUsage(aggregatedUsage, payloadUsage);
+    if (roundFinishReason) {
+      finishReason = roundFinishReason;
+    } else if (roundPayload) {
+      finishReason = pickResponsesFinishReason(roundPayload) ?? finishReason;
+    }
+
+    const payloadToolCalls = roundPayload ? pickResponsesToolCalls(roundPayload) : [];
+    const streamedCalls = buildResponsesStreamToolCalls(streamedToolCalls);
+    const providerToolCalls = payloadToolCalls.length > 0 ? payloadToolCalls : streamedCalls;
+    const functionCalls = providerToolCalls.filter(
+      (toolCall): toolCall is LLMToolCall & { id: string; name: string } =>
+        toolCall.type === "function" && typeof toolCall.id === "string" && typeof toolCall.name === "string",
+    );
+
+    if (functionCalls.length === 0) {
+      const finalText = roundText.length > 0
+        ? roundText
+        : (roundPayload ? (pickResponsesText(roundPayload) || pickAssistantText(roundPayload)) : "");
+      const out: LLMResponse = {
+        text: finalText,
+        raw: roundPayload ?? lastPayload,
+        usage: aggregatedUsage,
+        finishReason,
+        toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
+        toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
+      };
+      callbacks.onComplete?.(out);
+      return out;
+    }
+
+    if (round > maxToolRounds) {
+      throw new Error(`Tool call loop exceeded maxToolRounds (${maxToolRounds}).`);
+    }
+
+    const outputs = await executeMCPToolCalls(functionCalls, mcpToolset, {
+      round,
+      request,
+      provider: "openai-compatible",
+      model: options.model,
+    });
+    executedToolCalls.push(...outputs.map((entry) => entry.call));
+    toolExecutions.push(...outputs.map((entry) => entry.execution));
+
+    input = outputs.map((entry) => ({
+      type: "function_call_output",
+      call_id: entry.call.id,
+      output: stringifyToolOutput(entry.call.error ? { error: entry.call.error } : entry.call.output),
+    }));
+    previousResponseId = pickString(roundPayload?.id);
+  }
+
+  const out: LLMResponse = {
+    text: pickResponsesText(lastPayload ?? {}) || pickAssistantText(lastPayload ?? {}),
+    raw: lastPayload,
+    usage: aggregatedUsage,
+    finishReason,
+    toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
+    toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
+  };
+  callbacks.onComplete?.(out);
+  return out;
+}
+
 function shouldUseResponsesAPI(options: OpenAICompatibleAdapterOptions, request: LLMRequest): boolean {
   if (options.path?.includes("/responses")) {
     return true;
@@ -609,6 +1009,262 @@ function pickAssistantDelta(payload: Record<string, unknown>): string {
   return "";
 }
 
+interface OpenAIStreamToolCallState {
+  index: number;
+  id?: string;
+  type?: string;
+  name?: string;
+  argumentsText: string;
+}
+
+interface OpenAIResponsesStreamToolCallState {
+  key: string;
+  id?: string;
+  type?: string;
+  name?: string;
+  argumentsText: string;
+}
+
+function collectOpenAIStreamToolCalls(
+  payload: Record<string, unknown>,
+  state: Map<number, OpenAIStreamToolCallState>,
+): void {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0 || !isRecord(choices[0])) {
+    return;
+  }
+
+  const delta = choices[0].delta;
+  if (!isRecord(delta) || !Array.isArray(delta.tool_calls)) {
+    return;
+  }
+
+  for (const rawToolCall of delta.tool_calls) {
+    if (!isRecord(rawToolCall)) {
+      continue;
+    }
+
+    const index = toFiniteNumber(rawToolCall.index);
+    const toolIndex = index !== undefined ? Math.floor(index) : 0;
+    const existing = state.get(toolIndex) ?? {
+      index: toolIndex,
+      argumentsText: "",
+    };
+
+    const id = pickString(rawToolCall.id);
+    if (id) {
+      existing.id = id;
+    }
+
+    const type = pickString(rawToolCall.type);
+    if (type) {
+      existing.type = type;
+    }
+
+    const functionCall = isRecord(rawToolCall.function) ? rawToolCall.function : undefined;
+    const name = pickString(functionCall?.name);
+    if (name) {
+      existing.name = `${existing.name ?? ""}${name}`;
+    }
+
+    const argumentsDelta = pickString(functionCall?.arguments);
+    if (argumentsDelta) {
+      existing.argumentsText += argumentsDelta;
+    }
+
+    state.set(toolIndex, existing);
+  }
+}
+
+function buildOpenAIStreamToolCalls(state: Map<number, OpenAIStreamToolCallState>): LLMToolCall[] {
+  return [...state.values()]
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => ({
+      id: entry.id ?? "",
+      type: entry.type ?? "function",
+      name: entry.name,
+      arguments: entry.argumentsText.length > 0 ? entry.argumentsText : {},
+    }));
+}
+
+function buildOpenAIAssistantToolMessage(text: string, toolCalls: LLMToolCall[]): Record<string, unknown> {
+  return {
+    role: "assistant",
+    content: text,
+    tool_calls: toolCalls.map((call) => ({
+      id: call.id,
+      type: "function",
+      function: {
+        name: call.name,
+        arguments: typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments ?? {}),
+      },
+    })),
+  };
+}
+
+function pickResponsesStreamPayload(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (isRecord(payload.response)) {
+    return payload.response;
+  }
+
+  if ("output" in payload || "output_text" in payload || "status" in payload || "id" in payload) {
+    return payload;
+  }
+
+  return undefined;
+}
+
+function pickResponsesStreamTextDelta(payload: Record<string, unknown>): string {
+  const eventType = pickString(payload.type) ?? "";
+  if (!eventType.includes("output_text.delta")) {
+    return "";
+  }
+
+  const direct = pickString(payload.delta);
+  if (direct) {
+    return direct;
+  }
+
+  if (isRecord(payload.delta)) {
+    return pickString(payload.delta.text) ?? pickString(payload.delta.output_text) ?? "";
+  }
+
+  return "";
+}
+
+function pickResponsesStreamUsage(payload: Record<string, unknown>): LLMUsage | undefined {
+  const direct = pickUsage(payload);
+  if (direct) {
+    return direct;
+  }
+
+  if (isRecord(payload.response)) {
+    return pickUsage(payload.response);
+  }
+
+  return undefined;
+}
+
+function pickResponsesStreamFinishReason(payload: Record<string, unknown>): string | undefined {
+  const eventType = pickString(payload.type);
+  if (eventType === "response.completed") {
+    return "completed";
+  }
+  if (eventType === "response.failed") {
+    return "failed";
+  }
+
+  const directStatus = pickString(payload.status);
+  if (directStatus) {
+    return directStatus;
+  }
+
+  if (isRecord(payload.response)) {
+    return pickString(payload.response.status);
+  }
+
+  return undefined;
+}
+
+function collectResponsesStreamToolCalls(
+  payload: Record<string, unknown>,
+  state: Map<string, OpenAIResponsesStreamToolCallState>,
+): void {
+  if (isRecord(payload.response)) {
+    collectResponsesStreamToolCallsFromOutput(payload.response.output, state);
+  }
+  collectResponsesStreamToolCallsFromOutput(payload.output, state);
+
+  if (isRecord(payload.item)) {
+    const itemKey = pickString(payload.item_id) ?? pickString(payload.call_id);
+    collectResponsesStreamToolCallsFromItem(payload.item, state, itemKey);
+  }
+
+  if (isRecord(payload.output_item)) {
+    const itemKey = pickString(payload.item_id) ?? pickString(payload.call_id);
+    collectResponsesStreamToolCallsFromItem(payload.output_item, state, itemKey);
+  }
+
+  const eventType = pickString(payload.type) ?? "";
+  if (eventType.includes("function_call_arguments.delta")) {
+    const key = pickString(payload.item_id) ?? pickString(payload.call_id) ?? "function_call";
+    const existing = state.get(key) ?? {
+      key,
+      argumentsText: "",
+    };
+    const delta = pickString(payload.delta)
+      ?? (isRecord(payload.delta) ? pickString(payload.delta.text) ?? pickString(payload.delta.arguments) : undefined)
+      ?? pickString(payload.arguments_delta);
+    if (delta) {
+      existing.argumentsText += delta;
+    }
+    state.set(key, existing);
+  }
+}
+
+function collectResponsesStreamToolCallsFromOutput(
+  output: unknown,
+  state: Map<string, OpenAIResponsesStreamToolCallState>,
+): void {
+  if (!Array.isArray(output)) {
+    return;
+  }
+
+  for (const item of output) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    collectResponsesStreamToolCallsFromItem(item, state);
+  }
+}
+
+function collectResponsesStreamToolCallsFromItem(
+  item: Record<string, unknown>,
+  state: Map<string, OpenAIResponsesStreamToolCallState>,
+  forcedKey?: string,
+): void {
+  const type = pickString(item.type);
+  if (type !== "function_call" && !type?.includes("tool") && !type?.includes("mcp")) {
+    return;
+  }
+
+  const key = forcedKey ?? pickString(item.call_id) ?? pickString(item.id) ?? `call_${state.size}`;
+  const existing = state.get(key) ?? {
+    key,
+    argumentsText: "",
+  };
+
+  const callId = pickString(item.call_id) ?? pickString(item.id);
+  if (callId) {
+    existing.id = callId;
+  }
+
+  if (type) {
+    existing.type = type;
+  }
+
+  const name = pickString(item.name);
+  if (name) {
+    existing.name = name;
+  }
+
+  const argumentsText = pickString(item.arguments);
+  if (argumentsText && argumentsText.length >= existing.argumentsText.length) {
+    existing.argumentsText = argumentsText;
+  }
+
+  state.set(key, existing);
+}
+
+function buildResponsesStreamToolCalls(state: Map<string, OpenAIResponsesStreamToolCallState>): LLMToolCall[] {
+  return [...state.values()].map((entry) => ({
+    id: entry.id ?? entry.key,
+    type: entry.type === "function_call" ? "function" : (entry.type ?? "function"),
+    name: entry.name,
+    arguments: entry.argumentsText.length > 0 ? entry.argumentsText : {},
+  }));
+}
+
 function pickResponsesText(payload: Record<string, unknown>): string {
   const outputText = payload.output_text;
   if (typeof outputText === "string") {
@@ -728,26 +1384,4 @@ function pickResponsesFinishReason(payload: Record<string, unknown>): string | u
   }
 
   return undefined;
-}
-
-async function streamViaComplete(
-  callbacks: LLMStreamCallbacks,
-  complete: () => Promise<LLMResponse>,
-): Promise<LLMResponse> {
-  callbacks.onStart?.();
-  const response = await complete();
-
-  if (response.text.length > 0) {
-    callbacks.onToken?.(response.text);
-  }
-
-  callbacks.onChunk?.({
-    textDelta: response.text,
-    raw: response.raw,
-    done: true,
-    usage: response.usage,
-    finishReason: response.finishReason,
-  });
-  callbacks.onComplete?.(response);
-  return response;
 }

@@ -13,6 +13,7 @@ import {
   executeMCPToolCalls,
   hasMCPClients,
   normalizeMaxToolRounds,
+  parseToolArguments,
   resolveMCPToolset,
   stringifyToolOutput,
   toProviderFunctionTools,
@@ -53,7 +54,7 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
 
     async stream(request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
       if (hasMCPClients(request.mcpClients)) {
-        return streamViaComplete(callbacks, () => this.complete(request));
+        return streamWithMCPToolLoop(options, fetcher, path, request, callbacks);
       }
 
       const response = await fetcher(buildURL(options.baseURL, path), {
@@ -272,6 +273,156 @@ async function completeWithMCPToolLoop(
   };
 }
 
+async function streamWithMCPToolLoop(
+  options: AnthropicCompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  callbacks: LLMStreamCallbacks,
+): Promise<LLMResponse> {
+  const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
+
+  let messages: Array<Record<string, unknown>> = [{ role: "user", content: request.prompt }];
+  let aggregatedUsage: LLMUsage | undefined;
+  let finishReason: string | undefined;
+  let lastPayload: Record<string, unknown> | undefined;
+  const toolCalls: LLMToolCall[] = [];
+  const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+
+  callbacks.onStart?.();
+
+  for (let round = 1; round <= maxToolRounds + 1; round += 1) {
+    const mcpToolset = await resolveMCPToolset(request.mcpClients);
+    const tools = toAnthropicTools(toProviderFunctionTools(mcpToolset));
+
+    const response = await fetcher(buildURL(options.baseURL, path), {
+      method: "POST",
+      headers: buildHeaders(options),
+      body: JSON.stringify(
+        cleanUndefined({
+          ...options.defaultBody,
+          ...request.body,
+          model: options.model,
+          system: request.systemPrompt,
+          messages,
+          temperature: request.temperature,
+          max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
+          tools,
+          tool_choice: toAnthropicToolChoice(request.toolChoice),
+          stream: true,
+        }),
+      ),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`HTTP ${response.status}: ${message}`);
+    }
+
+    let roundText = "";
+    let roundUsage: LLMUsage | undefined;
+    let roundFinishReason: string | undefined;
+    const streamedToolCalls = new Map<number, AnthropicStreamToolCallState>();
+
+    await consumeSSE(response, (data) => {
+      if (data === "[DONE]") {
+        return;
+      }
+
+      const json = safeJSONParse(data);
+      if (!isRecord(json)) {
+        return;
+      }
+
+      lastPayload = json;
+
+      const delta = pickAnthropicDelta(json);
+      const chunkUsage = pickUsage(json);
+      const chunkFinishReason = pickFinishReason(json);
+
+      collectAnthropicStreamToolCalls(json, streamedToolCalls);
+      roundUsage = mergeUsage(roundUsage, chunkUsage);
+      if (chunkFinishReason) {
+        roundFinishReason = chunkFinishReason;
+      }
+
+      if (delta) {
+        roundText += delta;
+        callbacks.onToken?.(delta);
+      }
+
+      if (delta || chunkUsage || chunkFinishReason) {
+        const chunk: LLMStreamChunk = {
+          textDelta: delta,
+          raw: json,
+          usage: chunkUsage,
+          finishReason: chunkFinishReason,
+        };
+        callbacks.onChunk?.(chunk);
+      }
+    });
+
+    aggregatedUsage = mergeUsage(aggregatedUsage, roundUsage);
+    if (roundFinishReason) {
+      finishReason = roundFinishReason;
+    }
+
+    const calledTools = buildAnthropicStreamToolCalls(streamedToolCalls);
+    if (calledTools.length === 0) {
+      const out: LLMResponse = {
+        text: roundText,
+        raw: lastPayload,
+        usage: aggregatedUsage,
+        finishReason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
+      };
+      callbacks.onComplete?.(out);
+      return out;
+    }
+
+    if (round > maxToolRounds) {
+      throw new Error(`Tool call loop exceeded maxToolRounds (${maxToolRounds}).`);
+    }
+
+    const toolResultContent: Array<Record<string, unknown>> = [];
+    const outputs = await executeMCPToolCalls(calledTools, mcpToolset, {
+      round,
+      request,
+      provider: "anthropic-compatible",
+      model: options.model,
+    });
+    toolCalls.push(...outputs.map((entry) => entry.call));
+    toolExecutions.push(...outputs.map((entry) => entry.execution));
+
+    for (const entry of outputs) {
+      toolResultContent.push({
+        type: "tool_result",
+        tool_use_id: entry.call.id,
+        ...(entry.call.error ? { is_error: true } : {}),
+        content: stringifyToolOutput(entry.call.error ? { error: entry.call.error } : entry.call.output),
+      });
+    }
+
+    messages = [
+      ...messages,
+      { role: "assistant", content: buildAnthropicAssistantToolContent(roundText, calledTools) },
+      { role: "user", content: toolResultContent },
+    ];
+  }
+
+  const out: LLMResponse = {
+    text: "",
+    raw: lastPayload,
+    usage: aggregatedUsage,
+    finishReason,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
+  };
+  callbacks.onComplete?.(out);
+  return out;
+}
+
 function buildHeaders(options: AnthropicCompatibleAdapterOptions): HTTPHeaders {
   return {
     "content-type": "application/json",
@@ -348,6 +499,113 @@ function pickAnthropicDelta(payload: Record<string, unknown>): string {
   }
 
   return "";
+}
+
+interface AnthropicStreamToolCallState {
+  index: number;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  argumentsText: string;
+}
+
+function collectAnthropicStreamToolCalls(
+  payload: Record<string, unknown>,
+  state: Map<number, AnthropicStreamToolCallState>,
+): void {
+  const eventType = pickString(payload.type);
+  if (!eventType) {
+    return;
+  }
+
+  if (eventType === "content_block_start" && isRecord(payload.content_block)) {
+    const block = payload.content_block;
+    if (pickString(block.type) !== "tool_use") {
+      return;
+    }
+
+    const index = pickContentBlockIndex(payload.index);
+    const existing = state.get(index) ?? {
+      index,
+      argumentsText: "",
+    };
+
+    const id = pickString(block.id);
+    if (id) {
+      existing.id = id;
+    }
+
+    const name = pickString(block.name);
+    if (name) {
+      existing.name = name;
+    }
+
+    if ("input" in block) {
+      existing.input = block.input;
+    }
+
+    state.set(index, existing);
+    return;
+  }
+
+  if (eventType === "content_block_delta" && isRecord(payload.delta)) {
+    const delta = payload.delta;
+    if (pickString(delta.type) !== "input_json_delta") {
+      return;
+    }
+
+    const index = pickContentBlockIndex(payload.index);
+    const existing = state.get(index) ?? {
+      index,
+      argumentsText: "",
+    };
+
+    const partial = pickString(delta.partial_json);
+    if (partial) {
+      existing.argumentsText += partial;
+    }
+
+    state.set(index, existing);
+  }
+}
+
+function pickContentBlockIndex(value: unknown): number {
+  const numeric = toFiniteNumber(value);
+  if (numeric !== undefined) {
+    return Math.floor(numeric);
+  }
+
+  return 0;
+}
+
+function buildAnthropicStreamToolCalls(state: Map<number, AnthropicStreamToolCallState>): LLMToolCall[] {
+  return [...state.values()]
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => ({
+      id: entry.id ?? "",
+      type: "function",
+      name: entry.name,
+      arguments: entry.argumentsText.length > 0 ? entry.argumentsText : entry.input ?? {},
+    }));
+}
+
+function buildAnthropicAssistantToolContent(text: string, toolCalls: LLMToolCall[]): Array<Record<string, unknown>> {
+  const content: Array<Record<string, unknown>> = [];
+  if (text.length > 0) {
+    content.push({ type: "text", text });
+  }
+
+  for (const call of toolCalls) {
+    const parsedArguments = typeof call.arguments === "string" ? parseToolArguments(call.arguments) : call.arguments;
+    content.push({
+      type: "tool_use",
+      id: call.id,
+      name: call.name,
+      input: isRecord(parsedArguments) ? parsedArguments : {},
+    });
+  }
+
+  return content;
 }
 
 function pickUsage(payload: Record<string, unknown>): LLMUsage | undefined {
@@ -445,26 +703,4 @@ function toAnthropicToolChoice(value: LLMRequest["toolChoice"]): unknown {
   }
 
   return value;
-}
-
-async function streamViaComplete(
-  callbacks: LLMStreamCallbacks,
-  complete: () => Promise<LLMResponse>,
-): Promise<LLMResponse> {
-  callbacks.onStart?.();
-  const response = await complete();
-
-  if (response.text.length > 0) {
-    callbacks.onToken?.(response.text);
-  }
-
-  callbacks.onChunk?.({
-    textDelta: response.text,
-    raw: response.raw,
-    done: true,
-    usage: response.usage,
-    finishReason: response.finishReason,
-  });
-  callbacks.onComplete?.(response);
-  return response;
 }

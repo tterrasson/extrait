@@ -84,4 +84,63 @@ describe("MCP client helpers", () => {
     await wrapped.close?.();
     await server.close();
   });
+
+  test("createMCPClient() supports stdio transport against a real MCP server process", async () => {
+    const scriptPath = new URL("../examples/calculator-mcp-server.ts", import.meta.url).pathname;
+    const mcp = await createMCPClient({
+      id: "calculator-stdio",
+      transport: {
+        type: "stdio",
+        command: process.execPath,
+        args: [scriptPath],
+      },
+    });
+
+    try {
+      const tools = await mcp.listTools();
+      expect(tools.tools.some((tool) => tool.name === "calculate")).toBe(true);
+
+      const result = (await mcp.callTool({
+        name: "calculate",
+        arguments: { operation: "multiply", a: 6, b: 7 },
+      })) as {
+        structuredContent?: { result?: number };
+      };
+
+      expect(result.structuredContent?.result).toBe(42);
+    } finally {
+      await mcp.close?.();
+    }
+  });
+
+  test("createMCPClient() uses streamable-http transport and forwards connect failures", async () => {
+    const fetchCalls: Array<{ input: string; method: string }> = [];
+
+    await expect(
+      createMCPClient({
+        id: "streamable-http",
+        transport: {
+          type: "streamable-http",
+          url: "http://mcp.invalid/stream",
+          options: {
+            fetch: async (input, init) => {
+              fetchCalls.push({
+                input: typeof input === "string" ? input : input.toString(),
+                method: init?.method ?? "GET",
+              });
+              throw new Error("network disabled for test");
+            },
+            reconnectionOptions: {
+              maxRetries: 0,
+              initialReconnectionDelay: 1,
+              maxReconnectionDelay: 1,
+              reconnectionDelayGrowFactor: 1,
+            },
+          },
+        },
+      }),
+    ).rejects.toThrow();
+
+    expect(fetchCalls.length).toBeGreaterThan(0);
+  });
 });

@@ -118,17 +118,69 @@ describe("anthropic-compatible streaming", () => {
     await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("HTTP 500");
   });
 
-  test("delegates to streamViaComplete when MCP clients are present", async () => {
-    let started = false;
+  test("streams through MCP rounds and keeps result.text as final assistant text", async () => {
+    let startedCount = 0;
     let completed = false;
     const tokens: string[] = [];
+    const chunks: LLMStreamChunk[] = [];
+    let round = 0;
 
-    const fetcher = (async () =>
-      jsonResponse({
-        content: [{ type: "text", text: "result" }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 3, output_tokens: 1 },
-      })) as unknown as typeof fetch;
+    const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
+      const bodyParsed = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      round += 1;
+
+      if (round === 1) {
+        return sseResponse([
+          JSON.stringify({ type: "content_block_start", content_block: { type: "text", text: "Let me check. " } }),
+          JSON.stringify({
+            type: "content_block_start",
+            index: 0,
+            content_block: {
+              type: "tool_use",
+              id: "toolu_add",
+              name: "add",
+              input: {},
+            },
+          }),
+          JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "input_json_delta", partial_json: "{\"a\":2" },
+          }),
+          JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "input_json_delta", partial_json: ",\"b\":3}" },
+          }),
+          JSON.stringify({
+            type: "message_delta",
+            delta: { stop_reason: "tool_use" },
+            usage: { input_tokens: 4, output_tokens: 2 },
+          }),
+          "[DONE]",
+        ]);
+      }
+
+      const messages = Array.isArray(bodyParsed.messages) ? bodyParsed.messages : [];
+      const hasToolResultMessage = messages.some((entry) => {
+        const record = entry as { role?: string; content?: unknown };
+        if (record.role !== "user" || !Array.isArray(record.content)) {
+          return false;
+        }
+        return record.content.some((part) => (part as { type?: string }).type === "tool_result");
+      });
+      expect(hasToolResultMessage).toBe(true);
+
+      return sseResponse([
+        JSON.stringify({ type: "content_block_delta", delta: { text: "Result: " } }),
+        JSON.stringify({ type: "content_block_delta", delta: { text: "5" } }),
+        JSON.stringify({
+          type: "message_delta",
+          delta: { stop_reason: "end_turn", usage: { output_tokens: 1 } },
+        }),
+        "[DONE]",
+      ]);
+    }) as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -142,16 +194,28 @@ describe("anthropic-compatible streaming", () => {
         mcpClients: [createSimpleMCP()],
       },
       {
-        onStart: () => (started = true),
+        onStart: () => (startedCount += 1),
         onToken: (t) => tokens.push(t),
+        onChunk: (chunk) => chunks.push(chunk),
         onComplete: () => (completed = true),
       },
     );
 
-    expect(started).toBe(true);
+    expect(startedCount).toBe(1);
     expect(completed).toBe(true);
-    expect(tokens).toEqual(["result"]);
-    expect(result.text).toBe("result");
+    expect(tokens).toEqual(["Let me check. ", "Result: ", "5"]);
+    expect(result.text).toBe("Result: 5");
+    expect(result.toolCalls?.[0]).toMatchObject({
+      id: "toolu_add",
+      name: "add",
+      output: { result: 5 },
+    });
+    expect(result.toolExecutions?.[0]).toMatchObject({
+      callId: "toolu_add",
+      name: "add",
+      clientId: "calc",
+    });
+    expect(chunks.some((chunk) => chunk.finishReason === "tool_use")).toBe(true);
   });
 
   test("extracts delta from content_block.text", async () => {

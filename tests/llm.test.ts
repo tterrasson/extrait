@@ -156,4 +156,161 @@ describe("createLLM", () => {
     });
     expect(result.data).toEqual({ val: 3 });
   });
+
+  test("mergeObjectLike merges stream objects and keeps explicit default disable", async () => {
+    const registry = createProviderRegistry();
+    let completeCalls = 0;
+    let streamCalls = 0;
+
+    registry.register(
+      "mock",
+      (options: { text: string }) => ({
+        provider: "mock",
+        model: "m1",
+        async complete() {
+          completeCalls += 1;
+          return {
+            text: options.text,
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+        async stream() {
+          streamCalls += 1;
+          return {
+            text: options.text,
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        options: { text: '{"val": 4}' },
+        defaults: {
+          stream: { enabled: false },
+        },
+      },
+      registry,
+    );
+
+    const schema = z.object({ val: z.number() });
+    const streamUpdates: unknown[] = [];
+    const result = await llm.structured(schema, "Return JSON", {
+      stream: {
+        onData(event) {
+          streamUpdates.push(event);
+        },
+      },
+    });
+
+    expect(result.data).toEqual({ val: 4 });
+    expect(completeCalls).toBe(1);
+    expect(streamCalls).toBe(0);
+    expect(streamUpdates).toHaveLength(0);
+  });
+
+  test("mergeObjectLike lets boolean stream override object defaults", async () => {
+    const registry = createProviderRegistry();
+    let completeCalls = 0;
+    let streamCalls = 0;
+
+    registry.register(
+      "mock",
+      (options: { text: string }) => ({
+        provider: "mock",
+        model: "m1",
+        async complete() {
+          completeCalls += 1;
+          return {
+            text: options.text,
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+        async stream() {
+          streamCalls += 1;
+          return {
+            text: options.text,
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        options: { text: '{"val": 5}' },
+        defaults: {
+          stream: { enabled: true },
+        },
+      },
+      registry,
+    );
+
+    const schema = z.object({ val: z.number() });
+    const result = await llm.structured(schema, "Return JSON", {
+      stream: false,
+    });
+
+    expect(result.data).toEqual({ val: 5 });
+    expect(completeCalls).toBe(1);
+    expect(streamCalls).toBe(0);
+  });
+
+  test("mergeObjectLike keeps default debug logger when override only toggles enabled", async () => {
+    const registry = createProviderRegistry();
+    const debugLogs: string[] = [];
+
+    registry.register(
+      "mock",
+      (options: { text: string }) => ({
+        provider: "mock",
+        model: "m1",
+        async complete() {
+          return {
+            text: options.text,
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        options: { text: '{"val": 6}' },
+        defaults: {
+          debug: {
+            enabled: false,
+            colors: false,
+            logger(line) {
+              debugLogs.push(line);
+            },
+          },
+        },
+      },
+      registry,
+    );
+
+    const schema = z.object({ val: z.number() });
+    const result = await llm.structured(schema, "Return JSON", {
+      debug: {
+        enabled: true,
+      },
+    });
+
+    expect(result.data).toEqual({ val: 6 });
+    expect(debugLogs.some((line) => line.includes("[structured][request]"))).toBe(true);
+    expect(debugLogs.some((line) => line.includes("[structured][response]"))).toBe(true);
+  });
 });
