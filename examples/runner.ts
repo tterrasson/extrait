@@ -8,6 +8,7 @@
 const availableExamples = [
   "streaming",
   "streaming-with-tools",
+  "abort-signal",
   "simple",
   "data-extraction",
   "sentiment-analysis",

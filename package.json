@@ -36,7 +36,7 @@
     "prepublishOnly": "bun run lint && bun run build && bun run build:types",
     "test": "bun test tests/ --reporter=dots --only-failures",
     "typecheck": "bunx tsc --noEmit",
-    "pack": "bun run build && npm pack"
+    "pack": "bun run build:types && bun run build && npm pack"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",

@@ -71,6 +71,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
             stream: true,
           }),
         ),
+        signal: request.signal,
       });
 
       if (!response.ok) {
@@ -169,6 +170,7 @@ async function completeWithChatCompletionsPassThrough(
         stream: false,
       }),
     ),
+    signal: request.signal,
   });
 
   if (!response.ok) {
@@ -227,6 +229,7 @@ async function completeWithChatCompletionsWithMCP(
           parallel_tool_calls: request.parallelToolCalls,
         }),
       ),
+      signal: request.signal,
     });
 
     if (!response.ok) {
@@ -309,6 +312,7 @@ async function completeWithResponsesAPIPassThrough(
         max_output_tokens: request.maxTokens,
       }),
     ),
+    signal: request.signal,
   });
 
   if (!response.ok) {
@@ -366,6 +370,7 @@ async function completeWithResponsesAPIWithMCP(
           parallel_tool_calls: request.parallelToolCalls,
         }),
       ),
+      signal: request.signal,
     });
 
     if (!response.ok) {
@@ -466,6 +471,7 @@ async function streamWithChatCompletionsWithMCP(
           stream: true,
         }),
       ),
+      signal: request.signal,
     });
 
     if (!response.ok) {
@@ -592,6 +598,7 @@ async function streamWithResponsesAPIPassThrough(
         stream: true,
       }),
     ),
+    signal: request.signal,
   });
 
   if (!response.ok) {
@@ -700,6 +707,7 @@ async function streamWithResponsesAPIWithMCP(
           stream: true,
         }),
       ),
+      signal: request.signal,
     });
 
     if (!response.ok) {

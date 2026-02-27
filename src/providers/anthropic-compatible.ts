@@ -72,6 +72,7 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
             stream: true,
           }),
         ),
+        signal: request.signal,
       });
 
       if (!response.ok) {
@@ -147,6 +148,7 @@ async function completePassThrough(
         stream: false,
       }),
     ),
+    signal: request.signal,
   });
 
   if (!response.ok) {
@@ -207,6 +209,7 @@ async function completeWithMCPToolLoop(
           stream: false,
         }),
       ),
+      signal: request.signal,
     });
 
     if (!response.ok) {
@@ -312,6 +315,7 @@ async function streamWithMCPToolLoop(
           stream: true,
         }),
       ),
+      signal: request.signal,
     });
 
     if (!response.ok) {

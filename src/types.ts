@@ -150,6 +150,7 @@ export interface LLMRequest {
   unknownToolError?: (toolName: string) => string;
   toolDebug?: boolean | LLMToolDebugOptions;
   body?: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 export interface LLMUsage {

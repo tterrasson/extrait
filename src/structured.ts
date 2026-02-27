@@ -836,6 +836,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
     onToolExecution: options.request?.onToolExecution,
     toolDebug: options.request?.toolDebug,
     body: options.request?.body,
+    signal: options.request?.signal,
   };
 
   emitDebugRequest(options.debug, {

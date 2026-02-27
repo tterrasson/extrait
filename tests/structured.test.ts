@@ -440,6 +440,69 @@ describe("structured", () => {
     expect(model.requests[0]?.prompt).toContain("Return a value.");
   });
 
+  test("forwards request.signal to adapter complete calls", async () => {
+    const schema = z.object({ value: z.number() });
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+
+    const model: LLMAdapter = {
+      async complete(request: LLMRequest): Promise<LLMResponse> {
+        receivedSignal = request.signal;
+        return {
+          text: '{"value": 11}',
+          finishReason: "stop",
+        };
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      selfHeal: false,
+      request: {
+        signal: controller.signal,
+      },
+    });
+
+    expect(result.data).toEqual({ value: 11 });
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
+  test("forwards request.signal to adapter stream calls", async () => {
+    const schema = z.object({ value: z.number() });
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: '{"value": 22}' };
+      },
+      async stream(request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        receivedSignal = request.signal;
+        callbacks.onStart?.();
+        callbacks.onToken?.('{"value":22}');
+        callbacks.onChunk?.({ textDelta: '{"value":22}' });
+        const out = {
+          text: '{"value":22}',
+          finishReason: "stop",
+        };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      selfHeal: false,
+      request: {
+        signal: controller.signal,
+      },
+      stream: {
+        enabled: true,
+      },
+    });
+
+    expect(result.data).toEqual({ value: 22 });
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
   test("outdents multiline prompt strings by default", async () => {
     const schema = z.object({ value: z.number() });
     const model = new MockAdapter(['{"value": 1}']);
