@@ -319,6 +319,43 @@ describe("executeMCPToolCalls", () => {
     expect(results[0]!.execution.output).toBe("transformed");
   });
 
+  test("transformToolArguments transforms args before callTool and receives context", async () => {
+    let calledWith: { name: string; arguments: Record<string, unknown> } | undefined;
+    const client = createMockClient("svc", [{ name: "do-work" }], (params) => {
+      calledWith = params;
+      return { ok: true };
+    });
+    const toolset = await resolveMCPToolset([client]);
+
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "do_work", arguments: '{"x":1}' }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          transformToolArguments: (args, context) => {
+            expect(args).toEqual({ x: 1 });
+            expect(context).toEqual({
+              name: "do_work",
+              remoteName: "do-work",
+              clientId: "svc",
+            });
+            return { x: 2, injected: true };
+          },
+        },
+      },
+    );
+
+    expect(calledWith).toEqual({
+      name: "do-work",
+      arguments: { x: 2, injected: true },
+    });
+    expect(results[0]!.call.arguments).toEqual({ x: 1 });
+    expect(results[0]!.execution.arguments).toEqual({ x: 1 });
+    expect(results[0]!.execution.output).toEqual({ ok: true });
+  });
+
   test("transformToolOutput is NOT called when the tool throws", async () => {
     let called = false;
     const client = createMockClient("svc", [{ name: "run" }], () => {
