@@ -49,7 +49,7 @@ const ResultSchema = s.schema(
   }),
 );
 
-const userInput = process.argv.slice(2).join(" ").trim();
+const userInput = process.argv.slice(3).join(" ").trim();
 const question = userInput || "Calculate 15 multiplied by 7, then add 23 to the result";
 
 console.log(`Question: ${question}\n`);
