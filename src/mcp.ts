@@ -42,6 +42,7 @@ export interface CreateMCPClientOptions {
   id: string;
   transport: MCPTransportConfig;
   clientInfo?: MCPClientInfo;
+  toolCallTimeoutMs?: number;
 }
 
 export interface ManagedMCPToolClient extends MCPToolClient {
@@ -61,6 +62,7 @@ export async function createMCPClient(options: CreateMCPClientOptions): Promise<
     id: options.id,
     client,
     transport,
+    toolCallTimeoutMs: options.toolCallTimeoutMs,
   });
 }
 
@@ -68,6 +70,7 @@ export interface WrapMCPClientOptions {
   id: string;
   client: Client;
   transport?: Transport;
+  toolCallTimeoutMs?: number;
 }
 
 export function wrapMCPClient(options: WrapMCPClientOptions): ManagedMCPToolClient {
@@ -87,7 +90,12 @@ export function wrapMCPClient(options: WrapMCPClientOptions): ManagedMCPToolClie
       };
     },
     async callTool(params) {
-      return options.client.callTool(params);
+      const callOptions =
+        options.toolCallTimeoutMs === undefined
+          ? undefined
+          : { timeout: options.toolCallTimeoutMs };
+
+      return options.client.callTool(params, undefined, callOptions);
     },
     async close() {
       await options.client.close();
