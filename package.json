@@ -39,7 +39,7 @@
     "pack": "bun run build:types && bun run build && npm pack"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "jsonrepair": "^3.13.2",
     "zod": "^3.25.76"
   },
