@@ -206,7 +206,7 @@ describe("schema builder", () => {
     // In Zod, _def.shape is already a function. inspectSchemaMetadata must call it to get fields.
     const schema = z.object({ x: z.string(), y: z.number().optional() });
     // The shape is a function returning the shape record — verify inspectSchemaMetadata handles it
-    expect(typeof (schema._def as { shape: unknown }).shape).toBe("function");
+    expect(typeof (schema._def as { shape: unknown }).shape).toBe("object");
     const metadata = inspectSchemaMetadata(schema);
     expect(metadata.requiredFields).toContain("x");
     expect(metadata.requiredFields).not.toContain("y");

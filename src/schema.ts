@@ -5,7 +5,7 @@ const RE_WHITESPACE = /\s+/g;
 
 type ZodLike = z.ZodTypeAny & {
   _def?: {
-    typeName?: string;
+    type?: string;
     [key: string]: unknown;
   };
 };
@@ -37,51 +37,42 @@ function unwrap(schema: ZodLike): UnwrappedSchema {
   let nullable = false;
 
   while (true) {
-    const typeName = current?._def?.typeName;
+    const typeName = current?._def?.type;
     if (!typeName) {
       break;
     }
 
-    if (typeName === "ZodOptional") {
+    if (typeName === "optional") {
       optional = true;
       current = (current._def?.innerType as ZodLike) ?? current;
       continue;
     }
 
-    if (typeName === "ZodDefault") {
+    if (typeName === "default") {
       optional = true;
       current = (current._def?.innerType as ZodLike) ?? current;
       continue;
     }
 
-    if (typeName === "ZodNullable") {
+    if (typeName === "nullable") {
       nullable = true;
       current = (current._def?.innerType as ZodLike) ?? current;
       continue;
     }
 
-    if (typeName === "ZodEffects") {
-      current = (current._def?.schema as ZodLike) ?? current;
+    if (typeName === "pipe") {
+      // transform: _def.out.type === "transform" → follow input; real pipeline → follow output
+      const outType = (current._def?.out as ZodLike)?._def?.type;
+      if (outType === "transform") {
+        current = (current._def?.in as ZodLike) ?? current;
+      } else {
+        current = (current._def?.out as ZodLike) ?? current;
+      }
       continue;
     }
 
-    if (typeName === "ZodBranded") {
-      current = (current._def?.type as ZodLike) ?? current;
-      continue;
-    }
-
-    if (typeName === "ZodCatch") {
+    if (typeName === "catch" || typeName === "readonly") {
       current = (current._def?.innerType as ZodLike) ?? current;
-      continue;
-    }
-
-    if (typeName === "ZodReadonly") {
-      current = (current._def?.innerType as ZodLike) ?? current;
-      continue;
-    }
-
-    if (typeName === "ZodPipeline") {
-      current = (current._def?.out as ZodLike) ?? current;
       continue;
     }
 
@@ -101,88 +92,81 @@ function formatCore(schema: ZodLike, depth: number, seen: WeakSet<ZodLike>): str
   }
 
   seen.add(schema);
-  const typeName = schema?._def?.typeName;
+  const typeName = schema?._def?.type;
 
   switch (typeName) {
-    case "ZodString":
+    case "string":
       return "string";
-    case "ZodNumber":
+    case "number":
       return isIntegerNumber(schema) ? "int" : "number";
-    case "ZodBoolean":
+    case "boolean":
       return "boolean";
-    case "ZodBigInt":
+    case "bigint":
       return "bigint";
-    case "ZodDate":
+    case "date":
       return "Date";
-    case "ZodUndefined":
+    case "undefined":
       return "undefined";
-    case "ZodNull":
+    case "null":
       return "null";
-    case "ZodAny":
+    case "any":
       return "any";
-    case "ZodUnknown":
+    case "unknown":
       return "unknown";
-    case "ZodNever":
+    case "never":
       return "never";
-    case "ZodVoid":
+    case "void":
       return "void";
-    case "ZodLiteral": {
-      const value = schema._def?.value;
+    case "literal": {
+      const value = (schema._def?.values as unknown[])?.[0];
       return JSON.stringify(value);
     }
-    case "ZodEnum": {
-      const values = (schema._def?.values as string[] | undefined) ?? [];
-      return values.map((value) => JSON.stringify(value)).join(" | ") || "string";
+    case "enum": {
+      // covers both z.enum() and z.nativeEnum() — both use _def.entries in Zod 4
+      const entries = schema._def?.entries as Record<string, unknown> | undefined;
+      const values = Object.values(entries ?? {});
+      const unique = [...new Set(values.filter((v) => typeof v !== "string" || Number.isNaN(Number(v))))];
+      return unique.map((v) => JSON.stringify(v)).join(" | ") || "string";
     }
-    case "ZodNativeEnum": {
-      const values = Object.values((schema._def?.values as Record<string, unknown> | undefined) ?? {});
-      const unique = [...new Set(values.filter((value) => typeof value !== "string" || Number.isNaN(Number(value))))];
-      return unique.map((value) => JSON.stringify(value)).join(" | ") || "string";
-    }
-    case "ZodArray": {
-      const inner = formatType((schema._def?.type as ZodLike) ?? schema, depth, seen);
+    case "array": {
+      const inner = formatType((schema._def?.element as ZodLike) ?? schema, depth, seen);
       return requiresParentheses(inner) ? `(${inner})[]` : `${inner}[]`;
     }
-    case "ZodTuple": {
+    case "tuple": {
       const items = ((schema._def?.items as ZodLike[] | undefined) ?? []).map((item) =>
         formatType(item, depth, seen),
       );
       return `[${items.join(", ")}]`;
     }
-    case "ZodUnion": {
+    case "union": {
+      // covers both z.union() and z.discriminatedUnion() — both use _def.options array in Zod 4
       const options = ((schema._def?.options as ZodLike[] | undefined) ?? []).map((option) =>
         formatType(option, depth, seen),
       );
       return options.join(" | ") || "unknown";
     }
-    case "ZodDiscriminatedUnion": {
-      const options = Array.from(
-        (((schema._def?.options as Map<unknown, ZodLike> | undefined) ?? new Map()).values()),
-      ).map((option) => formatType(option, depth, seen));
-      return options.join(" | ") || "unknown";
-    }
-    case "ZodIntersection": {
+    case "intersection": {
       const left = formatType((schema._def?.left as ZodLike) ?? schema, depth, seen);
       const right = formatType((schema._def?.right as ZodLike) ?? schema, depth, seen);
       return `${left} & ${right}`;
     }
-    case "ZodRecord": {
+    case "record": {
       const keyType = formatType((schema._def?.keyType as ZodLike) ?? schema, depth, seen);
       const valueType = formatType((schema._def?.valueType as ZodLike) ?? schema, depth, seen);
       return `Record<${keyType}, ${valueType}>`;
     }
-    case "ZodMap": {
+    case "map": {
       const keyType = formatType((schema._def?.keyType as ZodLike) ?? schema, depth, seen);
       const valueType = formatType((schema._def?.valueType as ZodLike) ?? schema, depth, seen);
       return `Map<${keyType}, ${valueType}>`;
     }
-    case "ZodSet": {
+    case "set": {
       const valueType = formatType((schema._def?.valueType as ZodLike) ?? schema, depth, seen);
       return `Set<${valueType}>`;
     }
-    case "ZodObject":
+    case "object":
       return formatObject(schema, depth, seen);
-    case "ZodLazy":
+    case "lazy":
       return "unknown";
     default:
       return "unknown";
@@ -224,47 +208,32 @@ function requiresParentheses(typeText: string): boolean {
 }
 
 function isIntegerNumber(schema: ZodLike): boolean {
-  const checks = (schema._def?.checks as Array<{ kind?: string }> | undefined) ?? [];
-  return checks.some((check) => check.kind === "int");
+  const checks = (schema._def?.checks as Array<{ isInt?: boolean }> | undefined) ?? [];
+  return checks.some((check) => check.isInt === true);
 }
 
 function readSchemaDescription(schema: ZodLike): string | undefined {
   let current = schema;
 
-  while (current?._def?.typeName) {
-    const direct = current._def.description;
-    if (typeof direct === "string" && direct.trim().length > 0) {
-      return sanitizeDescription(direct);
+  while (current?._def?.type) {
+    const desc = (current as { description?: unknown }).description;
+    if (typeof desc === "string" && desc.trim().length > 0) {
+      return sanitizeDescription(desc);
     }
 
-    const fallback = (current as { description?: unknown }).description;
-    if (typeof fallback === "string" && fallback.trim().length > 0) {
-      return sanitizeDescription(fallback);
-    }
-
-    const typeName = current._def.typeName;
-    if (typeName === "ZodOptional" || typeName === "ZodDefault" || typeName === "ZodNullable") {
+    const typeName = current._def.type;
+    if (typeName === "optional" || typeName === "default" || typeName === "nullable") {
       current = (current._def.innerType as ZodLike) ?? current;
       continue;
     }
 
-    if (typeName === "ZodEffects") {
-      current = (current._def.schema as ZodLike) ?? current;
+    if (typeName === "pipe") {
+      current = (current._def.in as ZodLike) ?? current;
       continue;
     }
 
-    if (typeName === "ZodBranded") {
-      current = (current._def.type as ZodLike) ?? current;
-      continue;
-    }
-
-    if (typeName === "ZodCatch" || typeName === "ZodReadonly") {
+    if (typeName === "catch" || typeName === "readonly") {
       current = (current._def.innerType as ZodLike) ?? current;
-      continue;
-    }
-
-    if (typeName === "ZodPipeline") {
-      current = (current._def.out as ZodLike) ?? current;
       continue;
     }
 
