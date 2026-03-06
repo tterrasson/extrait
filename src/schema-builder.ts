@@ -34,7 +34,7 @@ function ensurePatchedZod(): void {
   if (!zodNumberPrototype.coerce) {
     zodNumberPrototype.coerce = function coerceNumber(): z.ZodNumber {
       const coerced = z.coerce.number();
-      return coerced;
+      return coerced as unknown as z.ZodNumber;
     };
   }
 

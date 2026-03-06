@@ -181,7 +181,7 @@ export function buildSelfHealPrompt(input: SelfHealPromptInput): string {
     selectedInput: input.selectedInput ?? "raw",
     issueSummary: issueText,
     validationIssues: input.issues.map((issue) => ({
-      path: formatIssuePath(issue.path),
+      path: formatIssuePath(issue.path as Array<string | number>),
       code: issue.code,
       message: issue.message,
       expected: "expected" in issue ? issue.expected : undefined,
@@ -243,7 +243,8 @@ export async function structured<TSchema extends z.ZodTypeAny>(
   const mode = normalized.mode ?? "loose";
   const selfHealConfig = normalizeSelfHealConfig(normalized.selfHeal, mode);
   const parseOptions = mergeParseOptions(mode, normalized.parse);
-  const streamConfig = normalizeStreamConfig(normalized.stream);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const streamConfig = normalizeStreamConfig(normalized.stream as any);
   const debugConfig = normalizeDebugConfig(normalized.debug);
   const attempts: StructuredAttempt<z.infer<TSchema>>[] = [];
   const useOutdent = normalized.outdent ?? true;
@@ -772,7 +773,7 @@ function buildSelfHealFailureFingerprint<T>(attempt: StructuredAttempt<T>): stri
   const issues = attempt.zodIssues
     .map(
       (issue) =>
-        `${formatIssuePath(issue.path)}:${issue.code}:${normalizeWhitespace(issue.message)}`,
+        `${formatIssuePath(issue.path as Array<string | number>)}:${issue.code}:${normalizeWhitespace(issue.message)}`,
     )
     .sort()
     .join("|");
