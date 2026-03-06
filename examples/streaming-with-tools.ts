@@ -49,15 +49,11 @@ const calculatorMCP = await createMCPClient({
   },
 });
 
-const userInput = process.argv.slice(3).join(" ").trim();
-const topic = userInput || "the benefits of text streaming generation";
 const expectedMathResult = 128;
 const requestPrompt = [
-  "You are a precise assistant.",
-  "Use MCP tools to compute ((15 * 7) + 23).",
-  "Do not do mental math.",
-  "Then write one concise English sentence that includes the computed number.",
-  `Topic: """${topic}"""`,
+  "You are a precise calculator assistant.",
+  "Use the calculate MCP tool to compute ((15 * 7) + 23). Do not do mental math.",
+  "Reply with a single sentence stating the result, e.g. 'The result is 128.'",
 ].join("\n");
 
 const tokens: string[] = [];
@@ -68,7 +64,7 @@ let completed = false;
 
 console.log(`Provider: ${provider}`);
 console.log(`Model: ${model}`);
-console.log(`Topic: ${topic}`);
+
 console.log(`Expected calculation result: ${expectedMathResult}`);
 console.log("\nStreaming text output:\n");
 

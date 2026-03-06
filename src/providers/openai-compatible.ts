@@ -1,6 +1,7 @@
 import type {
   HTTPHeaders,
   LLMAdapter,
+  LLMMessage,
   LLMRequest,
   LLMResponse,
   LLMStreamCallbacks,
@@ -851,6 +852,14 @@ function buildHeaders(options: OpenAICompatibleAdapterOptions): HTTPHeaders {
 }
 
 function buildMessages(request: LLMRequest): Array<Record<string, unknown>> {
+  if (Array.isArray(request.messages) && request.messages.length > 0) {
+    return request.messages.map((message) => toOpenAIMessage(message));
+  }
+
+  if (typeof request.prompt !== "string" || request.prompt.trim().length === 0) {
+    throw new Error("LLMRequest must include a prompt or messages.");
+  }
+
   const messages: Array<Record<string, unknown>> = [];
   if (request.systemPrompt) {
     messages.push({ role: "system", content: request.systemPrompt });
@@ -864,18 +873,18 @@ function buildResponsesInput(request: LLMRequest): unknown {
     return request.body.input;
   }
 
-  const input: Array<Record<string, unknown>> = [];
-  if (request.systemPrompt) {
-    input.push({
-      role: "system",
-      content: request.systemPrompt,
-    });
+  if (Array.isArray(request.messages) && request.messages.length > 0) {
+    return request.messages.map((message) => toOpenAIMessage(message));
   }
-  input.push({
-    role: "user",
-    content: request.prompt,
-  });
-  return input;
+
+  return buildMessages(request);
+}
+
+function toOpenAIMessage(message: LLMMessage): Record<string, unknown> {
+  return {
+    role: message.role,
+    content: message.content,
+  };
 }
 
 function toResponsesTools(tools: Array<Record<string, unknown>> | undefined): Array<Record<string, unknown>> | undefined {

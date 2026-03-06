@@ -1,4 +1,9 @@
-import type { StructuredPromptContext, StructuredPromptPayload, StructuredPromptResolver } from "./types";
+import type {
+  LLMMessage,
+  StructuredPromptContext,
+  StructuredPromptPayload,
+  StructuredPromptResolver
+} from "./types";
 import { createOutdent } from "./outdent";
 
 function toPromptString(value: unknown): string {
@@ -76,44 +81,46 @@ function toPromptMessage(input: string | TemplateStringsArray, values: unknown[]
   return renderPromptTemplate(input, values);
 }
 
-function joinMessages(messages: string[]): string {
-  return messages.join("\n\n");
-}
-
 export interface PromptMessageBuilder extends StructuredPromptResolver {
   system(input: string): PromptMessageBuilder;
   system(strings: TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder;
   user(input: string): PromptMessageBuilder;
   user(strings: TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder;
+  assistant(input: string): PromptMessageBuilder;
+  assistant(strings: TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder;
   build(): StructuredPromptPayload;
 }
 
 class PromptMessageBuilderImpl implements PromptMessageBuilder {
-  private readonly systemMessages: string[] = [];
-  private readonly userMessages: string[] = [];
+  private readonly messages: LLMMessage[] = [];
 
   system(input: string | TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder {
-    const message = toPromptMessage(input, values);
-    if (message.length > 0) {
-      this.systemMessages.push(message);
-    }
-    return this;
+    return this.pushMessage("system", input, values);
   }
 
   user(input: string | TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder {
+    return this.pushMessage("user", input, values);
+  }
+
+  assistant(input: string | TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder {
+    return this.pushMessage("assistant", input, values);
+  }
+
+  private pushMessage(
+    role: LLMMessage["role"],
+    input: string | TemplateStringsArray,
+    values: unknown[],
+  ): PromptMessageBuilder {
     const message = toPromptMessage(input, values);
     if (message.length > 0) {
-      this.userMessages.push(message);
+      this.messages.push({ role, content: message });
     }
     return this;
   }
 
   build(): StructuredPromptPayload {
-    const prompt = joinMessages(this.userMessages);
-    const systemPrompt = joinMessages(this.systemMessages);
     return {
-      prompt,
-      systemPrompt: systemPrompt.length > 0 ? systemPrompt : undefined,
+      messages: this.messages.map((message) => ({ ...message })),
     };
   }
 

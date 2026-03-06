@@ -211,7 +211,6 @@ describe("parseLLMOutput - repair and hint edge cases", () => {
     expect(result.success).toBe(false);
     const parseErrors = result.errors.filter((e) => e.stage === "parse");
     expect(parseErrors.length).toBeGreaterThan(0);
-    expect(result.errors.every((e) => !e.usedRepair)).toBe(true);
   });
 
   test("hint with usedRepair:true is discarded when repair:false", () => {

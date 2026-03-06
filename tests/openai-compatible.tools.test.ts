@@ -41,6 +41,48 @@ function createCalculatorMCP(onCall?: (args: Record<string, unknown>) => void): 
 }
 
 describe("openai-compatible MCP tools", () => {
+  test("uses request.messages for chat completions pass-through", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "ok",
+            },
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      messages: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "Hi" },
+        { role: "user", content: "Need help" },
+      ],
+    });
+
+    expect(out.text).toBe("ok");
+    expect(requests[0]?.messages).toEqual([
+      { role: "system", content: "You are helpful." },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "Need help" },
+    ]);
+  });
+
   test("executes MCP tools with chat completions", async () => {
     const requests: Record<string, unknown>[] = [];
     let round = 0;
@@ -98,7 +140,12 @@ describe("openai-compatible MCP tools", () => {
     });
 
     const out = await adapter.complete({
-      prompt: "Compute 2+3",
+      messages: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "Hi" },
+        { role: "user", content: "Compute 2+3" },
+      ],
       mcpClients: [createCalculatorMCP((args) => (argsSeen = args))],
       onToolExecution: (execution) => {
         executions.push({
@@ -116,6 +163,12 @@ describe("openai-compatible MCP tools", () => {
     expect(executions).toEqual([{ callId: "call_add", name: "add", clientId: "calculator" }]);
 
     const first = requests[0];
+    expect(first?.messages).toEqual([
+      { role: "system", content: "You are helpful." },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "Compute 2+3" },
+    ]);
     const tools = Array.isArray(first?.tools) ? first.tools : [];
     expect(((tools[0] as { function?: { name?: string } }).function?.name)).toBe("add");
 
@@ -240,7 +293,12 @@ describe("openai-compatible MCP tools", () => {
     });
 
     const out = await adapter.complete({
-      prompt: "Add 7 and 9",
+      messages: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: "First turn" },
+        { role: "assistant", content: "Seen" },
+        { role: "user", content: "Add 7 and 9" },
+      ],
       mcpClients: [createCalculatorMCP((args) => (argsSeen = args))],
     });
 
@@ -254,6 +312,14 @@ describe("openai-compatible MCP tools", () => {
     expect(second?.previous_response_id).toBe("resp_1");
     const inputItems = Array.isArray(second?.input) ? second.input : [];
     expect((inputItems[0] as { type?: string }).type).toBe("function_call_output");
+
+    const firstInput = Array.isArray(requests[0]?.input) ? requests[0]?.input : [];
+    expect(firstInput).toEqual([
+      { role: "system", content: "You are helpful." },
+      { role: "user", content: "First turn" },
+      { role: "assistant", content: "Seen" },
+      { role: "user", content: "Add 7 and 9" },
+    ]);
   });
 
   test("toolDebug logs request and result payloads for each MCP call", async () => {

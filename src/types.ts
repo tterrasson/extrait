@@ -135,9 +135,15 @@ export interface MCPToolClient {
   close?(): Promise<void>;
 }
 
+export interface LLMMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: unknown;
+}
+
 export interface LLMRequest {
-  prompt: string;
+  prompt?: string;
   systemPrompt?: string;
+  messages?: LLMMessage[];
   temperature?: number;
   maxTokens?: number;
   mcpClients?: MCPToolClient[];
@@ -268,8 +274,9 @@ export interface StructuredPromptContext {
 }
 
 export interface StructuredPromptPayload {
-  prompt: string;
+  prompt?: string;
   systemPrompt?: string;
+  messages?: LLMMessage[];
 }
 
 export interface StructuredPromptResolver {
@@ -329,7 +336,7 @@ export interface StructuredCallOptions<TSchema extends z.ZodTypeAny> {
   debug?: boolean | StructuredDebugOptions;
   observe?: (event: StructuredTraceEvent) => void;
   systemPrompt?: string;
-  request?: Omit<LLMRequest, "prompt" | "systemPrompt">;
+  request?: Omit<LLMRequest, "prompt" | "systemPrompt" | "messages">;
   schemaInstruction?: string;
 }
 

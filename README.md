@@ -128,6 +128,16 @@ const result = await llm.structured(
     .user`Analyze: """${input}"""`
 );
 
+// Multi-turn conversation
+const conversationResult = await llm.structured(
+  Schema,
+  prompt()
+    .system`You are an expert assistant.`
+    .user`Hello`
+    .assistant`Hi, how can I help?`
+    .user`Analyze: """${input}"""`
+);
+
 // With options
 const result = await llm.structured(
   Schema,
@@ -136,6 +146,7 @@ const result = await llm.structured(
     mode: "loose",
     selfHeal: 1,
     debug: true,
+    systemPrompt: "You are a helpful assistant.",
     stream: {
       to: "stdout",
       onData: (event) => {
@@ -145,9 +156,14 @@ const result = await llm.structured(
         }
       },
     },
+    request: {
+      signal: abortController.signal,  // optional AbortSignal
+    },
   }
 );
 ```
+
+`prompt()` builds an ordered `messages` payload. Use `prompt\`...\`` for a single string prompt, or the fluent builder for multi-turn conversations. The `LLMMessage` type is exported if you need to type your own message arrays.
 
 ### Result Object
 
@@ -219,6 +235,10 @@ const result = await llm.structured(
       transformToolOutput: (output, execution) => {
         return { ...output, source: execution.name };
       },
+      // Optional: transform tool arguments before the tool is called
+      transformToolArguments: (args, call) => args,
+      // Optional: custom error message when an unknown tool is called
+      unknownToolError: (toolName) => `Tool "${toolName}" is not available.`,
     },
   }
 );

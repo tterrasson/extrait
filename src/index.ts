@@ -21,7 +21,7 @@ export {
   type MCPTransportConfig,
   type ManagedMCPToolClient,
 } from "./mcp";
-export { prompt } from "./prompt";
+export { prompt, type PromptMessageBuilder } from "./prompt";
 export { s, inspectSchemaMetadata, inferSchemaExample } from "./schema-builder";
 export {
   buildDefaultStructuredPrompt,
@@ -77,6 +77,7 @@ export type {
   ExtractionParseHint,
   HTTPHeaders,
   LLMAdapter,
+  LLMMessage,
   LLMRequest,
   LLMResponse,
   LLMStreamCallbacks,

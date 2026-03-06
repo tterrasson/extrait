@@ -49,6 +49,59 @@ function createSumMCP(onCall?: (args: Record<string, unknown>) => void): MCPTool
 }
 
 describe("anthropic-compatible MCP tools", () => {
+  test("uses request.messages and extracts leading system turns", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      messages: [
+        { role: "system", content: "System one" },
+        { role: "system", content: "System two" },
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "Hi" },
+        { role: "user", content: "Need help" },
+      ],
+    });
+
+    expect(out.text).toBe("ok");
+    expect(requests[0]?.system).toBe("System one\n\nSystem two");
+    expect(requests[0]?.messages).toEqual([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+      { role: "user", content: "Need help" },
+    ]);
+  });
+
+  test("rejects system turns after non-system messages", async () => {
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher: (async () => jsonResponse({})) as unknown as typeof fetch,
+    });
+
+    await expect(
+      adapter.complete({
+        messages: [
+          { role: "user", content: "Hello" },
+          { role: "system", content: "Late system" },
+        ],
+      }),
+    ).rejects.toThrow('Anthropic-compatible messages only support "system" turns at the beginning.');
+  });
+
   test("executes MCP tools with local handler loop", async () => {
     const requests: Record<string, unknown>[] = [];
     let round = 0;
@@ -88,7 +141,12 @@ describe("anthropic-compatible MCP tools", () => {
     });
 
     const out = await adapter.complete({
-      prompt: "Calcule 4 + 6",
+      messages: [
+        { role: "system", content: "You are helpful." },
+        { role: "user", content: "Bonjour" },
+        { role: "assistant", content: "Salut" },
+        { role: "user", content: "Calcule 4 + 6" },
+      ],
       mcpClients: [createSumMCP((args) => (argsSeen = args))],
     });
 
@@ -99,9 +157,11 @@ describe("anthropic-compatible MCP tools", () => {
     expect(out.usage).toEqual({ inputTokens: 11, outputTokens: 4, totalTokens: 15 });
 
     const second = requests[1];
+    expect(requests[0]?.system).toBe("You are helpful.");
+    expect((requests[0]?.messages as Array<{ role?: string }>)[0]?.role).toBe("user");
     const messages = Array.isArray(second?.messages) ? second.messages : [];
-    expect((messages[1] as { role?: string }).role).toBe("assistant");
-    expect((messages[2] as { role?: string }).role).toBe("user");
+    expect((messages[3] as { role?: string }).role).toBe("assistant");
+    expect((messages[4] as { role?: string }).role).toBe("user");
   });
 
   test("returns tool calls in pass-through mode when no MCP clients are provided", async () => {
@@ -167,7 +227,7 @@ describe("anthropic-compatible MCP tools", () => {
         }),
         "[DONE]",
       ]);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",

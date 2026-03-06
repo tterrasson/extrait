@@ -15,7 +15,7 @@ describe("createLLM", () => {
         provider: "mock",
         model: "m1",
         async complete(request) {
-          requests.push(request.prompt);
+          requests.push(request.prompt ?? "");
           return {
             text: options.text,
             finishReason: "stop",

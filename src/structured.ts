@@ -7,6 +7,7 @@ import { sanitizeThink } from "./think";
 import { color, dim, title } from "./utils/debug-colors";
 import type {
   LLMAdapter,
+  LLMMessage,
   LLMRequest,
   LLMUsage,
   ParseLLMOutputOptions,
@@ -249,20 +250,21 @@ export async function structured<TSchema extends z.ZodTypeAny>(
 
   const resolvedPrompt = applyPromptOutdent(resolvePrompt(normalized.prompt, { mode }), useOutdent);
   const resolvedSystemPrompt = applyOutdentToOptionalPrompt(normalized.systemPrompt, useOutdent);
-  const prompt = shouldInjectFormat(resolvedPrompt.prompt, normalized.schemaInstruction)
-    ? formatPrompt(normalized.schema, resolvedPrompt.prompt, {
-        schemaInstruction: normalized.schemaInstruction,
-      })
-    : resolvedPrompt.prompt.trim();
-  const systemPrompt = mergeSystemPrompts(resolvedPrompt.systemPrompt, resolvedSystemPrompt);
+  const preparedPrompt = prepareStructuredPromptPayload(
+    resolvedPrompt,
+    resolvedSystemPrompt,
+    normalized.schema,
+    normalized.schemaInstruction,
+  );
 
   const first = await executeAttempt(adapter, {
-    prompt,
+    prompt: preparedPrompt.prompt,
+    messages: preparedPrompt.messages,
     schema: normalized.schema,
     parseOptions,
     stream: streamConfig,
     request: normalized.request,
-    systemPrompt,
+    systemPrompt: preparedPrompt.systemPrompt,
     observe: normalized.observe,
     debug: debugConfig,
     attemptNumber: 1,
@@ -333,7 +335,7 @@ export async function structured<TSchema extends z.ZodTypeAny>(
       parseOptions,
       stream: streamConfig,
       request: normalized.request,
-      systemPrompt,
+      systemPrompt: preparedPrompt.systemPrompt,
       observe: normalized.observe,
       debug: debugConfig,
       attemptNumber,
@@ -426,13 +428,17 @@ function isPromptResolver(value: StructuredPromptValue): value is StructuredProm
 }
 
 function normalizePromptPayload(value: StructuredPromptPayload): StructuredPromptPayload {
-  if (typeof value.prompt !== "string") {
-    throw new Error("Structured prompt payload must include a string prompt.");
+  const prompt = typeof value.prompt === "string" ? value.prompt : undefined;
+  const messages = Array.isArray(value.messages) ? value.messages.filter(isLLMMessage) : undefined;
+
+  if ((!prompt || prompt.trim().length === 0) && (!messages || messages.length === 0)) {
+    throw new Error("Structured prompt payload must include a non-empty prompt or messages.");
   }
 
   return {
-    prompt: value.prompt,
+    prompt,
     systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : undefined,
+    messages: messages && messages.length > 0 ? messages.map((message) => ({ ...message })) : undefined,
   };
 }
 
@@ -442,9 +448,31 @@ function applyPromptOutdent(payload: StructuredPromptPayload, enabled: boolean):
   }
 
   return {
-    prompt: structuredOutdent.string(payload.prompt),
+    prompt: typeof payload.prompt === "string" ? structuredOutdent.string(payload.prompt) : undefined,
     systemPrompt: applyOutdentToOptionalPrompt(payload.systemPrompt, enabled),
+    messages: payload.messages?.map((message) => ({
+      ...message,
+      content: typeof message.content === "string" ? structuredOutdent.string(message.content) : message.content,
+    })),
   };
+}
+
+function isLLMMessage(value: unknown): value is LLMMessage {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Partial<LLMMessage>;
+  if (
+    candidate.role !== "system" &&
+    candidate.role !== "user" &&
+    candidate.role !== "assistant" &&
+    candidate.role !== "tool"
+  ) {
+    return false;
+  }
+
+  return "content" in candidate;
 }
 
 function applyOutdentToOptionalPrompt(value: string | undefined, enabled: boolean): string | undefined {
@@ -465,6 +493,89 @@ function mergeSystemPrompts(primary?: string, secondary?: string): string | unde
   }
 
   return prompts.join("\n\n");
+}
+
+function prepareStructuredPromptPayload<TSchema extends z.ZodTypeAny>(
+  payload: StructuredPromptPayload,
+  systemPrompt: string | undefined,
+  schema: TSchema,
+  schemaInstruction: string | undefined,
+): { prompt?: string; systemPrompt?: string; messages?: LLMMessage[] } {
+  if (Array.isArray(payload.messages) && payload.messages.length > 0) {
+    const messages = payload.messages.map((message) => ({ ...message }));
+    const mergedSystemPrompt = mergeSystemPrompts(payload.systemPrompt, systemPrompt);
+    const systemMessages = mergedSystemPrompt ? [{ role: "system" as const, content: mergedSystemPrompt }] : [];
+
+    return {
+      messages: injectStructuredFormatIntoMessages([...systemMessages, ...messages], schema, schemaInstruction),
+    };
+  }
+
+  const resolvedPrompt = payload.prompt?.trim();
+  if (!resolvedPrompt) {
+    throw new Error("Structured prompt payload must include a non-empty prompt or messages.");
+  }
+
+  return {
+    prompt: shouldInjectFormat(resolvedPrompt, schemaInstruction)
+      ? formatPrompt(schema, resolvedPrompt, {
+          schemaInstruction,
+        })
+      : resolvedPrompt,
+    systemPrompt: mergeSystemPrompts(payload.systemPrompt, systemPrompt),
+  };
+}
+
+function injectStructuredFormatIntoMessages<TSchema extends z.ZodTypeAny>(
+  messages: LLMMessage[],
+  schema: TSchema,
+  schemaInstruction: string | undefined,
+): LLMMessage[] {
+  const lastUserIndex = findLastUserMessageIndex(messages);
+  if (lastUserIndex === -1) {
+    throw new Error("Structured prompts with messages must include at least one user message.");
+  }
+
+  const target = messages[lastUserIndex];
+  const content = typeof target?.content === "string" ? target.content.trim() : stringifyPromptContent(target?.content);
+  const formatted = shouldInjectFormat(content, schemaInstruction)
+    ? formatPrompt(schema, content, { schemaInstruction })
+    : content.trim();
+
+  return messages.map((message, index) =>
+    index === lastUserIndex
+      ? {
+          ...message,
+          content: formatted,
+        }
+      : message,
+  );
+}
+
+function findLastUserMessageIndex(messages: LLMMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function stringifyPromptContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (content === null || content === undefined) {
+    return "";
+  }
+
+  try {
+    return JSON.stringify(content, null, 2) ?? "";
+  } catch {
+    return String(content);
+  }
 }
 
 function shouldInjectFormat(prompt: string, schemaInstruction: string | undefined): boolean {
@@ -747,7 +858,8 @@ function normalizeDebugConfig(
 }
 
 interface ExecuteAttemptInput<TSchema extends z.ZodTypeAny> {
-  prompt: string;
+  prompt?: string;
+  messages?: LLMMessage[];
   schema: TSchema;
   parseOptions: ParseLLMOutputOptions;
   stream: NormalizedStreamConfig;
@@ -766,6 +878,7 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
 ): Promise<{ response: ModelCallResult; trace: StructuredAttempt<z.infer<TSchema>> }> {
   const response = await callModel(adapter, {
     prompt: input.prompt,
+    messages: input.messages,
     systemPrompt: input.systemPrompt,
     request: input.request,
     stream: input.stream,
@@ -805,7 +918,8 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
 }
 
 interface ModelCallOptions {
-  prompt: string;
+  prompt?: string;
+  messages?: LLMMessage[];
   systemPrompt?: string;
   request?: StructuredCallOptions<z.ZodTypeAny>["request"];
   stream: NormalizedStreamConfig;
@@ -826,6 +940,7 @@ interface ModelCallResult {
 async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promise<ModelCallResult> {
   const requestPayload: LLMRequest = {
     prompt: options.prompt,
+    messages: options.messages,
     systemPrompt: options.systemPrompt,
     temperature: options.request?.temperature,
     maxTokens: options.request?.maxTokens,
@@ -1238,6 +1353,10 @@ function emitDebugRequest(
     input.requestPayload.body !== undefined
       ? JSON.stringify(input.requestPayload.body, null, 2)
       : "(none)";
+  const requestMessages =
+    input.requestPayload.messages !== undefined
+      ? JSON.stringify(input.requestPayload.messages, null, 2)
+      : "(none)";
 
   const lines = [
     color(
@@ -1262,7 +1381,9 @@ function emitDebugRequest(
       ].join(" "),
     ),
     color(config, "prompt:", "yellow"),
-    input.requestPayload.prompt,
+    input.requestPayload.prompt ?? "(none)",
+    color(config, "messages:", "yellow"),
+    requestMessages,
     color(config, "systemPrompt:", "yellow"),
     input.requestPayload.systemPrompt ?? "(none)",
     color(config, "request.body:", "yellow"),

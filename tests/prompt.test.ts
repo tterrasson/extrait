@@ -36,16 +36,33 @@ describe("prompt", () => {
       `
       .build();
 
-    expect(built.systemPrompt).toBe("System line");
-    expect(built.prompt).toBe("User line 1\nUser line 2");
+    expect(built.messages).toEqual([
+      { role: "system", content: "System line" },
+      { role: "user", content: "User line 1\nUser line 2" },
+    ]);
   });
 
   test("supports classic dynamic string fallback", () => {
     const dynamicString = "Prompt dynamique";
     const built = prompt().user(dynamicString).build();
 
-    expect(built.prompt).toBe(dynamicString);
-    expect(built.systemPrompt).toBeUndefined();
+    expect(built.messages).toEqual([{ role: "user", content: dynamicString }]);
+  });
+
+  test("supports assistant messages and preserves turn order", () => {
+    const built = prompt()
+      .system`System line`
+      .user`Hello`
+      .assistant`Hi there`
+      .user`Need help`
+      .build();
+
+    expect(built.messages).toEqual([
+      { role: "system", content: "System line" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi there" },
+      { role: "user", content: "Need help" },
+    ]);
   });
 
   test("handles lines with mixed indentation", () => {

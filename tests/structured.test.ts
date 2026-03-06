@@ -435,9 +435,53 @@ describe("structured", () => {
     );
 
     expect(result.data).toEqual({ value: 7 });
-    expect(model.requests[0]?.systemPrompt).toBe("You are a strict JSON assistant.");
-    expect(model.requests[0]?.prompt).toContain(DEFAULT_SCHEMA_INSTRUCTION);
-    expect(model.requests[0]?.prompt).toContain("Return a value.");
+    expect(model.requests[0]?.messages).toEqual([
+      { role: "system", content: "You are a strict JSON assistant." },
+      {
+        role: "user",
+        content: expect.stringContaining(DEFAULT_SCHEMA_INSTRUCTION),
+      },
+    ]);
+    expect((model.requests[0]?.messages?.[1] as { content?: string } | undefined)?.content).toContain("Return a value.");
+  });
+
+  test("injects format into last user message in multi-turn conversation", async () => {
+    const schema = z.object({ value: z.number() });
+    const model = new MockAdapter(['{"value": 9}']);
+
+    const result = await structured(
+      model,
+      schema,
+      prompt()
+        .system`You are helpful.`
+        .user`What is 4+5?`
+        .assistant`The answer is 9.`
+        .user`Confirm as JSON.`,
+      { selfHeal: false },
+    );
+
+    expect(result.data).toEqual({ value: 9 });
+    const messages = model.requests[0]?.messages ?? [];
+    // Format injected into LAST user message (index 3), not first user message (index 1)
+    expect((messages[3] as { content?: string }).content).toContain(DEFAULT_SCHEMA_INSTRUCTION);
+    expect((messages[1] as { content?: string }).content).not.toContain(DEFAULT_SCHEMA_INSTRUCTION);
+  });
+
+  test("prepends systemPrompt option as system message when using messages-based prompt", async () => {
+    const schema = z.object({ value: z.number() });
+    const model = new MockAdapter(['{"value": 5}']);
+
+    const result = await structured(
+      model,
+      schema,
+      prompt().user`Return a value.`,
+      { selfHeal: false, systemPrompt: "You are a strict JSON assistant." },
+    );
+
+    expect(result.data).toEqual({ value: 5 });
+    const messages = model.requests[0]?.messages ?? [];
+    expect(messages[0]).toEqual({ role: "system", content: "You are a strict JSON assistant." });
+    expect((messages[1] as { content?: string }).content).toContain(DEFAULT_SCHEMA_INSTRUCTION);
   });
 
   test("forwards request.signal to adapter complete calls", async () => {

@@ -1,6 +1,7 @@
 import type {
   HTTPHeaders,
   LLMAdapter,
+  LLMMessage,
   LLMRequest,
   LLMResponse,
   LLMStreamCallbacks,
@@ -57,6 +58,7 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
         return streamWithMCPToolLoop(options, fetcher, path, request, callbacks);
       }
 
+      const input = resolveAnthropicInput(request);
       const response = await fetcher(buildURL(options.baseURL, path), {
         method: "POST",
         headers: buildHeaders(options),
@@ -65,8 +67,8 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
             ...options.defaultBody,
             ...request.body,
             model: options.model,
-            system: request.systemPrompt,
-            messages: [{ role: "user", content: request.prompt }],
+            system: input.systemPrompt,
+            messages: input.messages,
             temperature: request.temperature,
             max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
             stream: true,
@@ -133,6 +135,7 @@ async function completePassThrough(
   path: string,
   request: LLMRequest,
 ): Promise<LLMResponse> {
+  const input = resolveAnthropicInput(request);
   const response = await fetcher(buildURL(options.baseURL, path), {
     method: "POST",
     headers: buildHeaders(options),
@@ -141,8 +144,8 @@ async function completePassThrough(
         ...options.defaultBody,
         ...request.body,
         model: options.model,
-        system: request.systemPrompt,
-        messages: [{ role: "user", content: request.prompt }],
+        system: input.systemPrompt,
+        messages: input.messages,
         temperature: request.temperature,
         max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
         stream: false,
@@ -181,7 +184,8 @@ async function completeWithMCPToolLoop(
 ): Promise<LLMResponse> {
   const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
 
-  let messages: Array<Record<string, unknown>> = [{ role: "user", content: request.prompt }];
+  const input = resolveAnthropicInput(request);
+  let messages: Array<Record<string, unknown>> = input.messages;
   let aggregatedUsage: LLMUsage | undefined;
   let finishReason: string | undefined;
   let lastPayload: Record<string, unknown> | undefined;
@@ -200,7 +204,7 @@ async function completeWithMCPToolLoop(
           ...options.defaultBody,
           ...request.body,
           model: options.model,
-          system: request.systemPrompt,
+          system: input.systemPrompt,
           messages,
           temperature: request.temperature,
           max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
@@ -285,7 +289,8 @@ async function streamWithMCPToolLoop(
 ): Promise<LLMResponse> {
   const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
 
-  let messages: Array<Record<string, unknown>> = [{ role: "user", content: request.prompt }];
+  const input = resolveAnthropicInput(request);
+  let messages: Array<Record<string, unknown>> = input.messages;
   let aggregatedUsage: LLMUsage | undefined;
   let finishReason: string | undefined;
   let lastPayload: Record<string, unknown> | undefined;
@@ -306,7 +311,7 @@ async function streamWithMCPToolLoop(
           ...options.defaultBody,
           ...request.body,
           model: options.model,
-          system: request.systemPrompt,
+          system: input.systemPrompt,
           messages,
           temperature: request.temperature,
           max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
@@ -434,6 +439,72 @@ function buildHeaders(options: AnthropicCompatibleAdapterOptions): HTTPHeaders {
     "anthropic-version": options.version ?? DEFAULT_ANTHROPIC_VERSION,
     ...options.headers,
   };
+}
+
+function resolveAnthropicInput(
+  request: LLMRequest,
+): { systemPrompt?: string; messages: Array<Record<string, unknown>> } {
+  if (Array.isArray(request.messages) && request.messages.length > 0) {
+    return toAnthropicInput(request.messages);
+  }
+
+  if (typeof request.prompt !== "string" || request.prompt.trim().length === 0) {
+    throw new Error("LLMRequest must include a prompt or messages.");
+  }
+
+  return {
+    systemPrompt: request.systemPrompt,
+    messages: [{ role: "user", content: request.prompt }],
+  };
+}
+
+function toAnthropicInput(
+  messages: LLMMessage[],
+): { systemPrompt?: string; messages: Array<Record<string, unknown>> } {
+  const systemParts: string[] = [];
+  const normalizedMessages: Array<Record<string, unknown>> = [];
+  let sawNonSystem = false;
+
+  for (const message of messages) {
+    if (message.role === "system") {
+      if (sawNonSystem) {
+        throw new Error('Anthropic-compatible messages only support "system" turns at the beginning.');
+      }
+      systemParts.push(stringifyAnthropicSystemContent(message.content));
+      continue;
+    }
+
+    sawNonSystem = true;
+    normalizedMessages.push({
+      role: message.role,
+      content: message.content,
+    });
+  }
+
+  if (normalizedMessages.length === 0) {
+    throw new Error("Anthropic-compatible requests require at least one non-system message.");
+  }
+
+  return {
+    systemPrompt: systemParts.length > 0 ? systemParts.join("\n\n") : undefined,
+    messages: normalizedMessages,
+  };
+}
+
+function stringifyAnthropicSystemContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (content === null || content === undefined) {
+    return "";
+  }
+
+  try {
+    return JSON.stringify(content, null, 2) ?? "";
+  } catch {
+    return String(content);
+  }
 }
 
 function resolveMaxTokens(value: number | undefined, fallback: number | undefined): number {
