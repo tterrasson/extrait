@@ -10,6 +10,7 @@ import type {
   LLMMessage,
   LLMRequest,
   LLMUsage,
+  MCPToolClient,
   ParseLLMOutputOptions,
   ParseTraceEvent,
   StructuredAttempt,
@@ -23,6 +24,7 @@ import type {
   StructuredPromptResolver,
   StructuredPromptValue,
   StructuredResult,
+  StructuredTimeoutOptions,
   StructuredTraceEvent,
 } from "./types";
 
@@ -258,19 +260,28 @@ export async function structured<TSchema extends z.ZodTypeAny>(
     normalized.schemaInstruction,
   );
 
+  const resolvedRequest =
+    normalized.timeout?.tool !== undefined && normalized.request?.mcpClients !== undefined
+      ? {
+          ...normalized.request,
+          mcpClients: applyToolTimeout(normalized.request.mcpClients, normalized.timeout.tool),
+        }
+      : normalized.request;
+
   const first = await executeAttempt(adapter, {
     prompt: preparedPrompt.prompt,
     messages: preparedPrompt.messages,
     schema: normalized.schema,
     parseOptions,
     stream: streamConfig,
-    request: normalized.request,
+    request: resolvedRequest,
     systemPrompt: preparedPrompt.systemPrompt,
     observe: normalized.observe,
     debug: debugConfig,
     attemptNumber: 1,
     selfHeal: false,
     selfHealEnabled: selfHealConfig.enabled,
+    timeout: normalized.timeout,
   });
   attempts.push(first.trace);
 
@@ -335,13 +346,14 @@ export async function structured<TSchema extends z.ZodTypeAny>(
       schema: normalized.schema,
       parseOptions,
       stream: streamConfig,
-      request: normalized.request,
+      request: resolvedRequest,
       systemPrompt: preparedPrompt.systemPrompt,
       observe: normalized.observe,
       debug: debugConfig,
       attemptNumber,
       selfHeal: true,
       selfHealEnabled: selfHealConfig.enabled,
+      timeout: normalized.timeout,
     });
 
     attempts.push(healed.trace);
@@ -871,6 +883,7 @@ interface ExecuteAttemptInput<TSchema extends z.ZodTypeAny> {
   attemptNumber: number;
   selfHeal: boolean;
   selfHealEnabled: boolean;
+  timeout?: StructuredTimeoutOptions;
 }
 
 async function executeAttempt<TSchema extends z.ZodTypeAny>(
@@ -888,6 +901,7 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
     attempt: input.attemptNumber,
     selfHeal: input.selfHeal,
     selfHealEnabled: input.selfHealEnabled,
+    timeout: input.timeout,
   });
 
   const parsed = parseWithObserve(response.text, input.schema, input.parseOptions, {
@@ -929,6 +943,7 @@ interface ModelCallOptions {
   attempt: number;
   selfHeal: boolean;
   selfHealEnabled: boolean;
+  timeout?: StructuredTimeoutOptions;
 }
 
 interface ModelCallResult {
@@ -938,7 +953,39 @@ interface ModelCallResult {
   finishReason?: string;
 }
 
+function withToolTimeout(client: MCPToolClient, toolTimeoutMs: number): MCPToolClient {
+  return {
+    id: client.id,
+    listTools: client.listTools.bind(client),
+    close: client.close?.bind(client),
+    async callTool(params) {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`Tool call timed out after ${toolTimeoutMs}ms`)),
+          toolTimeoutMs,
+        );
+      });
+      try {
+        return await Promise.race([client.callTool(params), timeoutPromise]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+  };
+}
+
+function applyToolTimeout(clients: MCPToolClient[], toolTimeoutMs: number): MCPToolClient[] {
+  return clients.map((client) => withToolTimeout(client, toolTimeoutMs));
+}
+
 async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promise<ModelCallResult> {
+  const requestSignal =
+    options.request?.signal ??
+    (options.timeout?.request !== undefined
+      ? AbortSignal.timeout(options.timeout.request)
+      : undefined);
+
   const requestPayload: LLMRequest = {
     prompt: options.prompt,
     messages: options.messages,
@@ -952,7 +999,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
     onToolExecution: options.request?.onToolExecution,
     toolDebug: options.request?.toolDebug,
     body: options.request?.body,
-    signal: options.request?.signal,
+    signal: requestSignal,
   };
 
   emitDebugRequest(options.debug, {

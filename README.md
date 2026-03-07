@@ -70,6 +70,7 @@ const llm = createLLM({
     mode: "loose" | "strict",            // loose allows repair
     selfHeal: 0 | 1 | 2,                 // retry attempts
     debug: false,                        // show repair logs
+    timeout: { request: 30_000 },        // optional default timeouts
   },
 });
 ```
@@ -158,6 +159,10 @@ const result = await llm.structured(
     },
     request: {
       signal: abortController.signal,  // optional AbortSignal
+    },
+    timeout: {
+      request: 30_000,  // ms per LLM HTTP request
+      tool: 10_000,     // ms per MCP tool call
     },
   }
 );
@@ -281,6 +286,34 @@ const result = await llm.structured(
 await mcpClient.close?.();
 ```
 
+### Timeouts
+
+Use `timeout` to set per-request and per-tool-call time limits without managing `AbortSignal` manually.
+
+```typescript
+const result = await llm.structured(Schema, prompt`...`, {
+  timeout: {
+    request: 30_000,  // abort the LLM HTTP request after 30s
+    tool: 5_000,      // abort each MCP tool call after 5s
+  },
+});
+```
+
+Both fields are optional. `timeout.request` creates an `AbortSignal.timeout` internally; it is ignored if you also pass `request.signal` (your signal takes precedence). `timeout.tool` wraps each MCP client transparently.
+
+You can also set defaults on the client:
+
+```typescript
+const llm = createLLM({
+  provider: "openai-compatible",
+  model: "gpt-5-nano",
+  transport: { apiKey: process.env.LLM_API_KEY },
+  defaults: {
+    timeout: { request: 60_000 },
+  },
+});
+```
+
 ## Examples
 
 Run examples with: `bun run dev <example-name>`
@@ -289,6 +322,7 @@ Available examples:
 - `streaming` - Real LLM streaming + snapshot self-check ([streaming.ts](examples/streaming.ts))
 - `streaming-with-tools` - Real text streaming with MCP tools + self-check ([streaming-with-tools.ts](examples/streaming-with-tools.ts))
 - `abort-signal` - Start a generation then cancel quickly with `AbortSignal` ([abort-signal.ts](examples/abort-signal.ts))
+- `timeout` - Set per-request and per-tool timeouts via the `timeout` option ([timeout.ts](examples/timeout.ts))
 - `simple` - Basic structured output with streaming ([simple.ts](examples/simple.ts))
 - `sentiment-analysis` - Enum validation, strict mode ([sentiment-analysis.ts](examples/sentiment-analysis.ts))
 - `data-extraction` - Complex nested schemas, self-healing ([data-extraction.ts](examples/data-extraction.ts))
@@ -301,6 +335,7 @@ Pass arguments after the example name:
 bun run dev streaming
 bun run dev streaming-with-tools
 bun run dev abort-signal 120 "JSON cancellation demo"
+bun run dev timeout 5000
 bun run dev simple "Bun.js runtime"
 bun run dev sentiment-analysis "I love this product."
 bun run dev multi-step-reasoning "Why is the sky blue?"

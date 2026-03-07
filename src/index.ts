@@ -121,6 +121,7 @@ export type {
   StructuredStreamInput,
   StructuredStreamOptions,
   StructuredSelfHealInput,
+  StructuredTimeoutOptions,
   ThinkDiagnostics,
   ThinkBlock,
   StructuredTraceEvent,

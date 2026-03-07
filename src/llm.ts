@@ -73,6 +73,7 @@ function mergeStructuredOptions<TSchema extends z.ZodTypeAny>(
     stream: mergeObjectLike(defaults?.stream, overrides?.stream),
     selfHeal: mergeObjectLike(defaults?.selfHeal, overrides?.selfHeal),
     debug: mergeObjectLike(defaults?.debug, overrides?.debug),
+    timeout: mergeObjectLike(defaults?.timeout, overrides?.timeout),
   };
 }
 

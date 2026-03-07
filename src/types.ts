@@ -316,6 +316,13 @@ export interface StructuredSelfHealOptions {
 
 export type StructuredSelfHealInput = boolean | number | StructuredSelfHealOptions;
 
+export interface StructuredTimeoutOptions {
+  /** Timeout in ms for each LLM HTTP request. Creates an AbortSignal.timeout internally if no signal is already provided. */
+  request?: number;
+  /** Timeout in ms for each MCP tool call. */
+  tool?: number;
+}
+
 export type StructuredStreamData<T> =
   T extends Array<infer TItem>
     ? Array<StructuredStreamData<TItem>>
@@ -350,6 +357,7 @@ export interface StructuredCallOptions<TSchema extends z.ZodTypeAny> {
   systemPrompt?: string;
   request?: Omit<LLMRequest, "prompt" | "systemPrompt" | "messages">;
   schemaInstruction?: string;
+  timeout?: StructuredTimeoutOptions;
 }
 
 export interface StructuredOptions<TSchema extends z.ZodTypeAny> extends StructuredCallOptions<TSchema> {
