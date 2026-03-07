@@ -550,6 +550,29 @@ function injectStructuredFormatIntoMessages<TSchema extends z.ZodTypeAny>(
   }
 
   const target = messages[lastUserIndex];
+
+  // Multimodal content (array with text + image blocks): inject schema into the text block
+  // and preserve image blocks intact.
+  if (Array.isArray(target?.content)) {
+    const parts = target.content as Array<{ type: string; text?: string; [key: string]: unknown }>;
+    const textIndex = parts.findIndex((p) => p.type === "text");
+    const existingText = textIndex !== -1 ? (parts[textIndex]?.text ?? "").trim() : "";
+    const formatted = shouldInjectFormat(existingText, schemaInstruction)
+      ? formatPrompt(schema, existingText, { schemaInstruction })
+      : existingText;
+
+    let newParts: typeof parts;
+    if (textIndex !== -1) {
+      newParts = parts.map((p, i) => (i === textIndex ? { ...p, text: formatted } : p));
+    } else {
+      newParts = [{ type: "text", text: formatted }, ...parts];
+    }
+
+    return messages.map((message, index) =>
+      index === lastUserIndex ? { ...message, content: newParts as LLMMessage["content"] } : message,
+    );
+  }
+
   const content = typeof target?.content === "string" ? target.content.trim() : stringifyPromptContent(target?.content);
   const formatted = shouldInjectFormat(content, schemaInstruction)
     ? formatPrompt(schema, content, { schemaInstruction })

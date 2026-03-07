@@ -38,7 +38,7 @@
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "sharp": ">=0.30.0"
+    "sharp": "^0.34.5"
   },
   "peerDependenciesMeta": {
     "sharp": {
