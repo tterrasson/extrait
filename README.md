@@ -168,7 +168,7 @@ const result = await llm.structured(
 );
 ```
 
-`prompt()` builds an ordered `messages` payload. Use prompt`...` for a single string prompt, or the fluent builder for multi-turn conversations. The `LLMMessage` type is exported if you need to type your own message arrays.
+`prompt()` builds an ordered `messages` payload. Use ``prompt`...` `` for a single string prompt, or the fluent builder for multi-turn conversations. The `LLMMessage` type is exported if you need to type your own message arrays.
 
 ### Images (multimodal)
 
