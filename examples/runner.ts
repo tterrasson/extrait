@@ -16,6 +16,7 @@ const availableExamples = [
   "multi-step-reasoning",
   "calculator-tool",
   "image-analysis",
+  "conversation",
 ] as const;
 
 const exampleName = process.argv[2] || "simple";

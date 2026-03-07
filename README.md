@@ -175,19 +175,27 @@ const result = await llm.structured(
 Use `images()` to build base64 image content blocks for vision-capable models.
 
 ```typescript
-import { images } from "extrait";
+import { images, prompt } from "extrait";
 import { readFileSync } from "fs";
 
 const base64 = readFileSync("photo.png").toString("base64");
+const img = { base64, mimeType: "image/png" };
 
-// Single image
+// With prompt() builder — pass LLMMessageContent array to .user() or .assistant()
+const result = await llm.structured(Schema,
+  prompt()
+    .system`You are a vision assistant.`
+    .user([{ type: "text", text: "Describe this image." }, ...images(img)])
+);
+
+// With raw messages array
 const result = await llm.structured(Schema, {
   messages: [
     {
       role: "user",
       content: [
         { type: "text", text: "Describe this image." },
-        ...images({ base64, mimeType: "image/png" }),
+        ...images(img),
       ],
     },
   ],
@@ -204,6 +212,38 @@ const content = [
 ```
 
 `images()` accepts a single `{ base64, mimeType }` object or an array, and always returns an `LLMImageContent[]` that spreads directly into a content array.
+
+### Conversations (multi-turn history)
+
+Use `conversation()` to build a `LLMMessage[]` from an existing conversation history. This is the idiomatic way to pass prior turns to the LLM.
+
+```typescript
+import { conversation } from "extrait";
+
+const messages = conversation("You are a helpful assistant.", [
+  { role: "user",      text: "What is the speed of light?" },
+  { role: "assistant", text: "Approximately 299,792 km/s in a vacuum." },
+  { role: "user",      text: "How long does light take to reach Earth from the Sun?" },
+]);
+
+// Pass to adapter directly
+const response = await llm.adapter.complete({ messages });
+
+// Or to structured extraction
+const result = await llm.structured(Schema, { messages });
+```
+
+Entries with `images` produce multimodal content automatically:
+
+```typescript
+const messages = conversation("You are a vision assistant.", [
+  {
+    role: "user",
+    text: "What is in this image?",
+    images: [{ base64, mimeType: "image/png" }],
+  },
+]);
+```
 
 ### Result Object
 
@@ -329,6 +369,7 @@ Available examples:
 - `multi-step-reasoning` - Chained structured calls ([multi-step-reasoning.ts](examples/multi-step-reasoning.ts))
 - `calculator-tool` - MCP tool integration ([calculator-tool.ts](examples/calculator-tool.ts))
 - `image-analysis` - Multimodal structured extraction from an image file ([image-analysis.ts](examples/image-analysis.ts))
+- `conversation` - Multi-turn conversation history and inline image messages ([conversation.ts](examples/conversation.ts))
 
 Pass arguments after the example name:
 ```bash

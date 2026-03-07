@@ -1,5 +1,6 @@
 import type {
   LLMMessage,
+  LLMMessageContent,
   StructuredPromptContext,
   StructuredPromptPayload,
   StructuredPromptResolver
@@ -86,8 +87,10 @@ export interface PromptMessageBuilder extends StructuredPromptResolver {
   system(strings: TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder;
   user(input: string): PromptMessageBuilder;
   user(strings: TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder;
+  user(content: LLMMessageContent): PromptMessageBuilder;
   assistant(input: string): PromptMessageBuilder;
   assistant(strings: TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder;
+  assistant(content: LLMMessageContent): PromptMessageBuilder;
   build(): StructuredPromptPayload;
 }
 
@@ -98,23 +101,31 @@ class PromptMessageBuilderImpl implements PromptMessageBuilder {
     return this.pushMessage("system", input, values);
   }
 
-  user(input: string | TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder {
+  user(input: string | TemplateStringsArray | LLMMessageContent, ...values: unknown[]): PromptMessageBuilder {
     return this.pushMessage("user", input, values);
   }
 
-  assistant(input: string | TemplateStringsArray, ...values: unknown[]): PromptMessageBuilder {
+  assistant(input: string | TemplateStringsArray | LLMMessageContent, ...values: unknown[]): PromptMessageBuilder {
     return this.pushMessage("assistant", input, values);
   }
 
   private pushMessage(
     role: LLMMessage["role"],
-    input: string | TemplateStringsArray,
+    input: string | TemplateStringsArray | LLMMessageContent,
     values: unknown[],
   ): PromptMessageBuilder {
-    const message = toPromptMessage(input, values);
+    if (Array.isArray(input) && !isTemplateStringsArray(input)) {
+      if (input.length > 0) {
+        this.messages.push({ role, content: input as LLMMessageContent });
+      }
+
+      return this;
+    }
+    const message = toPromptMessage(input as string | TemplateStringsArray, values);
     if (message.length > 0) {
       this.messages.push({ role, content: message });
     }
+
     return this;
   }
 

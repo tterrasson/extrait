@@ -152,4 +152,27 @@ describe("prompt", () => {
 
     expect(result).toBe("Null: \nUndefined: ");
   });
+
+  test("accepts LLMMessageContent array in user()", () => {
+    const content = [
+      { type: "text" as const, text: "Describe this image." },
+      { type: "image_url" as const, image_url: { url: "data:image/png;base64,abc123" } },
+    ];
+    const built = prompt().system`You are an assistant.`.user(content).build();
+
+    expect(built.messages).toEqual([
+      { role: "system", content: "You are an assistant." },
+      { role: "user", content },
+    ]);
+  });
+
+  test("accepts LLMMessageContent array in assistant()", () => {
+    const content = [
+      { type: "text" as const, text: "Here is my analysis." },
+      { type: "image_url" as const, image_url: { url: "data:image/png;base64,xyz" } },
+    ];
+    const built = prompt().assistant(content).build();
+
+    expect(built.messages).toEqual([{ role: "assistant", content }]);
+  });
 });
