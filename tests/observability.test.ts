@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { parseLLMOutput } from "../src/parse";
-import { structured } from "../src/structured";
+import { parseLLMOutput } from "@/parse";
+import { structured } from "@/structured";
 import type {
   LLMAdapter,
   LLMRequest,
@@ -9,7 +9,7 @@ import type {
   LLMStreamCallbacks,
   ParseTraceEvent,
   StructuredTraceEvent,
-} from "../src/types";
+} from "@/types";
 
 class StreamingMockAdapter implements LLMAdapter {
   provider = "mock";

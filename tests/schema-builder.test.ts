@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { withFormat } from "../src/format";
-import { getSchemaName, inferSchemaExample, inspectSchemaMetadata, s, setSchemaName } from "../src/schema-builder";
-import { DEFAULT_SCHEMA_INSTRUCTION} from "../src/format";
+import { withFormat } from "@/format";
+import { getSchemaName, inferSchemaExample, inspectSchemaMetadata, s, setSchemaName } from "@/schema-builder";
+import { DEFAULT_SCHEMA_INSTRUCTION} from "@/format";
 
 describe("schema builder", () => {
   test("inspects required/defaults/descriptions", () => {

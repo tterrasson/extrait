@@ -4,7 +4,7 @@ import {
   createModelAdapter,
   createProviderRegistry,
   registerBuiltinProviders,
-} from "../src/providers/registry";
+} from "@/providers/registry";
 
 describe("provider registry", () => {
   test("registers built-in providers", () => {

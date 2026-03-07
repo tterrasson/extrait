@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { formatZodIssues, parseLLMOutput } from "../src/parse";
+import { formatZodIssues, parseLLMOutput } from "@/parse";
 
 const Schema = z
   .object({

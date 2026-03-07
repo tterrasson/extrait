@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   createAnthropicCompatibleAdapter,
   DEFAULT_ANTHROPIC_MAX_TOKENS,
-} from "../src/providers/anthropic-compatible";
-import type { MCPToolClient } from "../src/types";
+} from "@/providers/anthropic-compatible";
+import type { MCPToolClient } from "@/types";
 
 function sseResponse(events: string[]): Response {
   const body = events.map((e) => `data: ${e}\n\n`).join("");

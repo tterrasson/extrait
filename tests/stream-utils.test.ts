@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { consumeSSE, consumeNDJSON } from "../src/providers/stream-utils";
+import { consumeSSE, consumeNDJSON } from "@/providers/stream-utils";
 
 function mockResponse(chunks: string[]): Response {
   const encoder = new TextEncoder();

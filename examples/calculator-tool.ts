@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createLLM, createMCPClient, prompt, s, StructuredParseError } from "../src/index";
+import { createLLM, createMCPClient, prompt, s, StructuredParseError } from "@/index";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"

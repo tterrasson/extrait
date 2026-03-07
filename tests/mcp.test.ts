@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createMCPClient, wrapMCPClient } from "../src/mcp";
+import { createMCPClient, wrapMCPClient } from "@/mcp";
 import { z } from "zod";
 
 describe("MCP client helpers", () => {

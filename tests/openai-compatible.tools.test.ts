@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createOpenAICompatibleAdapter } from "../src/providers/openai-compatible";
-import type { MCPToolClient } from "../src/types";
+import { createOpenAICompatibleAdapter } from "@/providers/openai-compatible";
+import type { MCPToolClient } from "@/types";
 
 function jsonResponse(payload: Record<string, unknown>): Response {
   return new Response(JSON.stringify(payload), {

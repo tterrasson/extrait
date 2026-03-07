@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { formatZodSchemaLikeTypeScript } from "../src/schema";
+import { formatZodSchemaLikeTypeScript } from "@/schema";
 
 describe("formatZodSchemaLikeTypeScript – additional types", () => {
   test("formats bigint", () => {

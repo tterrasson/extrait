@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { prompt } from "../src/prompt";
+import { prompt } from "@/prompt";
 import {
   buildDefaultStructuredPrompt,
   buildSelfHealPrompt,
@@ -9,9 +9,9 @@ import {
   DEFAULT_STRUCTURED_STYLE_INSTRUCTION,
   structured,
   StructuredParseError,
-} from "../src/structured";
-import type { LLMAdapter, LLMRequest, LLMResponse, LLMStreamCallbacks } from "../src/types";
-import { DEFAULT_SCHEMA_INSTRUCTION} from "../src/format";
+} from "@/structured";
+import type { LLMAdapter, LLMRequest, LLMResponse, LLMStreamCallbacks } from "@/types";
+import { DEFAULT_SCHEMA_INSTRUCTION} from "@/format";
 
 class MockAdapter implements LLMAdapter {
   private readonly outputs: string[];

@@ -9,8 +9,8 @@ import {
   stringifyToolOutput,
   formatToolExecutionDebugLine,
   sanitizeToolName,
-} from "../src/providers/mcp-runtime";
-import type { MCPToolClient, LLMToolExecution, MCPToolSchema } from "../src/types";
+} from "@/providers/mcp-runtime";
+import type { MCPToolClient, LLMToolExecution, MCPToolSchema } from "@/types";
 
 function createMockClient(
   id: string,

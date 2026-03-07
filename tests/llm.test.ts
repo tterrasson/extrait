@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { createLLM } from "../src/llm";
-import { createProviderRegistry } from "../src/providers/registry";
-import { DEFAULT_SCHEMA_INSTRUCTION} from "../src/format";
+import { createLLM } from "@/llm";
+import { createProviderRegistry } from "@/providers/registry";
+import { DEFAULT_SCHEMA_INSTRUCTION} from "@/format";
 
 describe("createLLM", () => {
   test("configures a single client with defaults + override per call", async () => {

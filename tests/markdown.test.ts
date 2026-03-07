@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "../src/markdown";
+import { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "@/markdown";
 
 describe("markdown code fences", () => {
   test("extracts a code block without final newline", () => {

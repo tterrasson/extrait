@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sanitizeThink } from "../src/think";
+import { sanitizeThink } from "@/think";
 
 describe("think blocks", () => {
   test("extracts think content", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createOutdent } from "../src/outdent";
+import { createOutdent } from "@/outdent";
 
 describe("createOutdent", () => {
   test("dedents multiline templates while preserving relative indentation", () => {

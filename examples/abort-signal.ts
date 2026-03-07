@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-import { createLLM, prompt, s } from "../src/index";
+import { createLLM, prompt, s } from "@/index";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"

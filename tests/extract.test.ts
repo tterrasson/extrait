@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { extractJsonCandidates } from "../src/extract";
-import { sanitizeThink } from "../src/think";
-import { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "../src/markdown";
+import { extractJsonCandidates } from "@/extract";
+import { sanitizeThink } from "@/think";
+import { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "@/markdown";
 
 describe("extractJsonCandidates", () => {
   test("prioritizes fenced markdown blocks", () => {

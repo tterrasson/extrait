@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { prompt } from "../src/prompt";
+import { prompt } from "@/prompt";
 
 describe("prompt", () => {
   test("dedents and removes leading/trailing empty lines", () => {

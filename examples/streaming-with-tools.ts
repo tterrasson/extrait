@@ -10,7 +10,7 @@
  * Usage: bun run dev streaming-with-tools [topic]
  */
 
-import { createLLM, createMCPClient } from "../src/index";
+import { createLLM, createMCPClient } from "@/index";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"

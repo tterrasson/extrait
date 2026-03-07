@@ -5,7 +5,7 @@ import {
   formatPrompt,
   resolveSchemaInstruction,
   withFormat,
-} from "../src/format";
+} from "@/format";
 
 describe("formatPrompt", () => {
   test("combines the schema format and the task", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeBaseURL } from "../src/providers/utils";
+import { normalizeBaseURL } from "@/providers/utils";
 
 describe("providers/utils normalizeBaseURL", () => {
   test("adds a trailing slash if absent", () => {

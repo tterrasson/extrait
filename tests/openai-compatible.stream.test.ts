@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createOpenAICompatibleAdapter } from "../src/providers/openai-compatible";
-import type { MCPToolClient, LLMStreamChunk } from "../src/types";
+import { createOpenAICompatibleAdapter } from "@/providers/openai-compatible";
+import type { MCPToolClient, LLMStreamChunk } from "@/types";
 
 function sseResponse(events: string[]): Response {
   const body = events.map((e) => `data: ${e}\n\n`).join("");
