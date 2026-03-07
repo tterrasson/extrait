@@ -1,17 +1,22 @@
 {
   "name": "extrait",
   "version": "0.5.1",
-  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tterrasson/extrait.git"
   },
-  "bugs": {
-    "url": "https://github.com/tterrasson/extrait/issues"
-  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "jsonrepair": "^3.13.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.10",
+    "@types/sharp": "^0.32.0",
+    "typescript": "^5.9.3"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,12 +25,29 @@
       "default": "./dist/index.js"
     }
   },
+  "bugs": {
+    "url": "https://github.com/tterrasson/extrait/issues"
+  },
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
-  "type": "module",
+  "license": "MIT",
+  "overrides": {
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "sharp": ">=0.30.0"
+  },
+  "peerDependenciesMeta": {
+    "sharp": {
+      "optional": true
+    }
+  },
+  "resolutions": {
+    "zod": "^4.3.6"
+  },
   "scripts": {
     "dev": "bun run examples/runner.ts",
     "build": "bun run build:esm && bun run build:cjs",
@@ -38,19 +60,6 @@
     "typecheck": "bunx tsc --noEmit",
     "pack": "bun run build:types && bun run build && npm pack"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "jsonrepair": "^3.13.2",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.3.10",
-    "typescript": "^5.9.3"
-  },
-  "overrides": {
-    "zod": "^4.3.6"
-  },
-  "resolutions": {
-    "zod": "^4.3.6"
-  }
+  "type": "module",
+  "types": "./dist/index.d.ts"
 }

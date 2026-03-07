@@ -165,6 +165,41 @@ const result = await llm.structured(
 
 `prompt()` builds an ordered `messages` payload. Use prompt`...` for a single string prompt, or the fluent builder for multi-turn conversations. The `LLMMessage` type is exported if you need to type your own message arrays.
 
+### Images (multimodal)
+
+Use `images()` to build base64 image content blocks for vision-capable models.
+
+```typescript
+import { images } from "extrait";
+import { readFileSync } from "fs";
+
+const base64 = readFileSync("photo.png").toString("base64");
+
+// Single image
+const result = await llm.structured(Schema, {
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Describe this image." },
+        ...images({ base64, mimeType: "image/png" }),
+      ],
+    },
+  ],
+});
+
+// Multiple images
+const content = [
+  { type: "text", text: "Compare these two images." },
+  ...images([
+    { base64: base64A, mimeType: "image/png" },
+    { base64: base64B, mimeType: "image/jpeg" },
+  ]),
+];
+```
+
+`images()` accepts a single `{ base64, mimeType }` object or an array, and always returns an `LLMImageContent[]` that spreads directly into a content array.
+
 ### Result Object
 
 ```typescript
@@ -259,6 +294,7 @@ Available examples:
 - `data-extraction` - Complex nested schemas, self-healing ([data-extraction.ts](examples/data-extraction.ts))
 - `multi-step-reasoning` - Chained structured calls ([multi-step-reasoning.ts](examples/multi-step-reasoning.ts))
 - `calculator-tool` - MCP tool integration ([calculator-tool.ts](examples/calculator-tool.ts))
+- `image-analysis` - Multimodal structured extraction from an image file ([image-analysis.ts](examples/image-analysis.ts))
 
 Pass arguments after the example name:
 ```bash

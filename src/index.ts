@@ -21,6 +21,7 @@ export {
   type MCPTransportConfig,
   type ManagedMCPToolClient,
 } from "./mcp";
+export { images, resizeImage, type ImageInput, type ImageSize } from "./image";
 export { prompt, type PromptMessageBuilder } from "./prompt";
 export { s, inspectSchemaMetadata, inferSchemaExample } from "./schema-builder";
 export {
@@ -71,6 +72,9 @@ export {
 
 export type {
   CandidateDiagnostics,
+  LLMImageContent,
+  LLMMessageContent,
+  LLMTextContent,
   ExtractJsonCandidatesOptions,
   ExtractionCandidate,
   ExtractionHeuristicsOptions,

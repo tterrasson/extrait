@@ -135,9 +135,21 @@ export interface MCPToolClient {
   close?(): Promise<void>;
 }
 
+export interface LLMTextContent {
+  type: "text";
+  text: string;
+}
+
+export interface LLMImageContent {
+  type: "image_url";
+  image_url: { url: string };
+}
+
+export type LLMMessageContent = string | (LLMTextContent | LLMImageContent)[];
+
 export interface LLMMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: unknown;
+  content: LLMMessageContent;
 }
 
 export interface LLMRequest {
