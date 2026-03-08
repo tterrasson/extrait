@@ -90,6 +90,7 @@ export type {
   LLMStreamCallbacks,
   LLMStreamChunk,
   LLMToolCall,
+  LLMToolCallRef,
   LLMToolDebugOptions,
   LLMToolExecution,
   LLMToolOutputTransformer,

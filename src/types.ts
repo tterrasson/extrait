@@ -147,9 +147,16 @@ export interface LLMImageContent {
 
 export type LLMMessageContent = string | (LLMTextContent | LLMImageContent)[];
 
+export interface LLMToolCallRef {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
 export interface LLMMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: LLMMessageContent;
+  [key: string]: unknown;
 }
 
 export interface LLMRequest {

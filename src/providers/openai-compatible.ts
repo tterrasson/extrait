@@ -920,10 +920,7 @@ function buildResponsesInput(request: LLMRequest): unknown {
 }
 
 function toOpenAIMessage(message: LLMMessage): Record<string, unknown> {
-  return {
-    role: message.role,
-    content: message.content,
-  };
+  return { ...message };
 }
 
 function toResponsesTools(tools: Array<Record<string, unknown>> | undefined): Array<Record<string, unknown>> | undefined {

@@ -8,6 +8,7 @@ import type {
   LLMStreamCallbacks,
   LLMStreamChunk,
   LLMToolCall,
+  LLMToolCallRef,
   LLMUsage,
 } from "../types";
 import { consumeSSE } from "./stream-utils";
@@ -484,6 +485,25 @@ function toAnthropicInput(
     }
 
     sawNonSystem = true;
+
+    if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
+      const parts: unknown[] = [];
+      if (message.content) parts.push({ type: "text", text: message.content });
+      for (const tc of message.tool_calls as LLMToolCallRef[]) {
+        parts.push({ type: "tool_use", id: tc.id, name: tc.function.name, input: JSON.parse(tc.function.arguments) });
+      }
+      normalizedMessages.push({ role: "assistant", content: parts });
+      continue;
+    }
+
+    if (message.role === "tool") {
+      normalizedMessages.push({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: message.tool_call_id, content: message.content }],
+      });
+      continue;
+    }
+
     normalizedMessages.push({
       role: message.role,
       content: message.content,

@@ -17,6 +17,7 @@ const availableExamples = [
   "calculator-tool",
   "image-analysis",
   "conversation",
+  "simulated-tools",
   "embeddings"
 ] as const;
 

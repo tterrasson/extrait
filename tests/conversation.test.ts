@@ -54,4 +54,71 @@ describe("conversation()", () => {
 
     expect(messages[1]).toEqual({ role: "user", content: "Hello" });
   });
+
+  test("tool_call entry produces assistant message with tool_calls", () => {
+    const messages = conversation("sys", [
+      { role: "tool_call", id: "call_1", name: "get_weather", arguments: { city: "Paris" } },
+    ]);
+
+    expect(messages[1]).toEqual({
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: "call_1",
+          type: "function",
+          function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+        },
+      ],
+    });
+  });
+
+  test("tool_call entry with no arguments defaults to empty object", () => {
+    const messages = conversation("sys", [{ role: "tool_call", id: "call_2", name: "ping" }]);
+
+    expect(messages[1]).toEqual({
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "call_2", type: "function", function: { name: "ping", arguments: "{}" } }],
+    });
+  });
+
+  test("tool_result entry produces tool message with tool_call_id and stringified output", () => {
+    const messages = conversation("sys", [
+      { role: "tool_result", id: "call_1", output: { temp: 18, unit: "C" } },
+    ]);
+
+    expect(messages[1]).toEqual({
+      role: "tool",
+      content: '{"temp":18,"unit":"C"}',
+      tool_call_id: "call_1",
+    });
+  });
+
+  test("tool_result with string output is not double-stringified", () => {
+    const messages = conversation("sys", [{ role: "tool_result", id: "call_1", output: "ok" }]);
+
+    expect(messages[1]).toEqual({ role: "tool", content: "ok", tool_call_id: "call_1" });
+  });
+
+  test("mixed sequence: user → tool_call → tool_result → user", () => {
+    const messages = conversation("sys", [
+      { role: "user", text: "What is the weather in Paris?" },
+      { role: "tool_call", id: "call_1", name: "get_weather", arguments: { city: "Paris" } },
+      { role: "tool_result", id: "call_1", output: { temp: 18 } },
+      { role: "user", text: "Thanks!" },
+    ]);
+
+    expect(messages).toEqual([
+      { role: "system", content: "sys" },
+      { role: "user", content: "What is the weather in Paris?" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "get_weather", arguments: '{"city":"Paris"}' } }],
+      },
+      { role: "tool", content: '{"temp":18}', tool_call_id: "call_1" },
+      { role: "user", content: "Thanks!" },
+    ]);
+  });
 });
