@@ -15,6 +15,7 @@ Structured JSON extraction from LLMs with validation, repair, and streaming.
 - Optional self-healing for validation failures
 - Streaming support
 - MCP tools
+- Vector embeddings (OpenAI-compatible + Voyage AI)
 
 ## Installation
 
@@ -282,6 +283,64 @@ try {
 }
 ```
 
+### Embeddings
+
+Generate vector embeddings using `llm.embed()`. It always returns `number[][]` — one vector per input string.
+
+```typescript
+// Create a dedicated embedder client (recommended)
+const embedder = createLLM({
+  provider: "openai-compatible",
+  model: "text-embedding-3-small",
+  transport: { apiKey: process.env.OPENAI_API_KEY },
+});
+
+// Single string
+const { embeddings, model, usage } = await embedder.embed("Hello world");
+const vector: number[] = embeddings[0];
+
+// Multiple strings in one request
+const { embeddings } = await embedder.embed(["text one", "text two", "text three"]);
+// embeddings[0], embeddings[1], embeddings[2] — one vector each
+
+// Optional: override model or request extra options per call
+const { embeddings } = await embedder.embed("Hello", {
+  model: "text-embedding-ada-002",
+  dimensions: 512,              // supported by text-embedding-3-* models
+  body: { user: "user-id" },    // pass-through to provider
+});
+```
+
+**Result shape:**
+
+```typescript
+{
+  embeddings: number[][];  // one vector per input
+  model: string;
+  usage?: { inputTokens?: number; totalTokens?: number };
+  raw?: unknown;           // full provider response
+}
+```
+
+**Anthropic / Voyage AI**
+
+Anthropic does not provide a native embedding API. Their recommended solution is [Voyage AI](https://api.voyageai.com), which uses the same OpenAI-compatible format:
+
+```typescript
+const embedder = createLLM({
+  provider: "openai-compatible",
+  model: "voyage-3",
+  transport: {
+    baseURL: "https://api.voyageai.com",
+    apiKey: process.env.VOYAGE_API_KEY,
+  },
+});
+
+const { embeddings } = await embedder.embed(["query", "document"]);
+```
+
+Calling `llm.embed()` on an `anthropic-compatible` adapter throws a descriptive error pointing to Voyage AI.
+
 ### MCP Tools
 
 ```typescript
@@ -370,6 +429,7 @@ Available examples:
 - `calculator-tool` - MCP tool integration ([calculator-tool.ts](examples/calculator-tool.ts))
 - `image-analysis` - Multimodal structured extraction from an image file ([image-analysis.ts](examples/image-analysis.ts))
 - `conversation` - Multi-turn conversation history and inline image messages ([conversation.ts](examples/conversation.ts))
+- `embeddings` - Vector embeddings, cosine similarity, and semantic comparison ([embeddings.ts](examples/embeddings.ts))
 
 Pass arguments after the example name:
 ```bash
@@ -380,6 +440,7 @@ bun run dev timeout 5000
 bun run dev simple "Bun.js runtime"
 bun run dev sentiment-analysis "I love this product."
 bun run dev multi-step-reasoning "Why is the sky blue?"
+bun run dev embeddings "the cat sat on the mat" "a feline rested on the rug"
 ```
 
 ## Environment Variables

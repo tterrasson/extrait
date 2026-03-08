@@ -7,6 +7,8 @@ import {
 } from "./providers/registry";
 import { structured } from "./structured";
 import type {
+  EmbeddingRequest,
+  EmbeddingResult,
   LLMAdapter,
   StructuredCallOptions,
   StructuredPromptBuilder,
@@ -26,6 +28,7 @@ export interface LLMClient {
     prompt: StructuredPromptBuilder,
     options?: StructuredCallOptions<TSchema>,
   ): Promise<StructuredResult<z.infer<TSchema>>>;
+  embed(input: string | string[], options?: Omit<EmbeddingRequest, "input">): Promise<EmbeddingResult>;
 }
 
 export function createLLM(
@@ -47,6 +50,13 @@ export function createLLM(
     ): Promise<StructuredResult<z.infer<TSchema>>> {
       const merged = mergeStructuredOptions(defaults, options);
       return structured(adapter, schema, prompt, merged);
+    },
+
+    async embed(input: string | string[], options: Omit<EmbeddingRequest, "input"> = {}): Promise<EmbeddingResult> {
+      if (!adapter.embed) {
+        throw new Error(`Provider "${adapter.provider ?? "unknown"}" does not support embeddings.`);
+      }
+      return adapter.embed({ ...options, input });
     },
   };
 }

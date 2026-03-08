@@ -17,6 +17,7 @@ const availableExamples = [
   "calculator-tool",
   "image-analysis",
   "conversation",
+  "embeddings"
 ] as const;
 
 const exampleName = process.argv[2] || "simple";

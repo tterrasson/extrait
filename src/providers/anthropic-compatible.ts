@@ -1,4 +1,5 @@
 import type {
+  EmbeddingResult,
   HTTPHeaders,
   LLMAdapter,
   LLMMessage,
@@ -125,6 +126,14 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
       const out = { text, usage, finishReason };
       callbacks.onComplete?.(out);
       return out;
+    },
+
+    async embed(): Promise<EmbeddingResult> {
+      throw new Error(
+        "Anthropic does not provide a native embedding API. " +
+          "Use the openai-compatible provider with Voyage AI (https://api.voyageai.com) — " +
+          "Anthropic's recommended embedding solution, which uses the same request format.",
+      );
     },
   };
 }

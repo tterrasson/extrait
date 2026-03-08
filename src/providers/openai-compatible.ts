@@ -1,4 +1,6 @@
 import type {
+  EmbeddingRequest,
+  EmbeddingResult,
   HTTPHeaders,
   LLMAdapter,
   LLMMessage,
@@ -26,6 +28,7 @@ export interface OpenAICompatibleAdapterOptions {
   apiKey?: string;
   path?: string;
   responsesPath?: string;
+  embeddingPath?: string;
   defaultMaxToolRounds?: number;
   headers?: HTTPHeaders;
   defaultBody?: Record<string, unknown>;
@@ -36,6 +39,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
   const fetcher = options.fetcher ?? fetch;
   const path = options.path ?? "/v1/chat/completions";
   const responsesPath = options.responsesPath ?? "/v1/responses";
+  const embeddingPath = options.embeddingPath ?? "/v1/embeddings";
 
   return {
     provider: "openai-compatible",
@@ -123,6 +127,41 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
       const out = { text, usage, finishReason };
       callbacks.onComplete?.(out);
       return out;
+    },
+
+    async embed(request: EmbeddingRequest): Promise<EmbeddingResult> {
+      const body = cleanUndefined({
+        ...options.defaultBody,
+        ...request.body,
+        model: request.model ?? options.model,
+        input: request.input,
+        dimensions: request.dimensions,
+        encoding_format: "float",
+      });
+
+      const response = await fetcher(buildURL(options.baseURL, embeddingPath), {
+        method: "POST",
+        headers: buildHeaders(options),
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`HTTP ${response.status}: ${message}`);
+      }
+
+      const json = (await response.json()) as Record<string, unknown>;
+      const data = json.data;
+      if (!Array.isArray(data)) {
+        throw new Error("Unexpected embedding response: missing data array");
+      }
+
+      return {
+        embeddings: data.map((d: unknown) => (isRecord(d) && Array.isArray(d.embedding) ? (d.embedding as number[]) : [])),
+        model: pickString(json.model) ?? (body.model as string),
+        usage: pickUsage(json),
+        raw: json,
+      };
     },
   };
 }

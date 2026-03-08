@@ -202,11 +202,26 @@ export interface LLMStreamCallbacks {
   onComplete?: (response: LLMResponse) => void;
 }
 
+export interface EmbeddingRequest {
+  input: string | string[];
+  model?: string;
+  dimensions?: number;
+  body?: Record<string, unknown>;
+}
+
+export interface EmbeddingResult {
+  embeddings: number[][];
+  model: string;
+  usage?: LLMUsage;
+  raw?: unknown;
+}
+
 export interface LLMAdapter {
   provider?: string;
   model?: string;
   complete(request: LLMRequest): Promise<LLMResponse>;
   stream?(request: LLMRequest, callbacks?: LLMStreamCallbacks): Promise<LLMResponse>;
+  embed?(request: EmbeddingRequest): Promise<EmbeddingResult>;
 }
 
 export interface LLMToolCall {

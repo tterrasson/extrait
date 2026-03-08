@@ -73,6 +73,8 @@ export {
 
 export type {
   CandidateDiagnostics,
+  EmbeddingRequest,
+  EmbeddingResult,
   LLMImageContent,
   LLMMessageContent,
   LLMTextContent,
