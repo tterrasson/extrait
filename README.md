@@ -429,6 +429,7 @@ Available examples:
 - `calculator-tool` - MCP tool integration ([calculator-tool.ts](examples/calculator-tool.ts))
 - `image-analysis` - Multimodal structured extraction from an image file ([image-analysis.ts](examples/image-analysis.ts))
 - `conversation` - Multi-turn conversation history and inline image messages ([conversation.ts](examples/conversation.ts))
+- `simulated-tools` - Inject fake tool calls/results into conversation context without real execution ([simulated-tools.ts](examples/simulated-tools.ts))
 - `embeddings` - Vector embeddings, cosine similarity, and semantic comparison ([embeddings.ts](examples/embeddings.ts))
 
 Pass arguments after the example name:
