@@ -8,7 +8,7 @@ Structured JSON extraction from LLMs with validation, repair, and streaming.
   </a>
 </p>
 
-**Features:**
+Key capabilities:
 - Multi-candidate JSON extraction from LLM responses
 - Automatic repair with jsonrepair
 - Zod schema validation and coercion
@@ -18,6 +18,8 @@ Structured JSON extraction from LLMs with validation, repair, and streaming.
 - Vector embeddings (OpenAI-compatible + Voyage AI)
 
 ## Installation
+
+Install `extrait` with your preferred package manager.
 
 ```bash
 bun add extrait
@@ -29,56 +31,118 @@ deno add npm:extrait
 
 ## Quick Start
 
+Use a custom OpenAI-compatible transport to point `extrait` at a local endpoint.
+
 ```typescript
 import { createLLM, prompt, s } from "extrait";
 import { z } from "zod";
 
 const llm = createLLM({
   provider: "openai-compatible",
-  model: "gpt-5-nano",
-  transport: { apiKey: process.env.LLM_API_KEY },
+  model: "mistralai/ministral-3-3b",
+  transport: {
+    baseURL: "http://localhost:1234/v1",
+    apiKey: process.env.LLM_API_KEY ?? "local-demo-key",
+  },
 });
 
-const SummarySchema = s.schema(
-  "Summary",
+const RecipeSchema = s.schema(
+  "Recipe",
   z.object({
-    summary: s.string().min(1).describe("One-sentence summary"),
-    tags: s.array(s.string()).default([]).describe("Keywords"),
+    title: s.string().min(1).describe("Short recipe title"),
+    ingredients: s.array(s.string()).min(1).describe("Ingredient list"),
   })
 );
 
 const result = await llm.structured(
-  SummarySchema,
-  prompt`Summarize this: """${text}"""`
+  RecipeSchema,
+  prompt`Extract a simple recipe from this text: """${text}"""`
 );
 
 console.log(result.data);
 ```
 
+## Examples at a Glance
+
+These examples cover the most common usage patterns in the repository.
+
+- [`examples/simple.ts`](examples/simple.ts) - Basic structured output with streaming
+- [`examples/streaming.ts`](examples/streaming.ts) - Real-time partial output and snapshot updates
+- [`examples/calculator-tool.ts`](examples/calculator-tool.ts) - Structured extraction with MCP tools
+- [`examples/conversation.ts`](examples/conversation.ts) - Multi-turn prompts and multimodal content
+- [`examples/image-analysis.ts`](examples/image-analysis.ts) - Vision input with structured output
+- [`examples/embeddings.ts`](examples/embeddings.ts) - Embeddings and similarity workflows
+
+```bash
+bun run dev simple "Bun.js runtime"
+bun run dev streaming
+bun run dev calculator-tool
+```
+
 ## API Reference
 
-### Creating an LLM Client
+The sections below cover the main building blocks of the library.
+
+### Create an LLM Client
+
+Use `createLLM()` to configure the provider, model, transport, and client defaults.
 
 ```typescript
 const llm = createLLM({
   provider: "openai-compatible" | "anthropic-compatible",
   model: "gpt-5-nano",
+  baseURL: "https://api.openai.com",       // optional alias for transport.baseURL
+  apiKey: process.env.LLM_API_KEY,         // optional alias for transport.apiKey
   transport: {
-    baseURL: "https://api.openai.com",   // optional
-    apiKey: process.env.LLM_API_KEY,     // optional
+    baseURL: "https://api.openai.com",     // optional
+    apiKey: process.env.LLM_API_KEY,       // optional
+    path: "/v1/chat/completions",          // optional; anthropic-compatible usually uses /v1/messages
+    headers: { "x-trace-id": "docs-demo" }, // optional extra headers
+    defaultBody: { user: "docs-demo" },    // optional provider body defaults
+    version: "2023-06-01",                 // anthropic-compatible only
+    fetcher: fetch,                        // optional custom fetch implementation
   },
   defaults: {
-    mode: "loose" | "strict",            // loose allows repair
-    selfHeal: 0 | 1 | 2,                 // retry attempts
-    debug: false,                        // show repair logs
-    timeout: { request: 30_000 },        // optional default timeouts
+    mode: "loose" | "strict",             // loose allows repair
+    selfHeal: 1,                          // optional retry attempts
+    debug: false,                         // optional structured debug output
+    systemPrompt: "You are a helpful assistant.",
+    timeout: {
+      request: 30_000,
+      tool: 10_000,
+    },
+  },
+});
+```
+
+`baseURL` and `apiKey` at the top level are shorthand aliases for `transport.baseURL` and `transport.apiKey`. For request-specific options such as `stream`, `request`, `schemaInstruction`, and parse tuning, see the sections below.
+
+Common setup patterns:
+
+```typescript
+// OpenAI-compatible gateway or local endpoint with top-level aliases
+const llm = createLLM({
+  provider: "openai-compatible",
+  model: "gpt-4o-mini",
+  baseURL: process.env.LLM_BASE_URL ?? "http://localhost:1234/v1",
+  apiKey: process.env.LLM_API_KEY ?? "local-demo-key",
+});
+
+// Anthropic-compatible endpoint with explicit API version
+const anthropic = createLLM({
+  provider: "anthropic-compatible",
+  model: "claude-3-5-sonnet-latest",
+  transport: {
+    baseURL: "https://api.anthropic.com",
+    apiKey: process.env.LLM_API_KEY,
+    version: "2023-06-01",
   },
 });
 ```
 
 ### Defining Schemas
 
-Use the `s` wrapper around Zod for enhanced schema building:
+Use the `s` wrapper around Zod for schema names, descriptions, and a more ergonomic authoring flow.
 
 ```typescript
 import { s } from "extrait";
@@ -114,6 +178,8 @@ const Schema = s.schema(
 ```
 
 ### Making Structured Calls
+
+`structured()` accepts a schema plus either a tagged prompt, a fluent prompt builder, or a raw message payload.
 
 ```typescript
 // Simple prompt
@@ -159,7 +225,7 @@ const result = await llm.structured(
       },
     },
     request: {
-      signal: abortController.signal,  // optional AbortSignal
+      signal: AbortSignal.timeout(30_000),  // optional AbortSignal
     },
     timeout: {
       request: 30_000,  // ms per LLM HTTP request
@@ -170,6 +236,22 @@ const result = await llm.structured(
 ```
 
 `prompt()` builds an ordered `messages` payload. Use ``prompt`...` `` for a single string prompt, or the fluent builder for multi-turn conversations. The `LLMMessage` type is exported if you need to type your own message arrays.
+
+You can also pass provider request options through `request`:
+
+```typescript
+const result = await llm.structured(
+  Schema,
+  prompt`Summarize this document: """${text}"""`,
+  {
+    request: {
+      temperature: 0,
+      maxTokens: 800,
+      body: { user: "demo-user" },
+    },
+  }
+);
+```
 
 ### Images (multimodal)
 
@@ -248,13 +330,15 @@ const messages = conversation("You are a vision assistant.", [
 
 ### Result Object
 
+Successful structured calls return validated data plus the raw response and trace metadata.
+
 ```typescript
 {
   data: T,                      // Validated data matching schema
   raw: string,                  // Raw LLM response
   thinkBlocks: ThinkBlock[],    // Extracted <think> blocks
   json: unknown | null,         // Parsed JSON before validation
-  attempts: AttemptTrace[],     // Self-heal attempts
+  attempts: StructuredAttempt<T>[], // One entry per parse / self-heal attempt
   usage?: {
     inputTokens?: number,
     outputTokens?: number,
@@ -265,7 +349,29 @@ const messages = conversation("You are a vision assistant.", [
 }
 ```
 
+Each `attempts` entry includes:
+
+```typescript
+{
+  attempt: number,
+  selfHeal: boolean,
+  via: "complete" | "stream",
+  raw: string,
+  thinkBlocks: ThinkBlock[],
+  json: unknown | null,
+  candidates: string[],
+  repairLog: string[],
+  zodIssues: z.ZodIssue[],
+  success: boolean,
+  usage?: LLMUsage,
+  finishReason?: string,
+  parsed: ParseLLMOutputResult<T>,
+}
+```
+
 ### Error Handling
+
+Catch `StructuredParseError` when repair and validation still fail.
 
 ```typescript
 import { StructuredParseError } from "extrait";
@@ -292,7 +398,7 @@ Generate vector embeddings using `llm.embed()`. It always returns `number[][]` â
 const embedder = createLLM({
   provider: "openai-compatible",
   model: "text-embedding-3-small",
-  transport: { apiKey: process.env.OPENAI_API_KEY },
+  transport: { apiKey: process.env.LLM_API_KEY },
 });
 
 // Single string
@@ -332,7 +438,7 @@ const embedder = createLLM({
   model: "voyage-3",
   transport: {
     baseURL: "https://api.voyageai.com",
-    apiKey: process.env.VOYAGE_API_KEY,
+    apiKey: process.env.LLM_API_KEY,
   },
 });
 
@@ -342,6 +448,8 @@ const { embeddings } = await embedder.embed(["query", "document"]);
 Calling `llm.embed()` on an `anthropic-compatible` adapter throws a descriptive error pointing to Voyage AI.
 
 ### MCP Tools
+
+Attach MCP clients at request time to let the model call tools during structured generation.
 
 ```typescript
 import { createMCPClient } from "extrait";
@@ -415,7 +523,7 @@ const llm = createLLM({
 
 ## Examples
 
-Run examples with: `bun run dev <example-name>`
+Run repository examples with `bun run dev <example-name>`.
 
 Available examples:
 - `streaming` - Real LLM streaming + snapshot self-check ([streaming.ts](examples/streaming.ts))
@@ -446,6 +554,8 @@ bun run dev embeddings "the cat sat on the mat" "a feline rested on the rug"
 
 ## Environment Variables
 
+These environment variables are used across the examples and common client setups.
+
 - `LLM_PROVIDER` - `openai-compatible` or `anthropic-compatible`
 - `LLM_BASE_URL` - API endpoint (optional)
 - `LLM_MODEL` - Model name (default: `gpt-5-nano`)
@@ -453,6 +563,8 @@ bun run dev embeddings "the cat sat on the mat" "a feline rested on the rug"
 - `STRUCTURED_DEBUG=1` - Enable debug output
 
 ## Testing
+
+Run the test suite with Bun.
 
 ```bash
 bun run test
