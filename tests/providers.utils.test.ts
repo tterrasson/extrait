@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeBaseURL } from "@/providers/utils";
+import { normalizeBaseURL, preferLatestUsage } from "@/providers/utils";
 
 describe("providers/utils normalizeBaseURL", () => {
   test("adds a trailing slash if absent", () => {
@@ -28,5 +28,25 @@ describe("providers/utils normalizeBaseURL", () => {
 
   test("handles URLs with multiple slashes", () => {
     expect(normalizeBaseURL("https://api.example.com/")).toBe("https://api.example.com/");
+  });
+});
+
+describe("providers/utils preferLatestUsage", () => {
+  test("prefers newer defined fields without summing", () => {
+    expect(
+      preferLatestUsage(
+        { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
+        { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+      ),
+    ).toEqual({ inputTokens: 10, outputTokens: 2, totalTokens: 12 });
+  });
+
+  test("preserves older fields when the newer snapshot is partial", () => {
+    expect(
+      preferLatestUsage(
+        { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
+        { outputTokens: 2 },
+      ),
+    ).toEqual({ inputTokens: 10, outputTokens: 2, totalTokens: 11 });
   });
 });

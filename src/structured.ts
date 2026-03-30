@@ -3,6 +3,7 @@ import type { z } from "zod";
 import { resolveSchemaInstruction, formatPrompt, withFormat } from "./format";
 import { createOutdent } from "./outdent";
 import { formatZodIssues, parseLLMOutput } from "./parse";
+import { preferLatestUsage as preferLatestStreamUsage } from "./providers/utils";
 import { sanitizeThink } from "./think";
 import { color, dim, title } from "./utils/debug-colors";
 import type {
@@ -1126,7 +1127,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
         }
 
         if (chunk.usage) {
-          latestUsage = mergeUsage(latestUsage, chunk.usage);
+          latestUsage = preferLatestStreamUsage(latestUsage, chunk.usage);
         }
 
         if (chunk.finishReason) {
@@ -1137,7 +1138,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
 
     const finalText =
       typeof response.text === "string" && response.text.length > 0 ? response.text : streamedRaw;
-    const usage = mergeUsage(latestUsage, response.usage);
+    const usage = preferLatestStreamUsage(latestUsage, response.usage);
     const finishReason = response.finishReason ?? latestFinishReason;
     emitStreamingData(finalText, true, usage, finishReason);
 

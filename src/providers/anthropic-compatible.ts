@@ -21,7 +21,16 @@ import {
   stringifyToolOutput,
   toProviderFunctionTools,
 } from "./mcp-runtime";
-import { buildURL, cleanUndefined, isRecord, mergeUsage, toFiniteNumber, pickString, safeJSONParse } from "./utils";
+import {
+  buildURL,
+  cleanUndefined,
+  isRecord,
+  mergeUsage,
+  pickString,
+  preferLatestUsage,
+  safeJSONParse,
+  toFiniteNumber,
+} from "./utils";
 
 export interface AnthropicCompatibleAdapterOptions {
   baseURL: string;
@@ -103,7 +112,7 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
         const chunkUsage = pickUsage(json);
         const chunkFinishReason = pickFinishReason(json);
 
-        usage = mergeUsage(usage, chunkUsage);
+        usage = preferLatestUsage(usage, chunkUsage);
         if (chunkFinishReason) {
           finishReason = chunkFinishReason;
         }
@@ -360,7 +369,7 @@ async function streamWithMCPToolLoop(
       const chunkFinishReason = pickFinishReason(json);
 
       collectAnthropicStreamToolCalls(json, streamedToolCalls);
-      roundUsage = mergeUsage(roundUsage, chunkUsage);
+      roundUsage = preferLatestUsage(roundUsage, chunkUsage);
       if (chunkFinishReason) {
         roundFinishReason = chunkFinishReason;
       }

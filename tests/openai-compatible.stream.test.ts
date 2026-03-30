@@ -79,6 +79,32 @@ describe("openai-compatible streaming", () => {
     expect(chunks.length).toBe(3);
   });
 
+  test("keeps the latest stream usage snapshot instead of summing chunk usage", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "Hello" } }], usage: { prompt_tokens: 5, total_tokens: 5 } }),
+        JSON.stringify({
+          choices: [{ delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({ prompt: "Say hello" });
+
+    expect(result.usage).toEqual({
+      inputTokens: 5,
+      outputTokens: 2,
+      totalTokens: 7,
+    });
+  });
+
   test("ignores [DONE] sentinel in text", async () => {
     const tokens: string[] = [];
 
@@ -212,6 +238,11 @@ describe("openai-compatible streaming", () => {
       name: "add",
       clientId: "calc",
     });
+    expect(result.usage).toEqual({
+      inputTokens: 7,
+      outputTokens: 3,
+      totalTokens: 10,
+    });
     expect(chunks.some((chunk) => chunk.finishReason === "tool_calls")).toBe(true);
   });
 
@@ -276,6 +307,46 @@ describe("openai-compatible streaming", () => {
 
     expect(result.text).toBe("from responses api");
     expect(tokens).toEqual(["from ", "responses api"]);
+  });
+
+  test("prefers final responses API usage over interim stream usage", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          type: "response.in_progress",
+          response: {
+            id: "resp_1",
+            status: "in_progress",
+            usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+          },
+        }),
+        JSON.stringify({
+          type: "response.completed",
+          response: {
+            id: "resp_1",
+            status: "completed",
+            output_text: "done",
+            usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5 },
+          },
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      path: "/v1/responses",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({ prompt: "test" });
+
+    expect(result.text).toBe("done");
+    expect(result.usage).toEqual({
+      inputTokens: 2,
+      outputTokens: 3,
+      totalTokens: 5,
+    });
   });
 
   test("streams responses API MCP rounds and keeps result.text as final text", async () => {
@@ -361,6 +432,11 @@ describe("openai-compatible streaming", () => {
       callId: "call_sum",
       name: "add",
       clientId: "calc",
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 5,
+      outputTokens: 3,
+      totalTokens: 8,
     });
   });
 });

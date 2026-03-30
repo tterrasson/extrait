@@ -8,7 +8,8 @@ Structured JSON extraction from LLMs with validation, repair, and streaming.
   </a>
 </p>
 
-Key capabilities:
+## Features
+
 - Multi-candidate JSON extraction from LLM responses
 - Automatic repair with jsonrepair
 - Zod schema validation and coercion

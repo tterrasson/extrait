@@ -72,6 +72,42 @@ class StreamingMockAdapter implements LLMAdapter {
   }
 }
 
+class StreamingUsageMockAdapter implements LLMAdapter {
+  async complete(): Promise<LLMResponse> {
+    return { text: '{"value": 1}' };
+  }
+
+  async stream(_request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+    callbacks.onStart?.();
+
+    callbacks.onToken?.("{");
+    callbacks.onChunk?.({
+      textDelta: "{",
+      usage: { inputTokens: 20, totalTokens: 20 },
+    });
+
+    callbacks.onToken?.('"value":123}');
+    callbacks.onChunk?.({
+      textDelta: '"value":123}',
+      usage: { inputTokens: 20, outputTokens: 7, totalTokens: 27 },
+      finishReason: "stop",
+    });
+
+    const out = {
+      text: '{"value":123}',
+      usage: {
+        inputTokens: 20,
+        outputTokens: 7,
+        totalTokens: 27,
+      },
+      finishReason: "stop",
+    };
+
+    callbacks.onComplete?.(out);
+    return out;
+  }
+}
+
 describe("structured", () => {
   test("supports overload structured(adapter, schema, prompt, options) + selfHeal sugar", async () => {
     const schema = z.object({ value: z.number() });
@@ -140,6 +176,23 @@ describe("structured", () => {
     expect(result.data).toEqual({ value: 123 });
     expect(result.finishReason).toBe("stop");
     expect(result.usage?.totalTokens).toBe(27);
+  });
+
+  test("streaming does not double-count chunk usage and final response usage", async () => {
+    const schema = z.object({ value: z.number() });
+    const model = new StreamingUsageMockAdapter();
+
+    const result = await structured(model, schema, "Return JSON", {
+      stream: true,
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 123 });
+    expect(result.usage).toMatchObject({
+      inputTokens: 20,
+      outputTokens: 7,
+      totalTokens: 27,
+    });
   });
 
   test("streaming exposes partial string values before full completion", async () => {

@@ -20,7 +20,16 @@ import {
   stringifyToolOutput,
   toProviderFunctionTools,
 } from "./mcp-runtime";
-import { buildURL, cleanUndefined, isRecord, mergeUsage, pickString, safeJSONParse, toFiniteNumber } from "./utils";
+import {
+  buildURL,
+  cleanUndefined,
+  isRecord,
+  mergeUsage,
+  pickString,
+  preferLatestUsage,
+  safeJSONParse,
+  toFiniteNumber,
+} from "./utils";
 
 export interface OpenAICompatibleAdapterOptions {
   baseURL: string;
@@ -103,7 +112,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
         const chunkUsage = pickUsage(json);
         const chunkFinishReason = pickFinishReason(json);
 
-        usage = mergeUsage(usage, chunkUsage);
+        usage = preferLatestUsage(usage, chunkUsage);
         if (chunkFinishReason) {
           finishReason = chunkFinishReason;
         }
@@ -541,7 +550,7 @@ async function streamWithChatCompletionsWithMCP(
       const chunkFinishReason = pickFinishReason(json);
 
       collectOpenAIStreamToolCalls(json, streamedToolCalls);
-      roundUsage = mergeUsage(roundUsage, chunkUsage);
+      roundUsage = preferLatestUsage(roundUsage, chunkUsage);
       if (chunkFinishReason) {
         roundFinishReason = chunkFinishReason;
       }
@@ -672,7 +681,7 @@ async function streamWithResponsesAPIPassThrough(
     const chunkUsage = pickResponsesStreamUsage(json);
     const chunkFinishReason = pickResponsesStreamFinishReason(json);
 
-    usage = mergeUsage(usage, chunkUsage);
+    usage = preferLatestUsage(usage, chunkUsage);
     if (chunkFinishReason) {
       finishReason = chunkFinishReason;
     }
@@ -697,7 +706,7 @@ async function streamWithResponsesAPIPassThrough(
   const out: LLMResponse = {
     text: text.length > 0 ? text : (pickResponsesText(finalPayload) || pickAssistantText(finalPayload)),
     raw: finalPayload,
-    usage: mergeUsage(usage, pickUsage(finalPayload)),
+    usage: preferLatestUsage(usage, pickUsage(finalPayload)),
     finishReason: finishReason ?? pickResponsesFinishReason(finalPayload) ?? pickFinishReason(finalPayload),
   };
   callbacks.onComplete?.(out);
@@ -782,7 +791,7 @@ async function streamWithResponsesAPIWithMCP(
       const chunkFinishReason = pickResponsesStreamFinishReason(json);
 
       collectResponsesStreamToolCalls(json, streamedToolCalls);
-      roundUsage = mergeUsage(roundUsage, chunkUsage);
+      roundUsage = preferLatestUsage(roundUsage, chunkUsage);
       if (chunkFinishReason) {
         roundFinishReason = chunkFinishReason;
       }
@@ -803,9 +812,8 @@ async function streamWithResponsesAPIWithMCP(
       }
     });
 
-    aggregatedUsage = mergeUsage(aggregatedUsage, roundUsage);
-    const payloadUsage = roundPayload ? pickUsage(roundPayload) : undefined;
-    aggregatedUsage = mergeUsage(aggregatedUsage, payloadUsage);
+    const resolvedRoundUsage = preferLatestUsage(roundUsage, roundPayload ? pickUsage(roundPayload) : undefined);
+    aggregatedUsage = mergeUsage(aggregatedUsage, resolvedRoundUsage);
     if (roundFinishReason) {
       finishReason = roundFinishReason;
     } else if (roundPayload) {

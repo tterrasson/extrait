@@ -65,6 +65,29 @@ export function mergeUsage(base: LLMUsage | undefined, next: LLMUsage | undefine
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
+export function preferLatestUsage(base: LLMUsage | undefined, next: LLMUsage | undefined): LLMUsage | undefined {
+  if (!base && !next) {
+    return undefined;
+  }
+
+  const merged: LLMUsage = {};
+
+  if (base?.inputTokens !== undefined || next?.inputTokens !== undefined) {
+    merged.inputTokens = next?.inputTokens ?? base?.inputTokens;
+  }
+  if (base?.outputTokens !== undefined || next?.outputTokens !== undefined) {
+    merged.outputTokens = next?.outputTokens ?? base?.outputTokens;
+  }
+  if (base?.totalTokens !== undefined || next?.totalTokens !== undefined) {
+    merged.totalTokens = next?.totalTokens ?? base?.totalTokens;
+  }
+  if (base?.cost !== undefined || next?.cost !== undefined) {
+    merged.cost = next?.cost ?? base?.cost;
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 function addOptional(a: number | undefined, b: number | undefined): number | undefined {
   if (a === undefined && b === undefined) {
     return undefined;

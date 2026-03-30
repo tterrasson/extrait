@@ -81,6 +81,34 @@ describe("anthropic-compatible streaming", () => {
     expect(result.usage?.outputTokens).toBe(2);
   });
 
+  test("keeps the latest cumulative usage snapshot instead of summing chunk usage", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          type: "message_start",
+          message: { usage: { input_tokens: 10, output_tokens: 0 } },
+        }),
+        JSON.stringify({
+          type: "message_delta",
+          delta: { stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 2 } },
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({ prompt: "test" });
+
+    expect(result.usage).toEqual({
+      inputTokens: 10,
+      outputTokens: 2,
+    });
+  });
+
   test("ignores [DONE] sentinel", async () => {
     const tokens: string[] = [];
 
@@ -214,6 +242,10 @@ describe("anthropic-compatible streaming", () => {
       callId: "toolu_add",
       name: "add",
       clientId: "calc",
+    });
+    expect(result.usage).toEqual({
+      inputTokens: 4,
+      outputTokens: 3,
     });
     expect(chunks.some((chunk) => chunk.finishReason === "tool_use")).toBe(true);
   });
