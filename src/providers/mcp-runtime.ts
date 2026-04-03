@@ -162,6 +162,7 @@ export async function executeMCPToolCalls(
     }
 
     const rawArgs = isRecord(parsedArguments) ? (parsedArguments as Record<string, unknown>) : {};
+
     const args = context.request.transformToolArguments
       ? await context.request.transformToolArguments(rawArgs, {
           name: toolName,
@@ -169,6 +170,23 @@ export async function executeMCPToolCalls(
           clientId: tool.clientId,
         })
       : rawArgs;
+
+    const toolParams = context.request.transformToolCallParams
+      ? await context.request.transformToolCallParams(
+          {
+            name: tool.remoteName,
+            arguments: args,
+          },
+          {
+            name: toolName,
+            remoteName: tool.remoteName,
+            clientId: tool.clientId,
+          },
+        )
+      : {
+          name: tool.remoteName,
+          arguments: args,
+        };
 
     const metadata: LLMToolCall = {
       id: callId,
@@ -181,10 +199,7 @@ export async function executeMCPToolCalls(
     const startedAtMs = Date.now();
 
     try {
-      const output = await tool.client.callTool({
-        name: tool.remoteName,
-        arguments: args,
-      });
+      const output = await tool.client.callTool(toolParams);
 
       const executionContext = {
         callId,

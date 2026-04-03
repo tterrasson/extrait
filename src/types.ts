@@ -126,6 +126,7 @@ export interface MCPListToolsResult {
 export interface MCPCallToolParams {
   name: string;
   arguments?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
 }
 
 export interface MCPToolClient {
@@ -172,6 +173,7 @@ export interface LLMRequest {
   onToolExecution?: (execution: LLMToolExecution) => void;
   transformToolOutput?: LLMToolOutputTransformer;
   transformToolArguments?: LLMToolArgumentsTransformer;
+  transformToolCallParams?: LLMToolCallParamsTransformer;
   unknownToolError?: (toolName: string) => string;
   toolDebug?: boolean | LLMToolDebugOptions;
   body?: Record<string, unknown>;
@@ -266,6 +268,11 @@ export type LLMToolArgumentsTransformer = (
   args: Record<string, unknown>,
   context: { name: string; remoteName: string; clientId: string },
 ) => Record<string, unknown> | Promise<Record<string, unknown>>;
+
+export type LLMToolCallParamsTransformer = (
+  params: MCPCallToolParams,
+  context: { name: string; remoteName: string; clientId: string },
+) => MCPCallToolParams | Promise<MCPCallToolParams>;
 
 export interface LLMToolDebugOptions {
   enabled?: boolean;

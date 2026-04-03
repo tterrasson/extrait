@@ -95,6 +95,7 @@ export type {
   LLMToolExecution,
   LLMToolOutputTransformer,
   LLMToolArgumentsTransformer,
+  LLMToolCallParamsTransformer,
   LLMToolChoice,
   MCPCallToolParams,
   MCPListToolsResult,

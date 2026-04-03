@@ -356,6 +356,76 @@ describe("executeMCPToolCalls", () => {
     expect(results[0]!.execution.output).toEqual({ ok: true });
   });
 
+  test("transformToolCallParams transforms the full MCP params sent to callTool", async () => {
+    let capturedParams: unknown;
+    const client: MCPToolClient = {
+      id: "svc",
+      async listTools() {
+        return { tools: [{ name: "do-work", inputSchema: { type: "object", properties: {} } as MCPToolSchema }] };
+      },
+      async callTool(params) {
+        capturedParams = params;
+        return { ok: true };
+      },
+    };
+    const toolset = await resolveMCPToolset([client]);
+
+    await executeMCPToolCalls(
+      [{ id: "c1", name: "do_work", arguments: '{"x":1}' }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          transformToolCallParams: (params, context) => {
+            expect(context).toEqual({ name: "do_work", remoteName: "do-work", clientId: "svc" });
+            return { ...params, _meta: { source: "test", clientId: context.clientId } };
+          },
+        },
+      },
+    );
+
+    expect(capturedParams).toEqual({
+      name: "do-work",
+      arguments: { x: 1 },
+      _meta: { source: "test", clientId: "svc" },
+    });
+  });
+
+  test("transformToolCallParams receives args already transformed by transformToolArguments", async () => {
+    let capturedParams: unknown;
+    const client: MCPToolClient = {
+      id: "svc",
+      async listTools() {
+        return { tools: [{ name: "run", inputSchema: { type: "object", properties: {} } as MCPToolSchema }] };
+      },
+      async callTool(params) {
+        capturedParams = params;
+        return { ok: true };
+      },
+    };
+    const toolset = await resolveMCPToolset([client]);
+
+    await executeMCPToolCalls(
+      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          transformToolArguments: (args) => ({ ...args, injected: true }),
+          transformToolCallParams: (params) => ({ ...params, _meta: { seen: params.arguments } }),
+        },
+      },
+    );
+
+    expect(capturedParams).toEqual({
+      name: "run",
+      arguments: { x: 1, injected: true },
+      _meta: { seen: { x: 1, injected: true } },
+    });
+  });
+
   test("transformToolOutput is NOT called when the tool throws", async () => {
     let called = false;
     const client = createMockClient("svc", [{ name: "run" }], () => {

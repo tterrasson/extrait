@@ -485,6 +485,14 @@ const result = await llm.structured(
       },
       // Optional: transform tool arguments before the tool is called
       transformToolArguments: (args, call) => args,
+      // Optional: transform the full MCP call payload, including _meta
+      transformToolCallParams: (params, call) => ({
+        ...params,
+        _meta: {
+          source: "extrait-docs",
+          clientId: call.clientId,
+        },
+      }),
       // Optional: custom error message when an unknown tool is called
       unknownToolError: (toolName) => `Tool "${toolName}" is not available.`,
     },
@@ -493,6 +501,18 @@ const result = await llm.structured(
 
 await mcpClient.close?.();
 ```
+
+`transformToolArguments()` only receives the tool input object. `transformToolCallParams()` runs after it and receives the full `MCPCallToolParams` payload that will be sent to the MCP client:
+
+```typescript
+type MCPCallToolParams = {
+  name: string;
+  arguments?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+};
+```
+
+Use `transformToolCallParams()` when you need to attach MCP-specific metadata, override the final remote tool name, or otherwise change the full request passed to `client.callTool()`. This hook is exported as `LLMToolCallParamsTransformer`.
 
 ### Timeouts
 

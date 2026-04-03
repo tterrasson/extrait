@@ -1,10 +1,10 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
     // Environment setup & latest features
+    "types": ["bun-types"],
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",
