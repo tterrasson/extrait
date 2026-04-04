@@ -312,5 +312,151 @@ describe("createLLM", () => {
     expect(result.data).toEqual({ val: 6 });
     expect(debugLogs.some((line) => line.includes("[structured][request]"))).toBe(true);
     expect(debugLogs.some((line) => line.includes("[structured][response]"))).toBe(true);
+    expect(debugLogs.some((line) => line.includes("text:"))).toBe(true);
+    expect(debugLogs.some((line) => line.includes("reasoning:"))).toBe(true);
+    expect(debugLogs.some((line) => line.includes("parseSource:"))).toBe(false);
+  });
+
+  test("structured debug response distinguishes text, reasoning, and parseSource", async () => {
+    const registry = createProviderRegistry();
+    const debugLogs: string[] = [];
+
+    registry.register(
+      "mock",
+      () => ({
+        provider: "mock",
+        model: "m1",
+        async complete() {
+          return {
+            text: '{"val": 7}',
+            reasoning: "plan",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+      },
+      registry,
+    );
+
+    const schema = z.object({ val: z.number() });
+    const result = await llm.structured(schema, "Return JSON", {
+      debug: {
+        enabled: true,
+        colors: false,
+        verbose: true,
+        logger(line) {
+          debugLogs.push(line);
+        },
+      },
+    });
+
+    expect(result.data).toEqual({ val: 7 });
+    const responseLog = debugLogs.find((line) => line.includes("[structured][response]")) ?? "";
+    expect(responseLog).toContain("text:");
+    expect(responseLog).toContain('{"val": 7}');
+    expect(responseLog).toContain("reasoning:");
+    expect(responseLog).toContain("plan");
+    expect(responseLog).toContain("parseSource:");
+    expect(responseLog).toContain('<think>plan</think>{"val": 7}');
+  });
+
+  test("structured debug response renders empty reasoning explicitly", async () => {
+    const registry = createProviderRegistry();
+    const debugLogs: string[] = [];
+
+    registry.register(
+      "mock",
+      (options: { text: string }) => ({
+        provider: "mock",
+        model: "m1",
+        async complete() {
+          return {
+            text: options.text,
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        options: { text: '{"val": 8}' },
+      },
+      registry,
+    );
+
+    const schema = z.object({ val: z.number() });
+    const result = await llm.structured(schema, "Return JSON", {
+      debug: {
+        enabled: true,
+        colors: false,
+        logger(line) {
+          debugLogs.push(line);
+        },
+      },
+    });
+
+    expect(result.data).toEqual({ val: 8 });
+    const responseLog = debugLogs.find((line) => line.includes("[structured][response]")) ?? "";
+    expect(responseLog).toContain("reasoning:\n(none)");
+    expect(responseLog).not.toContain("parseSource:");
+  });
+
+  test("structured debug response hides parseSource by default", async () => {
+    const registry = createProviderRegistry();
+    const debugLogs: string[] = [];
+
+    registry.register(
+      "mock",
+      () => ({
+        provider: "mock",
+        model: "m1",
+        async complete() {
+          return {
+            text: "<think>plan</think>{\"val\": 9}",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+      },
+      registry,
+    );
+
+    const schema = z.object({ val: z.number() });
+    const result = await llm.structured(schema, "Return JSON", {
+      debug: {
+        enabled: true,
+        colors: false,
+        logger(line) {
+          debugLogs.push(line);
+        },
+      },
+    });
+
+    expect(result.data).toEqual({ val: 9 });
+    const responseLog = debugLogs.find((line) => line.includes("[structured][response]")) ?? "";
+    expect(responseLog).toContain("text:");
+    expect(responseLog).toContain("{\"val\": 9}");
+    expect(responseLog).toContain("reasoning:");
+    expect(responseLog).toContain("plan");
+    expect(responseLog).not.toContain("parseSource:");
+    expect(responseLog).not.toContain("parseSourceChars=");
   });
 });

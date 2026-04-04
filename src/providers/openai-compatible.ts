@@ -95,6 +95,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
 
       callbacks.onStart?.();
       let text = "";
+      let reasoning = "";
       let usage: LLMUsage | undefined;
       let finishReason: string | undefined;
 
@@ -109,6 +110,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
         }
 
         const delta = pickAssistantDelta(json);
+        const reasoningDelta = pickAssistantReasoningDelta(json);
         const chunkUsage = pickUsage(json);
         const chunkFinishReason = pickFinishReason(json);
 
@@ -122,9 +124,14 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
           callbacks.onToken?.(delta);
         }
 
-        if (delta || chunkUsage || chunkFinishReason) {
+        if (reasoningDelta) {
+          reasoning += reasoningDelta;
+        }
+
+        if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
           const chunk: LLMStreamChunk = {
             textDelta: delta,
+            reasoningDelta: reasoningDelta || undefined,
             raw: json,
             usage: chunkUsage,
             finishReason: chunkFinishReason,
@@ -133,7 +140,12 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
         }
       });
 
-      const out = { text, usage, finishReason };
+      const out = {
+        text,
+        reasoning: reasoning.length > 0 ? reasoning : undefined,
+        usage,
+        finishReason,
+      };
       callbacks.onComplete?.(out);
       return out;
     },
@@ -234,8 +246,10 @@ async function completeWithChatCompletionsPassThrough(
   }
 
   const toolCalls = pickChatToolCalls(payload);
+  const reasoning = pickAssistantReasoning(payload);
   return {
     text: pickAssistantText(payload),
+    reasoning: reasoning.length > 0 ? reasoning : undefined,
     raw: payload,
     usage: pickUsage(payload),
     finishReason: pickFinishReason(payload),
@@ -299,8 +313,10 @@ async function completeWithChatCompletionsWithMCP(
     }
 
     if (calledTools.length === 0) {
+      const reasoning = pickAssistantReasoning(payload);
       return {
         text: pickAssistantText(payload),
+        reasoning: reasoning.length > 0 ? reasoning : undefined,
         raw: payload,
         usage: aggregatedUsage,
         finishReason,
@@ -332,6 +348,10 @@ async function completeWithChatCompletionsWithMCP(
 
   return {
     text: pickAssistantText(lastPayload ?? {}),
+    reasoning: (() => {
+      const value = pickAssistantReasoning(lastPayload ?? {});
+      return value.length > 0 ? value : undefined;
+    })(),
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
@@ -498,6 +518,8 @@ async function streamWithChatCompletionsWithMCP(
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
 
   callbacks.onStart?.();
+  let lastRoundText = "";
+  let lastRoundReasoning = "";
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
@@ -529,9 +551,11 @@ async function streamWithChatCompletionsWithMCP(
     }
 
     let roundText = "";
+    let roundReasoning = "";
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
     const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
+    let reasoningFieldName: OpenAIReasoningFieldName | undefined;
 
     await consumeSSE(response, (data) => {
       if (data === "[DONE]") {
@@ -546,6 +570,7 @@ async function streamWithChatCompletionsWithMCP(
       lastPayload = json;
 
       const delta = pickAssistantDelta(json);
+      const reasoningDelta = pickAssistantReasoningDelta(json);
       const chunkUsage = pickUsage(json);
       const chunkFinishReason = pickFinishReason(json);
 
@@ -560,9 +585,15 @@ async function streamWithChatCompletionsWithMCP(
         callbacks.onToken?.(delta);
       }
 
-      if (delta || chunkUsage || chunkFinishReason) {
+      if (reasoningDelta) {
+        roundReasoning += reasoningDelta;
+        reasoningFieldName ??= pickAssistantReasoningDeltaFieldName(json);
+      }
+
+      if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
         const chunk: LLMStreamChunk = {
           textDelta: delta,
+          reasoningDelta: reasoningDelta || undefined,
           raw: json,
           usage: chunkUsage,
           finishReason: chunkFinishReason,
@@ -580,6 +611,7 @@ async function streamWithChatCompletionsWithMCP(
     if (calledTools.length === 0) {
       const out: LLMResponse = {
         text: roundText,
+        reasoning: roundReasoning.length > 0 ? roundReasoning : undefined,
         raw: lastPayload,
         usage: aggregatedUsage,
         finishReason,
@@ -603,7 +635,13 @@ async function streamWithChatCompletionsWithMCP(
     executedToolCalls.push(...outputs.map((entry) => entry.call));
     toolExecutions.push(...outputs.map((entry) => entry.execution));
 
-    const assistantMessage = buildOpenAIAssistantToolMessage(roundText, calledTools);
+    lastRoundText = roundText;
+    lastRoundReasoning = roundReasoning;
+
+    const assistantMessage = buildOpenAIAssistantToolMessage(roundText, calledTools, {
+      reasoning: roundReasoning,
+      reasoningFieldName,
+    });
     const toolMessages = outputs.map((entry) => ({
       role: "tool",
       tool_call_id: entry.call.id,
@@ -613,7 +651,8 @@ async function streamWithChatCompletionsWithMCP(
   }
 
   const out: LLMResponse = {
-    text: "",
+    text: lastRoundText,
+    reasoning: lastRoundReasoning.length > 0 ? lastRoundReasoning : undefined,
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
@@ -1034,6 +1073,8 @@ function pickAssistantMessage(payload: Record<string, unknown>): Record<string, 
   return message;
 }
 
+type OpenAIReasoningFieldName = "reasoning" | "reasoning_content";
+
 function pickAssistantDelta(payload: Record<string, unknown>): string {
   const choices = payload.choices;
   if (!Array.isArray(choices) || choices.length === 0) {
@@ -1050,24 +1091,62 @@ function pickAssistantDelta(payload: Record<string, unknown>): string {
     return "";
   }
 
-  const content = delta.content;
-  if (typeof content === "string") {
-    return content;
+  return pickTextFromOpenAIContent(delta.content);
+}
+
+function pickAssistantReasoning(payload: Record<string, unknown>): string {
+  const message = pickAssistantMessage(payload);
+  if (!message) {
+    return "";
   }
 
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (!isRecord(part)) {
-          return "";
-        }
-        const text = part.text;
-        return typeof text === "string" ? text : "";
-      })
-      .join("");
+  return pickReasoningText(message);
+}
+
+function pickAssistantReasoningDelta(payload: Record<string, unknown>): string {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return "";
   }
 
-  return "";
+  const first = choices[0];
+  if (!isRecord(first)) {
+    return "";
+  }
+
+  const delta = first.delta;
+  if (!isRecord(delta)) {
+    return "";
+  }
+
+  return pickReasoningText(delta);
+}
+
+function pickAssistantReasoningDeltaFieldName(payload: Record<string, unknown>): OpenAIReasoningFieldName | undefined {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return undefined;
+  }
+
+  const first = choices[0];
+  if (!isRecord(first)) {
+    return undefined;
+  }
+
+  const delta = first.delta;
+  if (!isRecord(delta)) {
+    return undefined;
+  }
+
+  if (hasTextLikeValue(delta.reasoning)) {
+    return "reasoning";
+  }
+
+  if (hasTextLikeValue(delta.reasoning_content)) {
+    return "reasoning_content";
+  }
+
+  return undefined;
 }
 
 interface OpenAIStreamToolCallState {
@@ -1148,8 +1227,15 @@ function buildOpenAIStreamToolCalls(state: Map<number, OpenAIStreamToolCallState
     }));
 }
 
-function buildOpenAIAssistantToolMessage(text: string, toolCalls: LLMToolCall[]): Record<string, unknown> {
-  return {
+function buildOpenAIAssistantToolMessage(
+  text: string,
+  toolCalls: LLMToolCall[],
+  reasoning?: {
+    reasoning?: string;
+    reasoningFieldName?: OpenAIReasoningFieldName;
+  },
+): Record<string, unknown> {
+  const message: Record<string, unknown> = {
     role: "assistant",
     content: text,
     tool_calls: toolCalls.map((call) => ({
@@ -1161,6 +1247,12 @@ function buildOpenAIAssistantToolMessage(text: string, toolCalls: LLMToolCall[])
       },
     })),
   };
+
+  if (reasoning?.reasoning && reasoning.reasoning.length > 0) {
+    message[reasoning.reasoningFieldName ?? "reasoning"] = reasoning.reasoning;
+  }
+
+  return message;
 }
 
 function pickResponsesStreamPayload(payload: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -1376,27 +1468,9 @@ function pickResponsesText(payload: Record<string, unknown>): string {
 function pickAssistantText(payload: Record<string, unknown>): string {
   const message = pickAssistantMessage(payload);
   if (message) {
-    const content = message.content;
-
-    if (typeof content === "string") {
-      return content;
-    }
-
-    if (Array.isArray(content)) {
-      return content
-        .map((part) => {
-          if (typeof part === "string") {
-            return part;
-          }
-
-          if (!isRecord(part)) {
-            return "";
-          }
-
-          const text = part.text;
-          return typeof text === "string" ? text : "";
-        })
-        .join("");
+    const text = pickTextFromOpenAIContent(message.content);
+    if (text.length > 0) {
+      return text;
     }
   }
 
@@ -1409,6 +1483,50 @@ function pickAssistantText(payload: Record<string, unknown>): string {
   }
 
   return "";
+}
+
+function pickReasoningText(value: Record<string, unknown>): string {
+  return pickTextLike(value.reasoning) || pickTextLike(value.reasoning_content);
+}
+
+function pickTextFromOpenAIContent(value: unknown): string {
+  return pickTextLike(value);
+}
+
+function pickTextLike(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((part) => pickTextLikePart(part)).join("");
+  }
+
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  return pickTextLikePart(value);
+}
+
+function pickTextLikePart(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  return pickString(value.text)
+    ?? pickString(value.output_text)
+    ?? pickString(value.reasoning)
+    ?? pickString(value.reasoning_content)
+    ?? (Array.isArray(value.content) ? value.content.map((part) => pickTextLikePart(part)).join("") : "");
+}
+
+function hasTextLikeValue(value: unknown): boolean {
+  return pickTextLike(value).length > 0;
 }
 
 function pickUsage(payload: Record<string, unknown>): LLMUsage | undefined {

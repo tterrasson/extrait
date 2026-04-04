@@ -4,7 +4,7 @@
  * Demonstrates:
  * - Complex nested schemas with arrays and objects
  * - Self-healing for validation errors
- * - Debug mode to see repair attempts
+ * - Debug mode to see repair attempts and normalized outputs
  * - Extracting structured data from unstructured text
  *
  * Usage: bun run dev data-extraction
@@ -31,7 +31,7 @@ const llm = createLLM({
   defaults: {
     mode: "loose",
     selfHeal: 2, // Allow up to 2 self-heal attempts
-    debug: true, // Enable debug to see repair attempts
+    debug: true, // Enable debug to inspect visible text, reasoning, and repair attempts
   },
 });
 

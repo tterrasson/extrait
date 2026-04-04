@@ -27,12 +27,13 @@ import type {
   StructuredResult,
   StructuredTimeoutOptions,
   StructuredTraceEvent,
+  ThinkBlock,
 } from "./types";
 
 export class StructuredParseError extends Error implements StructuredError {
   override readonly name = "StructuredParseError" as const;
-  readonly raw: string;
-  readonly thinkBlocks: StructuredError["thinkBlocks"];
+  readonly text: string;
+  readonly reasoning: string;
   readonly candidates: string[];
   readonly zodIssues?: z.ZodIssue[];
   readonly repairLog?: string[];
@@ -40,16 +41,16 @@ export class StructuredParseError extends Error implements StructuredError {
 
   constructor(input: {
     message?: string;
-    raw: string;
-    thinkBlocks: StructuredError["thinkBlocks"];
+    text: string;
+    reasoning: string;
     candidates: string[];
     zodIssues?: z.ZodIssue[];
     repairLog?: string[];
     attempt: number;
   }) {
     super(input.message ?? `Structured parsing failed after ${input.attempt} attempt(s).`);
-    this.raw = input.raw;
-    this.thinkBlocks = input.thinkBlocks;
+    this.text = input.text;
+    this.reasoning = input.reasoning;
     this.candidates = input.candidates;
     this.zodIssues = input.zodIssues;
     this.repairLog = input.repairLog;
@@ -314,7 +315,7 @@ export async function structured<TSchema extends z.ZodTypeAny>(
 
     const selfHealSource = resolveSelfHealSource(previous);
     const repairPrompt = buildSelfHealPrompt({
-      rawOutput: previous.raw,
+      rawOutput: composeParseSource(previous.text, previous.reasoning),
       issues: previous.zodIssues,
       schema: normalized.schema,
       schemaInstruction: normalized.schemaInstruction,
@@ -782,7 +783,7 @@ function resolveSelfHealSource<T>(
 
   return {
     kind: "raw",
-    text: attempt.raw,
+    text: composeParseSource(attempt.text, attempt.reasoning),
   };
 }
 
@@ -831,13 +832,27 @@ function normalizeWhitespace(value: string): string {
 interface NormalizedStreamConfig {
   enabled: boolean;
   onData?: (event: {
-    data: unknown | null;
-    raw: string;
+    delta: {
+      text: string;
+      reasoning: string;
+    };
+    snapshot: {
+      text: string;
+      reasoning: string;
+      data: unknown | null;
+    };
     done: boolean;
     usage?: LLMUsage;
     finishReason?: string;
   }) => void;
   to?: "stdout";
+}
+
+interface NormalizedModelOutput {
+  text: string;
+  reasoning: string;
+  thinkBlocks: ThinkBlock[];
+  parseSource: string;
 }
 
 function normalizeStreamConfig(
@@ -865,6 +880,7 @@ function normalizeStreamConfig(
 interface NormalizedDebugConfig {
   enabled: boolean;
   colors: boolean;
+  verbose: boolean;
   logger: (line: string) => void;
 }
 
@@ -875,6 +891,7 @@ function normalizeDebugConfig(
     return {
       enabled: option,
       colors: true,
+      verbose: false,
       logger: (line: string) => console.log(line),
     };
   }
@@ -883,6 +900,7 @@ function normalizeDebugConfig(
     return {
       enabled: false,
       colors: true,
+      verbose: false,
       logger: (line: string) => console.log(line),
     };
   }
@@ -890,6 +908,7 @@ function normalizeDebugConfig(
   return {
     enabled: option.enabled ?? true,
     colors: option.colors ?? true,
+    verbose: option.verbose ?? false,
     logger: option.logger ?? ((line: string) => console.log(line)),
   };
 }
@@ -928,7 +947,7 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
     timeout: input.timeout,
   });
 
-  const parsed = parseWithObserve(response.text, input.schema, input.parseOptions, {
+  const parsed = parseWithObserve(response.parseSource, input.schema, input.parseOptions, {
     observe: input.observe,
     attempt: input.attemptNumber,
     selfHeal: input.selfHeal,
@@ -938,8 +957,8 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
     attempt: input.attemptNumber,
     selfHeal: input.selfHeal,
     via: response.via,
-    raw: response.text,
-    thinkBlocks: parsed.thinkBlocks,
+    text: response.text,
+    reasoning: response.reasoning,
     json: parsed.parsed,
     candidates: parsed.candidates.map((candidate) => candidate.content),
     repairLog: collectRepairLog(parsed),
@@ -972,6 +991,9 @@ interface ModelCallOptions {
 
 interface ModelCallResult {
   text: string;
+  reasoning: string;
+  thinkBlocks: ThinkBlock[];
+  parseSource: string;
   via: "complete" | "stream";
   usage?: LLMUsage;
   finishReason?: string;
@@ -1055,34 +1077,52 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
   if (options.stream.enabled && adapter.stream) {
     let latestUsage: LLMUsage | undefined;
     let latestFinishReason: string | undefined;
-    let streamedRaw = "";
-    let sawToken = false;
+    let streamedProviderText = "";
+    let streamedDedicatedReasoning = "";
     let lastDataFingerprint: string | undefined;
+    let previousSnapshotText = "";
+    let previousSnapshotReasoning = "";
 
     const emitStreamingData = (
-      raw: string,
       done: boolean,
       usage?: LLMUsage,
       finishReason?: string,
     ): void => {
-      const data = parseStreamingStructuredData(raw);
-      if (data === null && !done) {
-        return;
-      }
-
-      const fingerprint = toStreamDataFingerprint(data ?? null);
+      const normalized = normalizeModelOutput(streamedProviderText, streamedDedicatedReasoning);
+      const data = parseStreamingStructuredData(normalized.parseSource);
+      const snapshot = {
+        text: normalized.text,
+        reasoning: normalized.reasoning,
+        data: data ?? null,
+      };
+      const fingerprint = toStreamDataFingerprint(snapshot);
       if (!done && fingerprint === lastDataFingerprint) {
         return;
       }
 
+      const delta = {
+        text: snapshot.text.startsWith(previousSnapshotText)
+          ? snapshot.text.slice(previousSnapshotText.length)
+          : "",
+        reasoning: snapshot.reasoning.startsWith(previousSnapshotReasoning)
+          ? snapshot.reasoning.slice(previousSnapshotReasoning.length)
+          : "",
+      };
+
       lastDataFingerprint = fingerprint;
+      previousSnapshotText = snapshot.text;
+      previousSnapshotReasoning = snapshot.reasoning;
       options.stream.onData?.({
-        data: data ?? null,
-        raw,
+        delta,
+        snapshot,
         done,
         usage,
         finishReason,
       });
+
+      if (options.stream.to === "stdout" && delta.text) {
+        process.stdout.write(delta.text);
+      }
 
       emitObserve(options.observe, {
         stage: "llm.stream.data",
@@ -1101,11 +1141,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
         return;
       }
 
-      streamedRaw += delta;
-
-      if (options.stream.to === "stdout") {
-        process.stdout.write(delta);
-      }
+      streamedProviderText += delta;
 
       emitObserve(options.observe, {
         stage: "llm.stream.delta",
@@ -1117,17 +1153,26 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
         },
       });
 
-      emitStreamingData(streamedRaw, false);
+      emitStreamingData(false);
+    };
+
+    const handleReasoningDelta = (delta: string): void => {
+      if (!delta) {
+        return;
+      }
+
+      streamedDedicatedReasoning += delta;
+      emitStreamingData(false);
     };
 
     const response = await adapter.stream(requestPayload, {
-      onToken: (token) => {
-        sawToken = true;
-        handleTextDelta(token);
-      },
       onChunk: (chunk) => {
-        if (!sawToken && chunk.textDelta) {
+        if (chunk.textDelta) {
           handleTextDelta(chunk.textDelta);
+        }
+
+        if (chunk.reasoningDelta) {
+          handleReasoningDelta(chunk.reasoningDelta);
         }
 
         if (chunk.usage) {
@@ -1140,11 +1185,14 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
       },
     });
 
-    const finalText =
-      typeof response.text === "string" && response.text.length > 0 ? response.text : streamedRaw;
+    streamedProviderText =
+      typeof response.text === "string" ? response.text : streamedProviderText;
+    streamedDedicatedReasoning =
+      typeof response.reasoning === "string" ? response.reasoning : streamedDedicatedReasoning;
+    const finalNormalized = normalizeModelOutput(streamedProviderText, streamedDedicatedReasoning);
     const usage = preferLatestStreamUsage(latestUsage, response.usage);
     const finishReason = response.finishReason ?? latestFinishReason;
-    emitStreamingData(finalText, true, usage, finishReason);
+    emitStreamingData(true, usage, finishReason);
 
     emitObserve(options.observe, {
       stage: "llm.response",
@@ -1153,7 +1201,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
       message: "Streaming response completed.",
       details: {
         via: "stream",
-        chars: finalText.length,
+        chars: finalNormalized.parseSource.length,
         finishReason,
       },
     });
@@ -1163,13 +1211,18 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
       selfHealAttempt: options.selfHeal,
       selfHealEnabled: options.selfHealEnabled,
       via: "stream",
-      responseText: finalText,
+      text: finalNormalized.text,
+      reasoning: finalNormalized.reasoning,
+      parseSource: finalNormalized.parseSource,
       usage,
       finishReason,
     });
 
     return {
-      text: finalText,
+      text: finalNormalized.text,
+      reasoning: finalNormalized.reasoning,
+      thinkBlocks: finalNormalized.thinkBlocks,
+      parseSource: finalNormalized.parseSource,
       via: "stream",
       usage,
       finishReason,
@@ -1177,6 +1230,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
   }
 
   const response = await adapter.complete(requestPayload);
+  const normalized = normalizeModelOutput(response.text, response.reasoning);
 
   emitObserve(options.observe, {
     stage: "llm.response",
@@ -1185,7 +1239,7 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
     message: "Completion response received.",
     details: {
       via: "complete",
-      chars: response.text.length,
+      chars: normalized.parseSource.length,
       finishReason: response.finishReason,
     },
   });
@@ -1195,21 +1249,81 @@ async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promis
     selfHealAttempt: options.selfHeal,
     selfHealEnabled: options.selfHealEnabled,
     via: "complete",
-    responseText: response.text,
+    text: normalized.text,
+    reasoning: normalized.reasoning,
+    parseSource: normalized.parseSource,
     usage: response.usage,
     finishReason: response.finishReason,
   });
 
   return {
-    text: response.text,
+    text: normalized.text,
+    reasoning: normalized.reasoning,
+    thinkBlocks: normalized.thinkBlocks,
+    parseSource: normalized.parseSource,
     via: "complete",
     usage: response.usage,
     finishReason: response.finishReason,
   };
 }
 
-function parseStreamingStructuredData(raw: string): unknown | null {
-  const sanitized = sanitizeThink(raw);
+function normalizeModelOutput(text: string, dedicatedReasoning?: string): NormalizedModelOutput {
+  const sanitized = sanitizeThink(text);
+  const visibleText = stripThinkBlocks(text, sanitized.thinkBlocks);
+  const reasoning = joinReasoningSegments([
+    dedicatedReasoning,
+    ...sanitized.thinkBlocks.map((block) => block.content),
+  ]);
+
+  return {
+    text: visibleText,
+    reasoning,
+    thinkBlocks: sanitized.thinkBlocks,
+    parseSource: composeParseSource(visibleText, reasoning),
+  };
+}
+
+function composeParseSource(text: string, reasoning?: string): string {
+  if (typeof reasoning !== "string" || reasoning.length === 0) {
+    return text;
+  }
+
+  const sanitized = reasoning.replace(RE_THINK_TAGS, "");
+  if (sanitized.length === 0) {
+    return text;
+  }
+
+  return `<think>${sanitized}</think>${text}`;
+}
+
+const RE_THINK_TAGS = /<\/?think\s*>/gi;
+
+function joinReasoningSegments(parts: Array<string | undefined>): string {
+  return parts
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n");
+}
+
+function stripThinkBlocks(text: string, thinkBlocks: ThinkBlock[]): string {
+  if (thinkBlocks.length === 0) {
+    return text;
+  }
+
+  let output = "";
+  let cursor = 0;
+
+  for (const block of thinkBlocks) {
+    output += text.slice(cursor, block.start);
+    cursor = block.end;
+  }
+
+  output += text.slice(cursor);
+  return output;
+}
+
+function parseStreamingStructuredData(parseSource: string): unknown | null {
+  const sanitized = sanitizeThink(parseSource);
   const start = findFirstJsonRootStart(sanitized.visibleText);
   if (start < 0) {
     return null;
@@ -1339,8 +1453,8 @@ function buildSuccessResult<T>(data: T, attempts: StructuredAttempt<T>[]): Struc
 
   return {
     data,
-    raw: final?.raw ?? "",
-    thinkBlocks: final?.thinkBlocks ?? [],
+    text: final?.text ?? "",
+    reasoning: final?.reasoning ?? "",
     json: final?.json ?? null,
     attempts,
     usage: aggregateUsage(attempts),
@@ -1375,8 +1489,8 @@ function toStructuredError<T>(attempt: StructuredAttempt<T> | undefined): Struct
   if (!attempt) {
     return new StructuredParseError({
       message: "Structured parsing failed before any model response.",
-      raw: "",
-      thinkBlocks: [],
+      text: "",
+      reasoning: "",
       candidates: [],
       zodIssues: [],
       repairLog: [],
@@ -1385,8 +1499,8 @@ function toStructuredError<T>(attempt: StructuredAttempt<T> | undefined): Struct
   }
 
   return new StructuredParseError({
-    raw: attempt.raw,
-    thinkBlocks: attempt.thinkBlocks,
+    text: attempt.text,
+    reasoning: attempt.reasoning,
     candidates: attempt.candidates,
     zodIssues: attempt.zodIssues,
     repairLog: attempt.repairLog,
@@ -1416,7 +1530,9 @@ interface DebugResponseInput {
   selfHealAttempt: boolean;
   selfHealEnabled: boolean;
   via: "complete" | "stream";
-  responseText: string;
+  text: string;
+  reasoning: string;
+  parseSource: string;
   usage?: LLMUsage;
   finishReason?: string;
 }
@@ -1473,6 +1589,20 @@ function emitDebugResponse(
   config: NormalizedDebugConfig,
   input: DebugResponseInput,
 ): void {
+  const text = input.text.length > 0 ? input.text : "(none)";
+  const reasoning = input.reasoning.length > 0 ? input.reasoning : "(none)";
+  const metadata = [
+    `via=${input.via}`,
+    `textChars=${input.text.length}`,
+    `reasoningChars=${input.reasoning.length}`,
+  ];
+  if (config.verbose) {
+    metadata.push(`parseSourceChars=${input.parseSource.length}`);
+  }
+  metadata.push(
+    `finishReason=${input.finishReason ?? "unknown"}`,
+    `usage=${JSON.stringify(input.usage ?? {})}`,
+  );
   const lines = [
     color(
       config,
@@ -1487,18 +1617,15 @@ function emitDebugResponse(
       ),
       "green",
     ),
-    dim(
-      config,
-      [
-        `via=${input.via}`,
-        `chars=${input.responseText.length}`,
-        `finishReason=${input.finishReason ?? "unknown"}`,
-        `usage=${JSON.stringify(input.usage ?? {})}`,
-      ].join(" "),
-    ),
+    dim(config, metadata.join(" ")),
     color(config, "text:", "yellow"),
-    input.responseText,
+    text,
+    color(config, "reasoning:", "yellow"),
+    reasoning,
   ];
+  if (config.verbose) {
+    lines.push(color(config, "parseSource:", "yellow"), input.parseSource);
+  }
 
   emitDebug(config, lines.join("\n"));
 }

@@ -92,7 +92,7 @@ try {
         to: "stdout",
         onData: (event) => {
           if (event.done) {
-            console.log("\n[stream] snapshot complete:", JSON.stringify(event.data));
+            console.log("\n[stream] snapshot complete:", JSON.stringify(event.snapshot.data));
           }
         },
       },

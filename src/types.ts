@@ -189,6 +189,7 @@ export interface LLMUsage {
 
 export interface LLMResponse {
   text: string;
+  reasoning?: string;
   raw?: unknown;
   usage?: LLMUsage;
   finishReason?: string;
@@ -198,6 +199,7 @@ export interface LLMResponse {
 
 export interface LLMStreamChunk {
   textDelta: string;
+  reasoningDelta?: string;
   raw?: unknown;
   done?: boolean;
   usage?: LLMUsage;
@@ -333,6 +335,7 @@ export type StructuredPromptBuilder =
 export interface StructuredDebugOptions {
   enabled?: boolean;
   colors?: boolean;
+  verbose?: boolean;
   logger?: (line: string) => void;
 }
 
@@ -359,9 +362,20 @@ export type StructuredStreamData<T> =
       ? { [K in keyof T]?: StructuredStreamData<T[K]> | null }
       : T | null;
 
-export interface StructuredStreamEvent<T = unknown> {
+export interface StructuredStreamDelta {
+  text: string;
+  reasoning: string;
+}
+
+export interface StructuredStreamSnapshot<T = unknown> {
+  text: string;
+  reasoning: string;
   data: StructuredStreamData<T> | null;
-  raw: string;
+}
+
+export interface StructuredStreamEvent<T = unknown> {
+  delta: StructuredStreamDelta;
+  snapshot: StructuredStreamSnapshot<T>;
   done: boolean;
   usage?: LLMUsage;
   finishReason?: string;
@@ -398,8 +412,8 @@ export interface StructuredAttempt<T> {
   attempt: number;
   selfHeal: boolean;
   via: "complete" | "stream";
-  raw: string;
-  thinkBlocks: ThinkBlock[];
+  text: string;
+  reasoning: string;
   json: unknown | null;
   candidates: string[];
   repairLog: string[];
@@ -412,8 +426,8 @@ export interface StructuredAttempt<T> {
 
 export interface StructuredResult<T> {
   data: T;
-  raw: string;
-  thinkBlocks: ThinkBlock[];
+  text: string;
+  reasoning: string;
   json: unknown | null;
   attempts: StructuredAttempt<T>[];
   usage?: LLMUsage;
@@ -422,8 +436,8 @@ export interface StructuredResult<T> {
 
 export interface StructuredError {
   name: "StructuredParseError";
-  raw: string;
-  thinkBlocks: ThinkBlock[];
+  text: string;
+  reasoning: string;
   candidates: string[];
   zodIssues?: z.ZodIssue[];
   repairLog?: string[];

@@ -112,8 +112,12 @@ try {
       );
     }
     if (debugEnabled) {
-      console.error("\nRaw model output:");
-      console.error(error.raw);
+      console.error("\nModel text:");
+      console.error(error.text);
+      if (error.reasoning.length > 0) {
+        console.error("\nModel reasoning:");
+        console.error(error.reasoning);
+      }
       if (error.candidates.length > 0) {
         console.error("\nExtracted JSON candidates:");
         error.candidates.forEach((candidate, index) => {

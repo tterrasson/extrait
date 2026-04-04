@@ -53,10 +53,12 @@ const userInput = process.argv.slice(3).join(" ").trim();
 const textToAnalyze = userInput || "I love this product, it works very well and saves me time.";
 
 const snapshots: Array<{ data: unknown; done: boolean }> = [];
+let printedReasoningHeader = false;
+let printedVisibleHeader = false;
 
 console.log(`Provider: ${provider}`);
 console.log(`Model: ${model}`);
-console.log("\nStreaming raw output:");
+console.log("\nStreaming output:");
 
 try {
   const result = await llm.structured(
@@ -74,12 +76,29 @@ try {
       },
       stream: {
         enabled: true,
-        to: "stdout",
         onData: (event) => {
-          snapshots.push({
-            data: event.data,
-            done: event.done,
-          });
+          if (event.delta.reasoning.length > 0) {
+            if (!printedReasoningHeader) {
+              process.stdout.write("\n[reasoning]\n");
+              printedReasoningHeader = true;
+            }
+            process.stdout.write(event.delta.reasoning);
+          }
+
+          if (event.delta.text.length > 0) {
+            if (!printedVisibleHeader) {
+              process.stdout.write(printedReasoningHeader ? "\n\n[visible]\n" : "\n[visible]\n");
+              printedVisibleHeader = true;
+            }
+            process.stdout.write(event.delta.text);
+          }
+
+          if (event.snapshot.data !== null || event.done) {
+            snapshots.push({
+              data: event.snapshot.data,
+              done: event.done,
+            });
+          }
         },
       },
     },
@@ -114,7 +133,14 @@ try {
     console.log(`- done=${snapshot.done} data=${JSON.stringify(snapshot.data)}`);
   }
 
+  if (!printedReasoningHeader && result.reasoning.length > 0) {
+    console.log("\nReasoning:");
+    console.log(result.reasoning);
+  }
+
   console.log("\nFinal data:", JSON.stringify(result.data));
+  console.log("Final text:", JSON.stringify(result.text));
+  console.log("Final reasoning:", JSON.stringify(result.reasoning));
   console.log("Usage:", result.usage ?? {});
   console.log("Finish reason:", result.finishReason ?? "unknown");
   console.log("\n✅ Streaming check passed.");

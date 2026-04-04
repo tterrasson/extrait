@@ -396,6 +396,71 @@ describe("openai-compatible MCP tools", () => {
     ).toBe(true);
   });
 
+  test("keeps final assistant reasoning in chat completions MCP mode", async () => {
+    let round = 0;
+
+    const fetcher = (async () => {
+      round += 1;
+
+      if (round === 1) {
+        return jsonResponse({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning: "Need a calculator.",
+                tool_calls: [
+                  {
+                    id: "call_add_reasoning_complete",
+                    type: "function",
+                    function: {
+                      name: "add",
+                      arguments: JSON.stringify({ a: 4, b: 6 }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "10",
+              reasoning: "Computed from tool output.",
+            },
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "Add 4 and 6",
+      mcpClients: [createCalculatorMCP()],
+    });
+
+    expect(out.text).toBe("10");
+    expect(out.reasoning).toBe("Computed from tool output.");
+    expect(out.toolCalls?.[0]).toMatchObject({
+      id: "call_add_reasoning_complete",
+      name: "add",
+      output: { result: 10 },
+    });
+  });
+
   test("returns tool calls in pass-through mode when no MCP clients are provided", async () => {
     const fetcher = (async () =>
       jsonResponse({

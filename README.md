@@ -107,6 +107,8 @@ const llm = createLLM({
     mode: "loose" | "strict",             // loose allows repair
     selfHeal: 1,                          // optional retry attempts
     debug: false,                         // optional structured debug output
+    // or:
+    // debug: { enabled: true, verbose: true },
     systemPrompt: "You are a helpful assistant.",
     timeout: {
       request: 30_000,
@@ -219,7 +221,17 @@ const result = await llm.structured(
     stream: {
       to: "stdout",
       onData: (event) => {
-        console.log("Partial data:", event.data);
+        if (event.delta.text) {
+          console.log("New visible text:", event.delta.text);
+        }
+        if (event.delta.reasoning) {
+          console.log("New reasoning text:", event.delta.reasoning);
+        }
+
+        console.log("Current visible text:", event.snapshot.text);
+        console.log("Current reasoning:", event.snapshot.reasoning);
+        console.log("Current structured snapshot:", event.snapshot.data);
+
         if (event.done) {
           console.log("Streaming done.");
         }
@@ -237,6 +249,21 @@ const result = await llm.structured(
 ```
 
 `prompt()` builds an ordered `messages` payload. Use ``prompt`...` `` for a single string prompt, or the fluent builder for multi-turn conversations. The `LLMMessage` type is exported if you need to type your own message arrays.
+
+In `stream.onData`, the event is split into two layers:
+
+- `event.delta.text` is only the newly received visible text since the previous event.
+- `event.delta.reasoning` is only the newly received reasoning text since the previous event.
+- `event.snapshot.text` is the full visible text accumulated so far.
+- `event.snapshot.reasoning` is the full normalized reasoning accumulated so far.
+- `event.snapshot.data` is the best structured JSON snapshot that can be parsed from the stream so far. It may stay unchanged while `event.delta.text` continues to grow.
+
+Typical usage is:
+
+- render `event.delta.text` directly to a terminal or chat UI
+- optionally render `event.delta.reasoning` in a separate reasoning panel
+- use `event.snapshot.data` to drive partial structured UI state
+- use `event.snapshot.text` / `event.snapshot.reasoning` when you need the full accumulated state instead of only the latest increment
 
 You can also pass provider request options through `request`:
 
@@ -331,13 +358,13 @@ const messages = conversation("You are a vision assistant.", [
 
 ### Result Object
 
-Successful structured calls return validated data plus the raw response and trace metadata.
+Successful structured calls return validated data plus normalized text/reasoning and trace metadata.
 
 ```typescript
 {
   data: T,                      // Validated data matching schema
-  raw: string,                  // Raw LLM response
-  thinkBlocks: ThinkBlock[],    // Extracted <think> blocks
+  text: string,                 // Visible model text, without inline <think> blocks
+  reasoning: string,            // Normalized reasoning across dedicated fields and inline <think>
   json: unknown | null,         // Parsed JSON before validation
   attempts: StructuredAttempt<T>[], // One entry per parse / self-heal attempt
   usage?: {
@@ -357,8 +384,8 @@ Each `attempts` entry includes:
   attempt: number,
   selfHeal: boolean,
   via: "complete" | "stream",
-  raw: string,
-  thinkBlocks: ThinkBlock[],
+  text: string,
+  reasoning: string,
   json: unknown | null,
   candidates: string[],
   repairLog: string[],
@@ -369,6 +396,8 @@ Each `attempts` entry includes:
   parsed: ParseLLMOutputResult<T>,
 }
 ```
+
+Legacy inline `<think>...</think>` blocks are still supported, but the high-level `structured()` API now folds them into `reasoning` internally instead of exposing block metadata.
 
 ### Error Handling
 
@@ -582,6 +611,9 @@ These environment variables are used across the examples and common client setup
 - `LLM_MODEL` - Model name (default: `gpt-5-nano`)
 - `LLM_API_KEY` - API key for the provider
 - `STRUCTURED_DEBUG=1` - Enable debug output
+  By default, structured debug prints `text` (public visible output) and
+  `reasoning` (normalized reasoning). `parseSource` (the internal source used by
+  parsing and self-heal) is only printed when `debug.verbose` is enabled.
 
 ## Testing
 

@@ -105,6 +105,88 @@ describe("openai-compatible streaming", () => {
     });
   });
 
+  test("streams reasoning_content separately from visible text", async () => {
+    const tokens: string[] = [];
+    const chunks: LLMStreamChunk[] = [];
+
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { reasoning_content: "Thinking" } }] }),
+        JSON.stringify({ choices: [{ delta: { reasoning_content: "..." } }] }),
+        JSON.stringify({ choices: [{ delta: { content: "{\"value\":" } }] }),
+        JSON.stringify({ choices: [{ delta: { content: "7}" }, finish_reason: "stop" }] }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      { prompt: "test" },
+      {
+        onToken: (token) => tokens.push(token),
+        onChunk: (chunk) => chunks.push(chunk),
+      },
+    );
+
+    expect(tokens).toEqual(['{"value":', "7}"]);
+    expect(result.text).toBe('{"value":7}');
+    expect(result.reasoning).toBe("Thinking...");
+    expect(chunks.map((chunk) => chunk.reasoningDelta).filter(Boolean)).toEqual(["Thinking", "..."]);
+    expect(chunks.map((chunk) => chunk.textDelta).filter(Boolean)).toEqual(['{"value":', "7}"]);
+  });
+
+  test("streams reasoning separately when provider uses reasoning field", async () => {
+    const chunks: LLMStreamChunk[] = [];
+
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { reasoning: "step 1" } }] }),
+        JSON.stringify({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      { prompt: "test" },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(result.text).toBe("done");
+    expect(result.reasoning).toBe("step 1");
+    expect(chunks[0]?.reasoningDelta).toBe("step 1");
+    expect(chunks[1]?.textDelta).toBe("done");
+  });
+
+  test("keeps reasoning when a stream finishes without visible text", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { reasoning: "silent chain" } }] }),
+        JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({ prompt: "test" });
+
+    expect(result.text).toBe("");
+    expect(result.reasoning).toBe("silent chain");
+    expect(result.finishReason).toBe("stop");
+  });
+
   test("ignores [DONE] sentinel in text", async () => {
     const tokens: string[] = [];
 
@@ -244,6 +326,68 @@ describe("openai-compatible streaming", () => {
       totalTokens: 10,
     });
     expect(chunks.some((chunk) => chunk.finishReason === "tool_calls")).toBe(true);
+  });
+
+  test("streams reasoning in MCP mode before tool calls", async () => {
+    const chunks: LLMStreamChunk[] = [];
+    let round = 0;
+
+    const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
+      const bodyParsed = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      round += 1;
+
+      if (round === 1) {
+        return sseResponse([
+          JSON.stringify({ choices: [{ delta: { reasoning: "Need addition. " } }] }),
+          JSON.stringify({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call_add_reasoning",
+                      type: "function",
+                      function: { name: "add", arguments: "{\"a\":1,\"b\":4}" },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          }),
+          "[DONE]",
+        ]);
+      }
+
+      const messages = Array.isArray(bodyParsed.messages) ? bodyParsed.messages : [];
+      const assistantMessage = messages.find((entry) => (entry as { role?: string }).role === "assistant") as
+        | { reasoning?: string }
+        | undefined;
+      expect(assistantMessage?.reasoning).toBe("Need addition. ");
+
+      return sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "5" }, finish_reason: "stop" }] }),
+        "[DONE]",
+      ]);
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      {
+        prompt: "test",
+        mcpClients: [createSimpleMCP()],
+      },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(chunks[0]?.reasoningDelta).toBe("Need addition. ");
+    expect(result.text).toBe("5");
   });
 
   test("responses API stream does not call onToken when no text delta is emitted", async () => {
@@ -458,6 +602,58 @@ describe("openai-compatible text extraction", () => {
 
     const result = await adapter.complete({ prompt: "test" });
     expect(result.text).toBe("direct output");
+  });
+
+  test("extracts reasoning_content from chat completions messages", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: '{"value":7}',
+              reasoning_content: "legacy reasoning",
+            },
+          },
+        ],
+      })) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.complete({ prompt: "test" });
+    expect(result.text).toBe('{"value":7}');
+    expect(result.reasoning).toBe("legacy reasoning");
+  });
+
+  test("extracts reasoning from chat completions messages", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "done",
+              reasoning: "new reasoning",
+            },
+          },
+        ],
+      })) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.complete({ prompt: "test" });
+    expect(result.text).toBe("done");
+    expect(result.reasoning).toBe("new reasoning");
   });
 
   test("pickResponsesText from output content array", async () => {

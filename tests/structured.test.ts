@@ -108,6 +108,16 @@ class StreamingUsageMockAdapter implements LLMAdapter {
   }
 }
 
+class ReasoningMockAdapter implements LLMAdapter {
+  async complete(): Promise<LLMResponse> {
+    return {
+      text: '{"value": 9}',
+      reasoning: '{"value": 0}',
+      finishReason: "stop",
+    };
+  }
+}
+
 describe("structured", () => {
   test("supports overload structured(adapter, schema, prompt, options) + selfHeal sugar", async () => {
     const schema = z.object({ value: z.number() });
@@ -145,21 +155,52 @@ describe("structured", () => {
     const parseError = captured as StructuredParseError;
     expect(parseError.name).toBe("StructuredParseError");
     expect(parseError.attempt).toBe(1);
-    expect(parseError.raw).toContain("not json");
+    expect(parseError.text).toContain("not json");
+    expect(parseError.reasoning).toBe("");
+  });
+
+  test("preserves reasoning on StructuredParseError", async () => {
+    const schema = z.object({ value: z.number() });
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return {
+          text: "not json",
+          reasoning: "hidden chain",
+          finishReason: "stop",
+        };
+      },
+    };
+
+    let captured: unknown;
+
+    try {
+      await structured(model, schema, "Return JSON", {
+        selfHeal: false,
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(captured).toBeInstanceOf(StructuredParseError);
+    const parseError = captured as StructuredParseError;
+    expect(parseError.text).toBe("not json");
+    expect(parseError.reasoning).toBe("hidden chain");
   });
 
   test("streaming emits progressive structured snapshots", async () => {
     const schema = z.object({ value: z.number() });
     const model = new StreamingMockAdapter();
-    const snapshots: Array<{ data: unknown; done: boolean }> = [];
+    const snapshots: Array<{ data: unknown; done: boolean; text: string; reasoning: string }> = [];
 
     const result = await structured(model, schema, "Return JSON", {
       stream: {
         enabled: true,
         onData: (event) => {
           snapshots.push({
-            data: event.data,
+            data: event.snapshot.data,
             done: event.done,
+            text: event.snapshot.text,
+            reasoning: event.snapshot.reasoning,
           });
         },
       },
@@ -168,12 +209,16 @@ describe("structured", () => {
 
     expect(model.streamCalls).toBe(1);
     expect(snapshots).toEqual([
-      { data: {}, done: false },
-      { data: { value: null }, done: false },
-      { data: { value: 123 }, done: false },
-      { data: { value: 123 }, done: true },
+      { data: {}, done: false, text: "{", reasoning: "" },
+      { data: { value: null }, done: false, text: '{"value"', reasoning: "" },
+      { data: { value: null }, done: false, text: '{"value":', reasoning: "" },
+      { data: { value: 123 }, done: false, text: '{"value": 123', reasoning: "" },
+      { data: { value: 123 }, done: false, text: '{"value": 123}', reasoning: "" },
+      { data: { value: 123 }, done: true, text: '{"value": 123}', reasoning: "" },
     ]);
     expect(result.data).toEqual({ value: 123 });
+    expect(result.text).toBe('{"value": 123}');
+    expect(result.reasoning).toBe("");
     expect(result.finishReason).toBe("stop");
     expect(result.usage?.totalTokens).toBe(27);
   });
@@ -221,15 +266,17 @@ describe("structured", () => {
       },
     };
 
-    const snapshots: Array<{ data: unknown; done: boolean }> = [];
+    const snapshots: Array<{ data: unknown; done: boolean; deltaText: string; deltaReasoning: string }> = [];
 
     const result = await structured(model, schema, "Return JSON", {
       stream: {
         enabled: true,
         onData: (event) => {
           snapshots.push({
-            data: event.data,
+            data: event.snapshot.data,
             done: event.done,
+            deltaText: event.delta.text,
+            deltaReasoning: event.delta.reasoning,
           });
         },
       },
@@ -238,10 +285,11 @@ describe("structured", () => {
 
     expect(result.data).toEqual({ sentiment: "POSITIVE", confidence: 0.8 });
     expect(snapshots).toEqual([
-      { data: { sentiment: "POS" }, done: false },
-      { data: { sentiment: "POSITIVE", confidence: null }, done: false },
-      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false },
-      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: true },
+      { data: { sentiment: "POS" }, done: false, deltaText: '{"sentiment":"POS', deltaReasoning: "" },
+      { data: { sentiment: "POSITIVE", confidence: null }, done: false, deltaText: 'ITIVE","confidence":', deltaReasoning: "" },
+      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false, deltaText: "0.8", deltaReasoning: "" },
+      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false, deltaText: "}", deltaReasoning: "" },
+      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: true, deltaText: "", deltaReasoning: "" },
     ]);
   });
 
@@ -271,20 +319,25 @@ describe("structured", () => {
       },
     };
 
-    const snapshots: Array<{ data: unknown; done: boolean }> = [];
+    const snapshots: Array<{ data: unknown; done: boolean; text: string }> = [];
     const result = await structured(model, schema, "Return JSON", {
       stream: {
         enabled: true,
-        onData: (event) => snapshots.push({ data: event.data, done: event.done }),
+        onData: (event) => snapshots.push({
+          data: event.snapshot.data,
+          done: event.done,
+          text: event.snapshot.text,
+        }),
       },
       selfHeal: false,
     });
 
     expect(result.data).toEqual({ sentiment: "POSITIVE", confidence: 0.8 });
     expect(snapshots).toEqual([
-      { data: { sentiment: "POS" }, done: false },
-      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false },
-      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: true },
+      { data: null, done: false, text: `Voici l'analyse: ` },
+      { data: { sentiment: "POS" }, done: false, text: `Voici l'analyse: {"sentiment":"POS` },
+      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false, text: `Voici l'analyse: {"sentiment":"POSITIVE","confidence":0.8}` },
+      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: true, text: `Voici l'analyse: {"sentiment":"POSITIVE","confidence":0.8}` },
     ]);
   });
 
@@ -310,19 +363,27 @@ describe("structured", () => {
       },
     };
 
-    const events: Array<{ data: unknown; done: boolean }> = [];
+    const events: Array<{ data: unknown; done: boolean; text: string }> = [];
 
     await expect(
       structured(model, schema, "Return JSON", {
         stream: {
           enabled: true,
-          onData: (event) => events.push({ data: event.data, done: event.done }),
+          onData: (event) => events.push({
+            data: event.snapshot.data,
+            done: event.done,
+            text: event.snapshot.text,
+          }),
         },
         selfHeal: false,
       }),
     ).rejects.toBeInstanceOf(StructuredParseError);
 
-    expect(events).toEqual([{ data: null, done: true }]);
+    expect(events).toEqual([
+      { data: null, done: false, text: "not " },
+      { data: null, done: false, text: "not json" },
+      { data: null, done: true, text: "not json" },
+    ]);
   });
 
   test("automatically injects the enriched schema format", async () => {
@@ -655,8 +716,307 @@ describe("structured", () => {
     });
 
     expect(result.data).toEqual({ value: 7 });
-    expect(result.thinkBlocks.length).toBe(1);
-    expect(result.thinkBlocks[0]?.content).toContain('{"value": 0}');
-    expect(result.attempts[0]?.thinkBlocks.length).toBe(1);
+    expect(result.text).toBe('\n{"value": 7}');
+    expect(result.reasoning).toContain('{"value": 0}');
+    expect("thinkBlocks" in result).toBe(false);
+    expect("thinkBlocks" in (result.attempts[0] ?? {})).toBe(false);
+  });
+
+  test("normalizes explicit reasoning into final text and reasoning fields", async () => {
+    const schema = z.object({ value: z.number() });
+    const model = new ReasoningMockAdapter();
+
+    const result = await structured(model, schema, "Return JSON", {
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 9 });
+    expect(result.text).toBe('{"value": 9}');
+    expect(result.reasoning).toBe('{"value": 0}');
+    expect(result.attempts[0]?.text).toContain('{"value": 9}');
+    expect(result.attempts[0]?.reasoning).toContain('{"value": 0}');
+  });
+
+  test("combines dedicated reasoning and inline think blocks without deduplication", async () => {
+    const schema = z.object({ value: z.number() });
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return {
+          text: '<think>inline thought</think>{"value": 7}',
+          reasoning: "dedicated thought",
+          finishReason: "stop",
+        };
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 7 });
+    expect(result.text).toBe('{"value": 7}');
+    expect(result.reasoning).toBe("dedicated thought\n\ninline thought");
+    expect("thinkBlocks" in result).toBe(false);
+  });
+
+  test("streaming exposes reasoning deltas separately from visible text", async () => {
+    const schema = z.object({ value: z.number() });
+    const events: Array<{
+      delta: { text: string; reasoning: string };
+      snapshot: { text: string; reasoning: string; data: unknown };
+      done: boolean;
+    }> = [];
+
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: '{"value":7}', reasoning: "plan" };
+      },
+      async stream(_request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        callbacks.onStart?.();
+        callbacks.onChunk?.({ textDelta: "", reasoningDelta: "plan" });
+        callbacks.onChunk?.({ textDelta: '{"value":' });
+        callbacks.onChunk?.({ textDelta: "7}", finishReason: "stop" });
+        const out = {
+          text: '{"value":7}',
+          reasoning: "plan",
+          finishReason: "stop",
+        };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      stream: {
+        enabled: true,
+        onData: (event) => events.push({
+          delta: event.delta,
+          snapshot: event.snapshot,
+          done: event.done,
+        }),
+      },
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 7 });
+    expect(result.text).toBe('{"value":7}');
+    expect(result.reasoning).toBe("plan");
+    expect(events).toEqual([
+      {
+        delta: { text: "", reasoning: "plan" },
+        snapshot: { text: "", reasoning: "plan", data: null },
+        done: false,
+      },
+      {
+        delta: { text: '{"value":', reasoning: "" },
+        snapshot: { text: '{"value":', reasoning: "plan", data: { value: null } },
+        done: false,
+      },
+      {
+        delta: { text: "7}", reasoning: "" },
+        snapshot: { text: '{"value":7}', reasoning: "plan", data: { value: 7 } },
+        done: false,
+      },
+      {
+        delta: { text: "", reasoning: "" },
+        snapshot: { text: '{"value":7}', reasoning: "plan", data: { value: 7 } },
+        done: true,
+      },
+    ]);
+  });
+
+  test("stream.to stdout writes only visible text, never reasoning", async () => {
+    const schema = z.object({ value: z.number() });
+    const writes: string[] = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: '{"value":1}', reasoning: "plan" };
+      },
+      async stream(_request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        callbacks.onStart?.();
+        callbacks.onChunk?.({ textDelta: "", reasoningDelta: "plan" });
+        callbacks.onChunk?.({ textDelta: '{"value":1}', finishReason: "stop" });
+        const out = {
+          text: '{"value":1}',
+          reasoning: "plan",
+          finishReason: "stop",
+        };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    }) as typeof process.stdout.write;
+
+    try {
+      const result = await structured(model, schema, "Return JSON", {
+        stream: {
+          enabled: true,
+          to: "stdout",
+        },
+        selfHeal: false,
+      });
+
+      expect(result.data).toEqual({ value: 1 });
+      expect(result.reasoning).toBe("plan");
+      expect(writes.join("")).toBe('{"value":1}');
+    } finally {
+      process.stdout.write = originalWrite as typeof process.stdout.write;
+    }
+  });
+
+  test("streaming normalizes inline think blocks into reasoning snapshots", async () => {
+    const schema = z.object({ value: z.number() });
+    const events: Array<{ delta: { text: string; reasoning: string }; snapshotReasoning: string }> = [];
+
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: '<think>inner</think>{"value":1}' };
+      },
+      async stream(_request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        callbacks.onStart?.();
+        callbacks.onChunk?.({ textDelta: "<think>inner</think>" });
+        callbacks.onChunk?.({ textDelta: '{"value":1}', finishReason: "stop" });
+        const out = {
+          text: '<think>inner</think>{"value":1}',
+          finishReason: "stop",
+        };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      stream: {
+        enabled: true,
+        onData: (event) => events.push({
+          delta: event.delta,
+          snapshotReasoning: event.snapshot.reasoning,
+        }),
+      },
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 1 });
+    expect(result.text).toBe('{"value":1}');
+    expect(result.reasoning).toBe("inner");
+    expect(events[0]).toEqual({
+      delta: { text: "", reasoning: "inner" },
+      snapshotReasoning: "inner",
+    });
+  });
+
+  test("streaming ignores JSON-like inline think content when building structured snapshots", async () => {
+    const schema = z.object({ value: z.number() });
+    const snapshots: Array<unknown> = [];
+    const inlineThinking = `<think>{"draft":true} Make sure it's valid JSON.</think>{"value":1}`;
+
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: inlineThinking };
+      },
+      async stream(_request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        callbacks.onStart?.();
+        callbacks.onChunk?.({ textDelta: `<think>{"draft":true} Make sure it` });
+        callbacks.onChunk?.({ textDelta: `'s valid JSON.</think>{"value":1}`, finishReason: "stop" });
+        const out = {
+          text: inlineThinking,
+          finishReason: "stop",
+        };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      stream: {
+        enabled: true,
+        onData: (event) => snapshots.push(event.snapshot.data),
+      },
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 1 });
+    expect(result.reasoning).toContain('{"draft":true}');
+    expect(snapshots.at(-1)).toEqual({ value: 1 });
+  });
+
+  test("strips </think> tags from dedicated reasoning in composeParseSource", async () => {
+    const schema = z.object({ value: z.number() });
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return {
+          text: '{"value": 42}',
+          reasoning: "plan</think>leak",
+          finishReason: "stop",
+        };
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 42 });
+    expect(result.text).toBe('{"value": 42}');
+    expect(result.reasoning).toBe("plan</think>leak");
+    expect(result.text).not.toContain("leak");
+  });
+
+  test("normalizes empty and whitespace-only reasoning to empty string", async () => {
+    const schema = z.object({ value: z.number() });
+
+    for (const reasoning of ["", "   ", "\n\t\n"]) {
+      const model: LLMAdapter = {
+        async complete(): Promise<LLMResponse> {
+          return {
+            text: '{"value": 1}',
+            reasoning,
+            finishReason: "stop",
+          };
+        },
+      };
+
+      const result = await structured(model, schema, "Return JSON", {
+        selfHeal: false,
+      });
+
+      expect(result.data).toEqual({ value: 1 });
+      expect(result.reasoning).toBe("");
+    }
+  });
+
+  test("self-heal prompt includes reasoning context from previous attempt", async () => {
+    const schema = z.object({ value: z.number() });
+    const model: LLMAdapter = {
+      private_calls: 0,
+      async complete(request: LLMRequest): Promise<LLMResponse> {
+        (this as any).private_calls = ((this as any).private_calls ?? 0) + 1;
+        if ((this as any).private_calls === 1) {
+          return {
+            text: "not valid json",
+            reasoning: "I should return JSON",
+            finishReason: "stop",
+          };
+        }
+        return {
+          text: '{"value": 7}',
+          finishReason: "stop",
+        };
+      },
+    } as any;
+
+    const result = await structured(model, schema, "Return JSON", {
+      selfHeal: 1,
+    });
+
+    expect(result.data).toEqual({ value: 7 });
+    expect(result.attempts).toHaveLength(2);
+    expect(result.attempts[0]?.reasoning).toBe("I should return JSON");
   });
 });
