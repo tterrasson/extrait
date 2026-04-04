@@ -459,4 +459,146 @@ describe("createLLM", () => {
     expect(responseLog).not.toContain("parseSource:");
     expect(responseLog).not.toContain("parseSourceChars=");
   });
+
+  test("generate merges shared defaults and per-call overrides", async () => {
+    const registry = createProviderRegistry();
+    const requests: Array<{ prompt?: string; temperature?: number; systemPrompt?: string }> = [];
+
+    registry.register(
+      "mock",
+      () => ({
+        provider: "mock",
+        model: "m1",
+        async complete(request) {
+          requests.push({
+            prompt: request.prompt,
+            temperature: request.temperature,
+            systemPrompt: request.systemPrompt,
+          });
+          return {
+            text: "hello",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        defaults: {
+          outdent: false,
+          systemPrompt: "default system",
+          request: {
+            temperature: 0.2,
+          },
+        },
+      },
+      registry,
+    );
+
+    const result = await llm.generate(
+      `
+        Hello
+      `,
+      {
+        request: {
+          temperature: 0.8,
+        },
+      },
+    );
+
+    expect(result.text).toBe("hello");
+    expect(requests[0]).toEqual({
+      prompt: "Hello",
+      temperature: 0.8,
+      systemPrompt: "default system",
+    });
+  });
+
+  test("generate ignores structured-specific defaults", async () => {
+    const registry = createProviderRegistry();
+    const requests: string[] = [];
+
+    registry.register(
+      "mock",
+      () => ({
+        provider: "mock",
+        model: "m1",
+        async complete(request) {
+          requests.push(request.prompt ?? "");
+          return {
+            text: "plain text",
+            finishReason: "stop",
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        defaults: {
+          mode: "strict",
+          selfHeal: 2,
+          parse: { repair: false, maxCandidates: 1 },
+          schemaInstruction: "Return XML",
+        },
+      },
+      registry,
+    );
+
+    const result = await llm.generate("Just answer plainly");
+
+    expect(result.text).toBe("plain text");
+    expect(requests[0]).toBe("Just answer plainly");
+    expect(requests[0]).not.toContain(DEFAULT_SCHEMA_INSTRUCTION);
+  });
+
+  test("generate respects shared stream defaults and per-call disable", async () => {
+    const registry = createProviderRegistry();
+    let completeCalls = 0;
+    let streamCalls = 0;
+
+    registry.register(
+      "mock",
+      () => ({
+        provider: "mock",
+        model: "m1",
+        async complete() {
+          completeCalls += 1;
+          return {
+            text: "plain text",
+            finishReason: "stop",
+          };
+        },
+        async stream() {
+          streamCalls += 1;
+          return {
+            text: "plain text",
+            finishReason: "stop",
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        defaults: {
+          stream: { enabled: true },
+        },
+      },
+      registry,
+    );
+
+    await llm.generate("Hello", { stream: false });
+
+    expect(completeCalls).toBe(1);
+    expect(streamCalls).toBe(0);
+  });
 });

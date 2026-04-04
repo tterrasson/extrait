@@ -312,6 +312,13 @@ export interface StructuredTraceEvent {
   details?: unknown;
 }
 
+export interface GenerateTraceEvent {
+  stage: "llm.request" | "llm.response" | "llm.stream.delta" | "llm.stream.data" | "result";
+  attempt: number;
+  message: string;
+  details?: unknown;
+}
+
 export interface StructuredPromptContext {
   mode: StructuredMode;
 }
@@ -389,6 +396,46 @@ export interface StructuredStreamOptions<T = unknown> {
 
 export type StructuredStreamInput<T = unknown> = boolean | StructuredStreamOptions<T>;
 
+export interface GenerateStreamDelta {
+  text: string;
+  reasoning: string;
+}
+
+export interface GenerateStreamSnapshot {
+  text: string;
+  reasoning: string;
+}
+
+export interface GenerateStreamEvent {
+  delta: GenerateStreamDelta;
+  snapshot: GenerateStreamSnapshot;
+  done: boolean;
+  usage?: LLMUsage;
+  finishReason?: string;
+}
+
+export interface GenerateStreamOptions {
+  enabled?: boolean;
+  onData?: (event: GenerateStreamEvent) => void;
+  to?: "stdout";
+}
+
+export type GenerateStreamInput = boolean | GenerateStreamOptions;
+
+export interface GenerateCallOptions {
+  outdent?: boolean;
+  stream?: GenerateStreamInput;
+  debug?: boolean | StructuredDebugOptions;
+  observe?: (event: GenerateTraceEvent) => void;
+  systemPrompt?: string;
+  request?: Omit<LLMRequest, "prompt" | "systemPrompt" | "messages">;
+  timeout?: StructuredTimeoutOptions;
+}
+
+export interface GenerateOptions extends GenerateCallOptions {
+  prompt: StructuredPromptBuilder;
+}
+
 export interface StructuredCallOptions<TSchema extends z.ZodTypeAny> {
   mode?: StructuredMode;
   outdent?: boolean;
@@ -424,12 +471,29 @@ export interface StructuredAttempt<T> {
   parsed: ParseLLMOutputResult<T>;
 }
 
+export interface GenerateAttempt {
+  attempt: number;
+  via: "complete" | "stream";
+  text: string;
+  reasoning: string;
+  usage?: LLMUsage;
+  finishReason?: string;
+}
+
 export interface StructuredResult<T> {
   data: T;
   text: string;
   reasoning: string;
   json: unknown | null;
   attempts: StructuredAttempt<T>[];
+  usage?: LLMUsage;
+  finishReason?: string;
+}
+
+export interface GenerateResult {
+  text: string;
+  reasoning: string;
+  attempts: GenerateAttempt[];
   usage?: LLMUsage;
   finishReason?: string;
 }

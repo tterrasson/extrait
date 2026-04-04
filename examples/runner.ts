@@ -6,6 +6,7 @@
  */
 
 const availableExamples = [
+  "generate",
   "streaming",
   "streaming-with-tools",
   "abort-signal",

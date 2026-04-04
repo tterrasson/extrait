@@ -2,7 +2,7 @@
  * Streaming With Tools Example (real LLM call)
  *
  * Demonstrates:
- * - Raw text streaming with `llm.adapter.stream(...)`
+ * - High-level text streaming with `llm.generate(...)`
  * - MCP tool usage during generation
  * - Post-tool streaming (not only a final buffered chunk)
  * - A lightweight self-check to validate tools + streaming behavior
@@ -69,33 +69,36 @@ console.log(`Expected calculation result: ${expectedMathResult}`);
 console.log("\nStreaming text output:\n");
 
 try {
-  const result = await llm.adapter.stream(
+  const result = await llm.generate(
+    requestPrompt,
     {
-      prompt: requestPrompt,
-      temperature: 0,
-      mcpClients: [calculatorMCP],
-      maxToolRounds: 8,
-      onToolExecution: (execution) => {
-        toolExecutions.push({
-          name: execution.name,
-          error: execution.error,
-          durationMs: execution.durationMs,
-        });
+      request: {
+        temperature: 0,
+        mcpClients: [calculatorMCP],
+        maxToolRounds: 8,
+        onToolExecution: (execution) => {
+          toolExecutions.push({
+            name: execution.name,
+            error: execution.error,
+            durationMs: execution.durationMs,
+          });
+        },
       },
-    },
-    {
-      onStart: () => {
-        started = true;
-      },
-      onToken: (token) => {
-        tokens.push(token);
-        process.stdout.write(token);
-      },
-      onChunk: () => {
-        chunkCount += 1;
-      },
-      onComplete: () => {
-        completed = true;
+      stream: {
+        enabled: true,
+        onData: (event) => {
+          if (!started) {
+            started = true;
+          }
+          if (event.delta.text.length > 0) {
+            tokens.push(event.delta.text);
+            process.stdout.write(event.delta.text);
+          }
+          chunkCount += 1;
+          if (event.done) {
+            completed = true;
+          }
+        },
       },
     },
   );

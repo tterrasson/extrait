@@ -1,33 +1,38 @@
 import { jsonrepair } from "jsonrepair";
 import type { z } from "zod";
 import { resolveSchemaInstruction, formatPrompt, withFormat } from "./format";
-import { createOutdent } from "./outdent";
 import { formatZodIssues, parseLLMOutput } from "./parse";
-import { preferLatestUsage as preferLatestStreamUsage } from "./providers/utils";
+import {
+  aggregateUsage,
+  applyOutdentToOptionalPrompt,
+  applyPromptOutdent,
+  applyToolTimeout,
+  callModel as callModelShared,
+  composeParseSource,
+  mergeSystemPrompts,
+  normalizeDebugConfig,
+  normalizeStreamConfig,
+  resolvePrompt,
+  type ModelCallOptions,
+  type ModelCallResult,
+  type NormalizedDebugConfig,
+  type NormalizedStreamConfig,
+} from "./generate-shared";
 import { sanitizeThink } from "./think";
-import { color, dim, title } from "./utils/debug-colors";
 import type {
   LLMAdapter,
   LLMMessage,
-  LLMRequest,
-  LLMUsage,
-  MCPToolClient,
   ParseLLMOutputOptions,
   ParseTraceEvent,
   StructuredAttempt,
   StructuredCallOptions,
-  StructuredDebugOptions,
   StructuredError,
   StructuredMode,
   StructuredOptions,
   StructuredPromptBuilder,
-  StructuredPromptPayload,
-  StructuredPromptResolver,
-  StructuredPromptValue,
   StructuredResult,
   StructuredTimeoutOptions,
   StructuredTraceEvent,
-  ThinkBlock,
 } from "./types";
 
 export class StructuredParseError extends Error implements StructuredError {
@@ -110,11 +115,6 @@ const RE_SIMPLE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const RE_ESCAPE_QUOTE = /"/g;
 const RE_WHITESPACE = /\s+/g;
 const DEFAULT_SELF_HEAL_MAX_DIAGNOSTICS = 8;
-const structuredOutdent = createOutdent({
-  trimLeadingNewline: true,
-  trimTrailingNewline: true,
-  newline: "\n",
-});
 export const DEFAULT_STRICT_PARSE_OPTIONS: ParseDefaults = {
   repair: false,
   maxCandidates: 3,
@@ -247,8 +247,19 @@ export async function structured<TSchema extends z.ZodTypeAny>(
   const mode = normalized.mode ?? "loose";
   const selfHealConfig = normalizeSelfHealConfig(normalized.selfHeal, mode);
   const parseOptions = mergeParseOptions(mode, normalized.parse);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const streamConfig = normalizeStreamConfig(normalized.stream as any);
+  const streamConfig = normalizeStreamConfig<{
+    text: string;
+    reasoning: string;
+    data: unknown | null;
+  }>(normalized.stream as {
+    enabled?: boolean;
+    onData?: (event: {
+      delta: { text: string; reasoning: string };
+      snapshot: { text: string; reasoning: string; data: unknown | null };
+      done: boolean;
+    }) => void;
+    to?: "stdout";
+  } | boolean | undefined);
   const debugConfig = normalizeDebugConfig(normalized.debug);
   const attempts: StructuredAttempt<z.infer<TSchema>>[] = [];
   const useOutdent = normalized.outdent ?? true;
@@ -408,110 +419,8 @@ function isStructuredOptions<TSchema extends z.ZodTypeAny>(
   return typeof value === "object" && value !== null && "schema" in value && "prompt" in value;
 }
 
-function resolvePrompt(
-  prompt: StructuredPromptBuilder,
-  context: { mode: StructuredMode },
-): StructuredPromptPayload {
-  const resolved = typeof prompt === "function" ? prompt(context) : prompt;
-  return normalizePromptValue(resolved, context);
-}
-
-function normalizePromptValue(
-  value: StructuredPromptValue,
-  context: { mode: StructuredMode },
-): StructuredPromptPayload {
-  if (typeof value === "string") {
-    return {
-      prompt: value,
-    };
-  }
-
-  if (isPromptResolver(value)) {
-    return normalizePromptPayload(value.resolvePrompt(context));
-  }
-
-  return normalizePromptPayload(value);
-}
-
-function isPromptResolver(value: StructuredPromptValue): value is StructuredPromptResolver {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "resolvePrompt" in value &&
-    typeof value.resolvePrompt === "function"
-  );
-}
-
-function normalizePromptPayload(value: StructuredPromptPayload): StructuredPromptPayload {
-  const prompt = typeof value.prompt === "string" ? value.prompt : undefined;
-  const messages = Array.isArray(value.messages) ? value.messages.filter(isLLMMessage) : undefined;
-
-  if ((!prompt || prompt.trim().length === 0) && (!messages || messages.length === 0)) {
-    throw new Error("Structured prompt payload must include a non-empty prompt or messages.");
-  }
-
-  return {
-    prompt,
-    systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : undefined,
-    messages: messages && messages.length > 0 ? messages.map((message) => ({ ...message })) : undefined,
-  };
-}
-
-function applyPromptOutdent(payload: StructuredPromptPayload, enabled: boolean): StructuredPromptPayload {
-  if (!enabled) {
-    return payload;
-  }
-
-  return {
-    prompt: typeof payload.prompt === "string" ? structuredOutdent.string(payload.prompt) : undefined,
-    systemPrompt: applyOutdentToOptionalPrompt(payload.systemPrompt, enabled),
-    messages: payload.messages?.map((message) => ({
-      ...message,
-      content: typeof message.content === "string" ? structuredOutdent.string(message.content) : message.content,
-    })),
-  };
-}
-
-function isLLMMessage(value: unknown): value is LLMMessage {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const candidate = value as Partial<LLMMessage>;
-  if (
-    candidate.role !== "system" &&
-    candidate.role !== "user" &&
-    candidate.role !== "assistant" &&
-    candidate.role !== "tool"
-  ) {
-    return false;
-  }
-
-  return "content" in candidate;
-}
-
-function applyOutdentToOptionalPrompt(value: string | undefined, enabled: boolean): string | undefined {
-  if (!enabled || typeof value !== "string") {
-    return value;
-  }
-
-  return structuredOutdent.string(value);
-}
-
-function mergeSystemPrompts(primary?: string, secondary?: string): string | undefined {
-  const prompts = [primary, secondary]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
-
-  if (prompts.length === 0) {
-    return undefined;
-  }
-
-  return prompts.join("\n\n");
-}
-
 function prepareStructuredPromptPayload<TSchema extends z.ZodTypeAny>(
-  payload: StructuredPromptPayload,
+  payload: ReturnType<typeof resolvePrompt>,
   systemPrompt: string | undefined,
   schema: TSchema,
   schemaInstruction: string | undefined,
@@ -829,96 +738,12 @@ function normalizeWhitespace(value: string): string {
   return value.replace(RE_WHITESPACE, " ").trim();
 }
 
-interface NormalizedStreamConfig {
-  enabled: boolean;
-  onData?: (event: {
-    delta: {
-      text: string;
-      reasoning: string;
-    };
-    snapshot: {
-      text: string;
-      reasoning: string;
-      data: unknown | null;
-    };
-    done: boolean;
-    usage?: LLMUsage;
-    finishReason?: string;
-  }) => void;
-  to?: "stdout";
-}
-
-interface NormalizedModelOutput {
-  text: string;
-  reasoning: string;
-  thinkBlocks: ThinkBlock[];
-  parseSource: string;
-}
-
-function normalizeStreamConfig(
-  option: StructuredCallOptions<z.ZodTypeAny>["stream"],
-): NormalizedStreamConfig {
-  if (typeof option === "boolean") {
-    return {
-      enabled: option,
-    };
-  }
-
-  if (!option) {
-    return {
-      enabled: false,
-    };
-  }
-
-  return {
-    enabled: option.enabled ?? true,
-    onData: option.onData as NormalizedStreamConfig["onData"],
-    to: option.to,
-  };
-}
-
-interface NormalizedDebugConfig {
-  enabled: boolean;
-  colors: boolean;
-  verbose: boolean;
-  logger: (line: string) => void;
-}
-
-function normalizeDebugConfig(
-  option: StructuredDebugOptions | boolean | undefined,
-): NormalizedDebugConfig {
-  if (typeof option === "boolean") {
-    return {
-      enabled: option,
-      colors: true,
-      verbose: false,
-      logger: (line: string) => console.log(line),
-    };
-  }
-
-  if (!option) {
-    return {
-      enabled: false,
-      colors: true,
-      verbose: false,
-      logger: (line: string) => console.log(line),
-    };
-  }
-
-  return {
-    enabled: option.enabled ?? true,
-    colors: option.colors ?? true,
-    verbose: option.verbose ?? false,
-    logger: option.logger ?? ((line: string) => console.log(line)),
-  };
-}
-
 interface ExecuteAttemptInput<TSchema extends z.ZodTypeAny> {
   prompt?: string;
   messages?: LLMMessage[];
   schema: TSchema;
   parseOptions: ParseLLMOutputOptions;
-  stream: NormalizedStreamConfig;
+  stream: NormalizedStreamConfig<{ text: string; reasoning: string; data: unknown | null }>;
   request?: StructuredCallOptions<TSchema>["request"];
   systemPrompt?: string;
   observe?: StructuredCallOptions<TSchema>["observe"];
@@ -928,6 +753,14 @@ interface ExecuteAttemptInput<TSchema extends z.ZodTypeAny> {
   selfHealEnabled: boolean;
   timeout?: StructuredTimeoutOptions;
 }
+
+type StructuredModelCallOptions = Omit<
+  ModelCallOptions<
+    { text: string; reasoning: string; data: unknown | null },
+    StructuredTraceEvent
+  >,
+  "buildEvent" | "buildSnapshot" | "debugLabel"
+>;
 
 async function executeAttempt<TSchema extends z.ZodTypeAny>(
   adapter: LLMAdapter,
@@ -975,351 +808,26 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
   };
 }
 
-interface ModelCallOptions {
-  prompt?: string;
-  messages?: LLMMessage[];
-  systemPrompt?: string;
-  request?: StructuredCallOptions<z.ZodTypeAny>["request"];
-  stream: NormalizedStreamConfig;
-  observe?: (event: StructuredTraceEvent) => void;
-  debug: NormalizedDebugConfig;
-  attempt: number;
-  selfHeal: boolean;
-  selfHealEnabled: boolean;
-  timeout?: StructuredTimeoutOptions;
-}
-
-interface ModelCallResult {
-  text: string;
-  reasoning: string;
-  thinkBlocks: ThinkBlock[];
-  parseSource: string;
-  via: "complete" | "stream";
-  usage?: LLMUsage;
-  finishReason?: string;
-}
-
-function withToolTimeout(client: MCPToolClient, toolTimeoutMs: number): MCPToolClient {
-  return {
-    id: client.id,
-    listTools: client.listTools.bind(client),
-    close: client.close?.bind(client),
-    async callTool(params) {
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error(`Tool call timed out after ${toolTimeoutMs}ms`)),
-          toolTimeoutMs,
-        );
-      });
-      try {
-        return await Promise.race([client.callTool(params), timeoutPromise]);
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    },
-  };
-}
-
-function applyToolTimeout(clients: MCPToolClient[], toolTimeoutMs: number): MCPToolClient[] {
-  return clients.map((client) => withToolTimeout(client, toolTimeoutMs));
-}
-
-async function callModel(adapter: LLMAdapter, options: ModelCallOptions): Promise<ModelCallResult> {
-  const requestSignal =
-    options.request?.signal ??
-    (options.timeout?.request !== undefined
-      ? AbortSignal.timeout(options.timeout.request)
-      : undefined);
-
-  const requestPayload: LLMRequest = {
-    prompt: options.prompt,
-    messages: options.messages,
-    systemPrompt: options.systemPrompt,
-    temperature: options.request?.temperature,
-    maxTokens: options.request?.maxTokens,
-    mcpClients: options.request?.mcpClients,
-    toolChoice: options.request?.toolChoice,
-    parallelToolCalls: options.request?.parallelToolCalls,
-    maxToolRounds: options.request?.maxToolRounds,
-    onToolExecution: options.request?.onToolExecution,
-    transformToolOutput: options.request?.transformToolOutput,
-    transformToolArguments: options.request?.transformToolArguments,
-    transformToolCallParams: options.request?.transformToolCallParams,
-    unknownToolError: options.request?.unknownToolError,
-    toolDebug: options.request?.toolDebug,
-    body: options.request?.body,
-    signal: requestSignal,
-  };
-
-  emitDebugRequest(options.debug, {
-    provider: adapter.provider,
-    model: adapter.model,
-    attempt: options.attempt,
-    selfHealAttempt: options.selfHeal,
-    selfHealEnabled: options.selfHealEnabled,
-    stream: options.stream.enabled && !!adapter.stream,
-    requestPayload,
-  });
-
-  emitObserve(options.observe, {
-    stage: "llm.request",
-    attempt: options.attempt,
-    selfHeal: options.selfHeal,
-    message: "Sending LLM request.",
-    details: {
-      provider: adapter.provider,
-      model: adapter.model,
-      stream: options.stream.enabled && !!adapter.stream,
-    },
-  });
-
-  if (options.stream.enabled && adapter.stream) {
-    let latestUsage: LLMUsage | undefined;
-    let latestFinishReason: string | undefined;
-    let streamedProviderText = "";
-    let streamedDedicatedReasoning = "";
-    let lastDataFingerprint: string | undefined;
-    let previousSnapshotText = "";
-    let previousSnapshotReasoning = "";
-
-    const emitStreamingData = (
-      done: boolean,
-      usage?: LLMUsage,
-      finishReason?: string,
-    ): void => {
-      const normalized = normalizeModelOutput(streamedProviderText, streamedDedicatedReasoning);
-      const data = parseStreamingStructuredData(normalized.parseSource);
-      const snapshot = {
-        text: normalized.text,
-        reasoning: normalized.reasoning,
-        data: data ?? null,
-      };
-      const fingerprint = toStreamDataFingerprint(snapshot);
-      if (!done && fingerprint === lastDataFingerprint) {
-        return;
-      }
-
-      const delta = {
-        text: snapshot.text.startsWith(previousSnapshotText)
-          ? snapshot.text.slice(previousSnapshotText.length)
-          : "",
-        reasoning: snapshot.reasoning.startsWith(previousSnapshotReasoning)
-          ? snapshot.reasoning.slice(previousSnapshotReasoning.length)
-          : "",
-      };
-
-      lastDataFingerprint = fingerprint;
-      previousSnapshotText = snapshot.text;
-      previousSnapshotReasoning = snapshot.reasoning;
-      options.stream.onData?.({
-        delta,
-        snapshot,
-        done,
-        usage,
-        finishReason,
-      });
-
-      if (options.stream.to === "stdout" && delta.text) {
-        process.stdout.write(delta.text);
-      }
-
-      emitObserve(options.observe, {
-        stage: "llm.stream.data",
-        attempt: options.attempt,
-        selfHeal: options.selfHeal,
-        message: done ? "Streaming structured data completed." : "Streaming structured data updated.",
-        details: {
-          done,
-          finishReason,
-        },
-      });
-    };
-
-    const handleTextDelta = (delta: string): void => {
-      if (!delta) {
-        return;
-      }
-
-      streamedProviderText += delta;
-
-      emitObserve(options.observe, {
-        stage: "llm.stream.delta",
-        attempt: options.attempt,
-        selfHeal: options.selfHeal,
-        message: "Received stream delta.",
-        details: {
-          chars: delta.length,
-        },
-      });
-
-      emitStreamingData(false);
-    };
-
-    const handleReasoningDelta = (delta: string): void => {
-      if (!delta) {
-        return;
-      }
-
-      streamedDedicatedReasoning += delta;
-      emitStreamingData(false);
-    };
-
-    const response = await adapter.stream(requestPayload, {
-      onChunk: (chunk) => {
-        if (chunk.textDelta) {
-          handleTextDelta(chunk.textDelta);
-        }
-
-        if (chunk.reasoningDelta) {
-          handleReasoningDelta(chunk.reasoningDelta);
-        }
-
-        if (chunk.usage) {
-          latestUsage = preferLatestStreamUsage(latestUsage, chunk.usage);
-        }
-
-        if (chunk.finishReason) {
-          latestFinishReason = chunk.finishReason;
-        }
-      },
-    });
-
-    streamedProviderText =
-      typeof response.text === "string" ? response.text : streamedProviderText;
-    streamedDedicatedReasoning =
-      typeof response.reasoning === "string" ? response.reasoning : streamedDedicatedReasoning;
-    const finalNormalized = normalizeModelOutput(streamedProviderText, streamedDedicatedReasoning);
-    const usage = preferLatestStreamUsage(latestUsage, response.usage);
-    const finishReason = response.finishReason ?? latestFinishReason;
-    emitStreamingData(true, usage, finishReason);
-
-    emitObserve(options.observe, {
-      stage: "llm.response",
+async function callModel(
+  adapter: LLMAdapter,
+  options: StructuredModelCallOptions,
+): Promise<ModelCallResult> {
+  return callModelShared(adapter, {
+    ...options,
+    buildEvent: ({ stage, message, details }) => ({
+      stage,
       attempt: options.attempt,
       selfHeal: options.selfHeal,
-      message: "Streaming response completed.",
-      details: {
-        via: "stream",
-        chars: finalNormalized.parseSource.length,
-        finishReason,
-      },
-    });
-
-    emitDebugResponse(options.debug, {
-      attempt: options.attempt,
-      selfHealAttempt: options.selfHeal,
-      selfHealEnabled: options.selfHealEnabled,
-      via: "stream",
-      text: finalNormalized.text,
-      reasoning: finalNormalized.reasoning,
-      parseSource: finalNormalized.parseSource,
-      usage,
-      finishReason,
-    });
-
-    return {
-      text: finalNormalized.text,
-      reasoning: finalNormalized.reasoning,
-      thinkBlocks: finalNormalized.thinkBlocks,
-      parseSource: finalNormalized.parseSource,
-      via: "stream",
-      usage,
-      finishReason,
-    };
-  }
-
-  const response = await adapter.complete(requestPayload);
-  const normalized = normalizeModelOutput(response.text, response.reasoning);
-
-  emitObserve(options.observe, {
-    stage: "llm.response",
-    attempt: options.attempt,
-    selfHeal: options.selfHeal,
-    message: "Completion response received.",
-    details: {
-      via: "complete",
-      chars: normalized.parseSource.length,
-      finishReason: response.finishReason,
-    },
+      message,
+      details,
+    }),
+    buildSnapshot: (normalized) => ({
+      text: normalized.text,
+      reasoning: normalized.reasoning,
+      data: parseStreamingStructuredData(normalized.parseSource) ?? null,
+    }),
+    debugLabel: "structured",
   });
-
-  emitDebugResponse(options.debug, {
-    attempt: options.attempt,
-    selfHealAttempt: options.selfHeal,
-    selfHealEnabled: options.selfHealEnabled,
-    via: "complete",
-    text: normalized.text,
-    reasoning: normalized.reasoning,
-    parseSource: normalized.parseSource,
-    usage: response.usage,
-    finishReason: response.finishReason,
-  });
-
-  return {
-    text: normalized.text,
-    reasoning: normalized.reasoning,
-    thinkBlocks: normalized.thinkBlocks,
-    parseSource: normalized.parseSource,
-    via: "complete",
-    usage: response.usage,
-    finishReason: response.finishReason,
-  };
-}
-
-function normalizeModelOutput(text: string, dedicatedReasoning?: string): NormalizedModelOutput {
-  const sanitized = sanitizeThink(text);
-  const visibleText = stripThinkBlocks(text, sanitized.thinkBlocks);
-  const reasoning = joinReasoningSegments([
-    dedicatedReasoning,
-    ...sanitized.thinkBlocks.map((block) => block.content),
-  ]);
-
-  return {
-    text: visibleText,
-    reasoning,
-    thinkBlocks: sanitized.thinkBlocks,
-    parseSource: composeParseSource(visibleText, reasoning),
-  };
-}
-
-function composeParseSource(text: string, reasoning?: string): string {
-  if (typeof reasoning !== "string" || reasoning.length === 0) {
-    return text;
-  }
-
-  const sanitized = reasoning.replace(RE_THINK_TAGS, "");
-  if (sanitized.length === 0) {
-    return text;
-  }
-
-  return `<think>${sanitized}</think>${text}`;
-}
-
-const RE_THINK_TAGS = /<\/?think\s*>/gi;
-
-function joinReasoningSegments(parts: Array<string | undefined>): string {
-  return parts
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value))
-    .join("\n\n");
-}
-
-function stripThinkBlocks(text: string, thinkBlocks: ThinkBlock[]): string {
-  if (thinkBlocks.length === 0) {
-    return text;
-  }
-
-  let output = "";
-  let cursor = 0;
-
-  for (const block of thinkBlocks) {
-    output += text.slice(cursor, block.start);
-    cursor = block.end;
-  }
-
-  output += text.slice(cursor);
-  return output;
 }
 
 function parseStreamingStructuredData(parseSource: string): unknown | null {
@@ -1397,14 +905,6 @@ function findFirstJsonRootStart(input: string): number {
   return Math.min(objectStart, arrayStart);
 }
 
-function toStreamDataFingerprint(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "__unserializable__";
-  }
-}
-
 function parseWithObserve<TSchema extends z.ZodTypeAny>(
   output: string,
   schema: TSchema,
@@ -1462,29 +962,6 @@ function buildSuccessResult<T>(data: T, attempts: StructuredAttempt<T>[]): Struc
   };
 }
 
-function aggregateUsage<T>(attempts: StructuredAttempt<T>[]): LLMUsage | undefined {
-  let usage: LLMUsage | undefined;
-
-  for (const attempt of attempts) {
-    usage = mergeUsage(usage, attempt.usage);
-  }
-
-  return usage;
-}
-
-function mergeUsage(base: LLMUsage | undefined, next: LLMUsage | undefined): LLMUsage | undefined {
-  if (!base && !next) {
-    return undefined;
-  }
-
-  return {
-    inputTokens: (base?.inputTokens ?? 0) + (next?.inputTokens ?? 0),
-    outputTokens: (base?.outputTokens ?? 0) + (next?.outputTokens ?? 0),
-    totalTokens: (base?.totalTokens ?? 0) + (next?.totalTokens ?? 0),
-    cost: (base?.cost ?? 0) + (next?.cost ?? 0),
-  };
-}
-
 function toStructuredError<T>(attempt: StructuredAttempt<T> | undefined): StructuredParseError {
   if (!attempt) {
     return new StructuredParseError({
@@ -1513,127 +990,4 @@ function emitObserve(
   event: StructuredTraceEvent,
 ): void {
   observe?.(event);
-}
-
-interface DebugRequestInput {
-  provider?: string;
-  model?: string;
-  attempt: number;
-  selfHealAttempt: boolean;
-  selfHealEnabled: boolean;
-  stream: boolean;
-  requestPayload: LLMRequest;
-}
-
-interface DebugResponseInput {
-  attempt: number;
-  selfHealAttempt: boolean;
-  selfHealEnabled: boolean;
-  via: "complete" | "stream";
-  text: string;
-  reasoning: string;
-  parseSource: string;
-  usage?: LLMUsage;
-  finishReason?: string;
-}
-
-function emitDebugRequest(
-  config: NormalizedDebugConfig,
-  input: DebugRequestInput,
-): void {
-  const requestBody =
-    input.requestPayload.body !== undefined
-      ? JSON.stringify(input.requestPayload.body, null, 2)
-      : "(none)";
-  const requestMessages =
-    input.requestPayload.messages !== undefined
-      ? JSON.stringify(input.requestPayload.messages, null, 2)
-      : "(none)";
-
-  const lines = [
-    color(
-      config,
-      title(
-        config,
-        [
-          "[structured][request]",
-          `attempt=${input.attempt}`,
-          `selfHealEnabled=${input.selfHealEnabled}`,
-          `selfHealAttempt=${input.selfHealAttempt}`,
-        ].join(" "),
-      ),
-      "cyan",
-    ),
-    dim(
-      config,
-      [
-        `provider=${input.provider ?? "unknown"}`,
-        `model=${input.model ?? "unknown"}`,
-        `stream=${input.stream}`,
-      ].join(" "),
-    ),
-    color(config, "prompt:", "yellow"),
-    input.requestPayload.prompt ?? "(none)",
-    color(config, "messages:", "yellow"),
-    requestMessages,
-    color(config, "systemPrompt:", "yellow"),
-    input.requestPayload.systemPrompt ?? "(none)",
-    color(config, "request.body:", "yellow"),
-    requestBody,
-  ];
-
-  emitDebug(config, lines.join("\n"));
-}
-
-function emitDebugResponse(
-  config: NormalizedDebugConfig,
-  input: DebugResponseInput,
-): void {
-  const text = input.text.length > 0 ? input.text : "(none)";
-  const reasoning = input.reasoning.length > 0 ? input.reasoning : "(none)";
-  const metadata = [
-    `via=${input.via}`,
-    `textChars=${input.text.length}`,
-    `reasoningChars=${input.reasoning.length}`,
-  ];
-  if (config.verbose) {
-    metadata.push(`parseSourceChars=${input.parseSource.length}`);
-  }
-  metadata.push(
-    `finishReason=${input.finishReason ?? "unknown"}`,
-    `usage=${JSON.stringify(input.usage ?? {})}`,
-  );
-  const lines = [
-    color(
-      config,
-      title(
-        config,
-        [
-          "[structured][response]",
-          `attempt=${input.attempt}`,
-          `selfHealEnabled=${input.selfHealEnabled}`,
-          `selfHealAttempt=${input.selfHealAttempt}`,
-        ].join(" "),
-      ),
-      "green",
-    ),
-    dim(config, metadata.join(" ")),
-    color(config, "text:", "yellow"),
-    text,
-    color(config, "reasoning:", "yellow"),
-    reasoning,
-  ];
-  if (config.verbose) {
-    lines.push(color(config, "parseSource:", "yellow"), input.parseSource);
-  }
-
-  emitDebug(config, lines.join("\n"));
-}
-
-function emitDebug(config: NormalizedDebugConfig, message: string): void {
-  if (!config.enabled) {
-    return;
-  }
-
-  config.logger(message);
 }

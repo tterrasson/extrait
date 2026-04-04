@@ -50,5 +50,5 @@ console.log("Messages sent to LLM:");
 console.log(JSON.stringify(messages, null, 2));
 console.log("\n=== LLM response ===\n");
 
-const response = await llm.adapter.complete({ messages });
+const response = await llm.generate({ prompt: { messages } });
 console.log(response.text);

@@ -1,6 +1,6 @@
 # extrait
 
-Structured JSON extraction from LLMs with validation, repair, and streaming.
+High-level LLM text generation and structured JSON extraction with validation, repair, and streaming.
 
 <p align="left">
   <a href="https://www.npmjs.com/package/extrait">
@@ -68,6 +68,7 @@ console.log(result.data);
 These examples cover the most common usage patterns in the repository.
 
 - [`examples/simple.ts`](examples/simple.ts) - Basic structured output with streaming
+- [`examples/generate.ts`](examples/generate.ts) - High-level text generation
 - [`examples/streaming.ts`](examples/streaming.ts) - Real-time partial output and snapshot updates
 - [`examples/calculator-tool.ts`](examples/calculator-tool.ts) - Structured extraction with MCP tools
 - [`examples/conversation.ts`](examples/conversation.ts) - Multi-turn prompts and multimodal content
@@ -76,6 +77,7 @@ These examples cover the most common usage patterns in the repository.
 
 ```bash
 bun run dev simple "Bun.js runtime"
+bun run dev generate "Bun.js runtime"
 bun run dev streaming
 bun run dev calculator-tool
 ```
@@ -281,6 +283,86 @@ const result = await llm.structured(
 );
 ```
 
+### Making Text Calls
+
+`generate()` is the high-level API for non-structured generation. It accepts the same prompt shapes as `structured()`, but does not inject any schema or parse the output.
+
+```typescript
+// Simple prompt
+const result = await llm.generate(
+  prompt`Write a short summary of ${topic}.`
+);
+
+// Multi-message prompt
+const result = await llm.generate(
+  prompt()
+    .system`You are a concise assistant.`
+    .user`Summarize: """${text}"""`
+);
+
+// Raw messages payload
+const result = await llm.generate({
+  prompt: {
+    messages: [
+      { role: "user", content: "Say hello in one sentence." },
+    ],
+  },
+});
+```
+
+Streaming mirrors `structured()`, except the snapshot only contains `text` and `reasoning`:
+
+```typescript
+const result = await llm.generate(
+  prompt`Explain ${topic} in one short paragraph.`,
+  {
+    stream: {
+      enabled: true,
+      onData: (event) => {
+        process.stdout.write(event.delta.text);
+
+        console.log("Full text so far:", event.snapshot.text);
+        console.log("Full reasoning so far:", event.snapshot.reasoning);
+
+        if (event.done) {
+          console.log("Streaming done.");
+        }
+      },
+    },
+  }
+);
+```
+
+Provider request options and MCP tools still go through `request`:
+
+```typescript
+const result = await llm.generate(
+  prompt`Use tools if needed and answer the user clearly.`,
+  {
+    request: {
+      temperature: 0,
+      maxTokens: 800,
+      mcpClients: [calculatorMCP],
+      maxToolRounds: 8,
+    },
+  }
+);
+```
+
+For existing history or multi-turn conversations, pass `messages` directly:
+
+```typescript
+const messages = conversation("You are a helpful assistant.", [
+  { role: "user", text: "What is the speed of light?" },
+  { role: "assistant", text: "Approximately 299,792 km/s in a vacuum." },
+  { role: "user", text: "How long does light take to reach Earth from the Sun?" },
+]);
+
+const result = await llm.generate({ prompt: { messages } });
+```
+
+Use `llm.adapter.complete(...)` or `llm.adapter.stream(...)` only when you need the raw low-level provider interface.
+
 ### Images (multimodal)
 
 Use `images()` to build base64 image content blocks for vision-capable models.
@@ -337,8 +419,8 @@ const messages = conversation("You are a helpful assistant.", [
   { role: "user",      text: "How long does light take to reach Earth from the Sun?" },
 ]);
 
-// Pass to adapter directly
-const response = await llm.adapter.complete({ messages });
+// High-level text generation
+const response = await llm.generate({ prompt: { messages } });
 
 // Or to structured extraction
 const result = await llm.structured(Schema, { messages });
@@ -358,7 +440,37 @@ const messages = conversation("You are a vision assistant.", [
 
 ### Result Object
 
-Successful structured calls return validated data plus normalized text/reasoning and trace metadata.
+Successful `generate()` calls return normalized text/reasoning plus request metadata:
+
+```typescript
+{
+  text: string,
+  reasoning: string,
+  attempts: GenerateAttempt[],
+  usage?: {
+    inputTokens?: number,
+    outputTokens?: number,
+    totalTokens?: number,
+    cost?: number,
+  },
+  finishReason?: string,
+}
+```
+
+Each `attempts` entry includes:
+
+```typescript
+{
+  attempt: number,
+  via: "complete" | "stream",
+  text: string,
+  reasoning: string,
+  usage?: LLMUsage,
+  finishReason?: string,
+}
+```
+
+Successful `structured()` calls return validated data plus normalized text/reasoning and trace metadata.
 
 ```typescript
 {
@@ -576,6 +688,7 @@ const llm = createLLM({
 Run repository examples with `bun run dev <example-name>`.
 
 Available examples:
+- `generate` - High-level text generation ([generate.ts](examples/generate.ts))
 - `streaming` - Real LLM streaming + snapshot self-check ([streaming.ts](examples/streaming.ts))
 - `streaming-with-tools` - Real text streaming with MCP tools + self-check ([streaming-with-tools.ts](examples/streaming-with-tools.ts))
 - `abort-signal` - Start a generation then cancel quickly with `AbortSignal` ([abort-signal.ts](examples/abort-signal.ts))
@@ -592,6 +705,7 @@ Available examples:
 
 Pass arguments after the example name:
 ```bash
+bun run dev generate "Why Bun is fast"
 bun run dev streaming
 bun run dev streaming-with-tools
 bun run dev abort-signal 120 "JSON cancellation demo"

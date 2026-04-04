@@ -9,6 +9,7 @@ export {
 export { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "./markdown";
 export { sanitizeThink } from "./think";
 export { createLLM, type CreateLLMOptions, type LLMClient } from "./llm";
+export { generate } from "./generate";
 export { formatZodIssues, parseLLMOutput } from "./parse";
 export {
   createMCPClient,
@@ -132,4 +133,14 @@ export type {
   ThinkDiagnostics,
   ThinkBlock,
   StructuredTraceEvent,
+  GenerateAttempt,
+  GenerateCallOptions,
+  GenerateOptions,
+  GenerateResult,
+  GenerateStreamDelta,
+  GenerateStreamEvent,
+  GenerateStreamInput,
+  GenerateStreamOptions,
+  GenerateStreamSnapshot,
+  GenerateTraceEvent,
 } from "./types";
