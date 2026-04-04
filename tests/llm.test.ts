@@ -462,7 +462,12 @@ describe("createLLM", () => {
 
   test("generate merges shared defaults and per-call overrides", async () => {
     const registry = createProviderRegistry();
-    const requests: Array<{ prompt?: string; temperature?: number; systemPrompt?: string }> = [];
+    const requests: Array<{
+      prompt?: string;
+      temperature?: number;
+      reasoningEffort?: "low" | "medium" | "high" | "max";
+      systemPrompt?: string;
+    }> = [];
 
     registry.register(
       "mock",
@@ -473,6 +478,7 @@ describe("createLLM", () => {
           requests.push({
             prompt: request.prompt,
             temperature: request.temperature,
+            reasoningEffort: request.reasoningEffort,
             systemPrompt: request.systemPrompt,
           });
           return {
@@ -493,6 +499,7 @@ describe("createLLM", () => {
           systemPrompt: "default system",
           request: {
             temperature: 0.2,
+            reasoningEffort: "low",
           },
         },
       },
@@ -506,6 +513,7 @@ describe("createLLM", () => {
       {
         request: {
           temperature: 0.8,
+          reasoningEffort: "max",
         },
       },
     );
@@ -514,6 +522,7 @@ describe("createLLM", () => {
     expect(requests[0]).toEqual({
       prompt: "Hello",
       temperature: 0.8,
+      reasoningEffort: "max",
       systemPrompt: "default system",
     });
   });

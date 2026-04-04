@@ -276,6 +276,37 @@ describe("anthropic-compatible MCP tools", () => {
     expect(requests[0]?.max_tokens).toBe(321);
   });
 
+  test("serializes output_config.effort and adaptive thinking for reasoningEffort in pass-through mode", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "hello",
+      reasoningEffort: "medium",
+    });
+
+    expect(requests[0]?.output_config).toEqual({
+      effort: "medium",
+    });
+    expect(requests[0]?.thinking).toEqual({
+      type: "adaptive",
+    });
+    expect(requests[0]?.max_tokens).toBe(DEFAULT_ANTHROPIC_MAX_TOKENS);
+  });
+
   test("falls back to library default max tokens when adapter default is invalid", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {
@@ -325,5 +356,130 @@ describe("anthropic-compatible MCP tools", () => {
         mcpClients: [createSumMCP()],
       }),
     ).rejects.toThrow("Tool call loop exceeded maxToolRounds (0).");
+  });
+
+  test("serializes output_config.effort and adaptive thinking for MCP requests", async () => {
+    const requests: Record<string, unknown>[] = [];
+    let round = 0;
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      round += 1;
+
+      if (round === 1) {
+        return jsonResponse({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_sum",
+              name: "sum",
+              input: { a: 1, b: 2 },
+            },
+          ],
+          stop_reason: "tool_use",
+        });
+      }
+
+      return jsonResponse({
+        content: [{ type: "text", text: "3" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "Calcule 1 + 2",
+      reasoningEffort: "low",
+      mcpClients: [createSumMCP()],
+    });
+
+    expect(requests[0]?.thinking).toEqual({
+      type: "adaptive",
+    });
+    expect(requests[0]?.output_config).toEqual({
+      effort: "low",
+    });
+    expect(requests[0]?.max_tokens).toBe(DEFAULT_ANTHROPIC_MAX_TOKENS);
+    expect(requests[1]?.output_config).toEqual({
+      effort: "low",
+    });
+  });
+
+  test("preserves explicit body.thinking while still injecting output_config.effort", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "hello",
+      reasoningEffort: "high",
+      body: {
+        thinking: {
+          type: "adaptive",
+          custom: true,
+        },
+        output_config: {
+          foo: "bar",
+          effort: "low",
+        },
+      },
+    });
+
+    expect(requests[0]?.thinking).toEqual({
+      type: "adaptive",
+      custom: true,
+    });
+    expect(requests[0]?.output_config).toEqual({
+      foo: "bar",
+      effort: "high",
+    });
+  });
+
+  test("preserves explicit null body.thinking while still injecting output_config.effort", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "hello",
+      reasoningEffort: "medium",
+      body: {
+        thinking: null,
+      },
+    });
+
+    expect(requests[0]).toHaveProperty("thinking", null);
+    expect(requests[0]?.output_config).toEqual({
+      effort: "medium",
+    });
   });
 });

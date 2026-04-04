@@ -44,6 +44,8 @@ export interface OpenAICompatibleAdapterOptions {
   fetcher?: typeof fetch;
 }
 
+type OpenAIReasoningEffort = "low" | "medium" | "high" | "xhigh";
+
 export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOptions): LLMAdapter {
   const fetcher = options.fetcher ?? fetch;
   const path = options.path ?? "/v1/chat/completions";
@@ -81,6 +83,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
             model: options.model,
             messages: buildMessages(request),
             temperature: request.temperature,
+            reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
             max_tokens: request.maxTokens,
             stream: true,
           }),
@@ -227,6 +230,7 @@ async function completeWithChatCompletionsPassThrough(
         model: options.model,
         messages: buildMessages(request),
         temperature: request.temperature,
+        reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
         max_tokens: request.maxTokens,
         stream: false,
       }),
@@ -286,6 +290,7 @@ async function completeWithChatCompletionsWithMCP(
           model: options.model,
           messages,
           temperature: request.temperature,
+          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
           max_tokens: request.maxTokens,
           tools: transportTools,
           tool_choice: request.toolChoice,
@@ -378,6 +383,7 @@ async function completeWithResponsesAPIPassThrough(
         input: buildResponsesInput(request),
         previous_response_id: pickString(body?.previous_response_id),
         temperature: request.temperature,
+        reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
         max_output_tokens: request.maxTokens,
       }),
     ),
@@ -433,6 +439,7 @@ async function completeWithResponsesAPIWithMCP(
           input,
           previous_response_id: previousResponseId,
           temperature: request.temperature,
+          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
           max_output_tokens: request.maxTokens,
           tools: transportTools,
           tool_choice: request.toolChoice,
@@ -535,6 +542,7 @@ async function streamWithChatCompletionsWithMCP(
           model: options.model,
           messages,
           temperature: request.temperature,
+          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
           max_tokens: request.maxTokens,
           tools: transportTools,
           tool_choice: request.toolChoice,
@@ -682,6 +690,7 @@ async function streamWithResponsesAPIPassThrough(
         input: buildResponsesInput(request),
         previous_response_id: pickString(body?.previous_response_id),
         temperature: request.temperature,
+        reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
         max_output_tokens: request.maxTokens,
         stream: true,
       }),
@@ -788,6 +797,7 @@ async function streamWithResponsesAPIWithMCP(
           input,
           previous_response_id: previousResponseId,
           temperature: request.temperature,
+          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
           max_output_tokens: request.maxTokens,
           tools: transportTools,
           tool_choice: request.toolChoice,
@@ -989,6 +999,14 @@ function toResponsesTools(tools: Array<Record<string, unknown>> | undefined): Ar
 
     return { ...tool };
   });
+}
+
+function toOpenAIReasoningEffort(value: LLMRequest["reasoningEffort"]): OpenAIReasoningEffort | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return value === "max" ? "xhigh" : value;
 }
 
 function pickChatToolCalls(payload: Record<string, unknown>): LLMToolCall[] {

@@ -74,14 +74,13 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
         method: "POST",
         headers: buildHeaders(options),
         body: JSON.stringify(
-          cleanUndefined({
+          buildAnthropicRequestBody(options, request, {
             ...options.defaultBody,
             ...request.body,
             model: options.model,
             system: input.systemPrompt,
             messages: input.messages,
             temperature: request.temperature,
-            max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
             stream: true,
           }),
         ),
@@ -159,14 +158,13 @@ async function completePassThrough(
     method: "POST",
     headers: buildHeaders(options),
     body: JSON.stringify(
-      cleanUndefined({
+      buildAnthropicRequestBody(options, request, {
         ...options.defaultBody,
         ...request.body,
         model: options.model,
         system: input.systemPrompt,
         messages: input.messages,
         temperature: request.temperature,
-        max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
         stream: false,
       }),
     ),
@@ -219,14 +217,13 @@ async function completeWithMCPToolLoop(
       method: "POST",
       headers: buildHeaders(options),
       body: JSON.stringify(
-        cleanUndefined({
+        buildAnthropicRequestBody(options, request, {
           ...options.defaultBody,
           ...request.body,
           model: options.model,
           system: input.systemPrompt,
           messages,
           temperature: request.temperature,
-          max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
           tools,
           tool_choice: toAnthropicToolChoice(request.toolChoice),
           stream: false,
@@ -326,14 +323,13 @@ async function streamWithMCPToolLoop(
       method: "POST",
       headers: buildHeaders(options),
       body: JSON.stringify(
-        cleanUndefined({
+        buildAnthropicRequestBody(options, request, {
           ...options.defaultBody,
           ...request.body,
           model: options.model,
           system: input.systemPrompt,
           messages,
           temperature: request.temperature,
-          max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
           tools,
           tool_choice: toAnthropicToolChoice(request.toolChoice),
           stream: true,
@@ -458,6 +454,31 @@ function buildHeaders(options: AnthropicCompatibleAdapterOptions): HTTPHeaders {
     "anthropic-version": options.version ?? DEFAULT_ANTHROPIC_VERSION,
     ...options.headers,
   };
+}
+
+function buildAnthropicRequestBody(
+  options: AnthropicCompatibleAdapterOptions,
+  request: LLMRequest,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const bodyOutputConfig = isRecord(body.output_config) ? body.output_config : undefined;
+  const bodyThinking = body.thinking;
+  const hasExplicitThinking = Object.prototype.hasOwnProperty.call(body, "thinking");
+  const reasoningEffort = request.reasoningEffort;
+
+  return cleanUndefined({
+    ...body,
+    max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
+    output_config: reasoningEffort
+      ? cleanUndefined({
+          ...bodyOutputConfig,
+          effort: reasoningEffort,
+        })
+      : bodyOutputConfig,
+    thinking: reasoningEffort
+      ? (hasExplicitThinking ? bodyThinking : { type: "adaptive" })
+      : bodyThinking,
+  });
 }
 
 function resolveAnthropicInput(

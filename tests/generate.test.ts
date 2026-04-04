@@ -57,6 +57,23 @@ describe("generate", () => {
     });
   });
 
+  test("forwards request.reasoningEffort to the adapter request", async () => {
+    const model = new MockAdapter({
+      text: "Hello world",
+    });
+
+    await generate(model, "Say hello", {
+      request: {
+        reasoningEffort: "max",
+      },
+    });
+
+    expect(model.requests[0]).toMatchObject({
+      prompt: "Say hello",
+      reasoningEffort: "max",
+    });
+  });
+
   test("supports generate(adapter, { prompt, ...options }) with messages and merged system prompt", async () => {
     const model = new MockAdapter({
       text: "Answer",

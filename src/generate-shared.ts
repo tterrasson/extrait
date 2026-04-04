@@ -264,6 +264,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
     messages: options.messages,
     systemPrompt: options.systemPrompt,
     temperature: options.request?.temperature,
+    reasoningEffort: options.request?.reasoningEffort,
     maxTokens: options.request?.maxTokens,
     mcpClients: options.request?.mcpClients,
     toolChoice: options.request?.toolChoice,

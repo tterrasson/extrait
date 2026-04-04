@@ -40,13 +40,15 @@ function createSimpleMCP(): MCPToolClient {
 
 describe("anthropic-compatible streaming", () => {
   test("streams SSE chunks with token and chunk callbacks", async () => {
+    const requests: Record<string, unknown>[] = [];
     const tokens: string[] = [];
     const chunks: LLMStreamChunk[] = [];
     let started = false;
     let completed = false;
 
-    const fetcher = (async () =>
-      sseResponse([
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return sseResponse([
         JSON.stringify({ type: "content_block_delta", delta: { text: "Hello" } }),
         JSON.stringify({ type: "content_block_delta", delta: { text: " world" } }),
         JSON.stringify({
@@ -55,7 +57,8 @@ describe("anthropic-compatible streaming", () => {
           usage: { output_tokens: 2 },
         }),
         "[DONE]",
-      ])) as unknown as typeof fetch;
+      ]);
+    }) as unknown as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -64,7 +67,7 @@ describe("anthropic-compatible streaming", () => {
     });
 
     const result = await adapter.stream!(
-      { prompt: "Say hello" },
+      { prompt: "Say hello", reasoningEffort: "max" },
       {
         onStart: () => (started = true),
         onToken: (t) => tokens.push(t),
@@ -79,6 +82,12 @@ describe("anthropic-compatible streaming", () => {
     expect(result.text).toBe("Hello world");
     expect(result.finishReason).toBe("end_turn");
     expect(result.usage?.outputTokens).toBe(2);
+    expect(requests[0]?.output_config).toEqual({
+      effort: "max",
+    });
+    expect(requests[0]?.thinking).toEqual({
+      type: "adaptive",
+    });
   });
 
   test("keeps the latest cumulative usage snapshot instead of summing chunk usage", async () => {
@@ -151,10 +160,11 @@ describe("anthropic-compatible streaming", () => {
     let completed = false;
     const tokens: string[] = [];
     const chunks: LLMStreamChunk[] = [];
+    const requests: Record<string, unknown>[] = [];
     let round = 0;
-
     const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
       const bodyParsed = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(bodyParsed);
       round += 1;
 
       if (round === 1) {
@@ -219,6 +229,7 @@ describe("anthropic-compatible streaming", () => {
     const result = await adapter.stream!(
       {
         prompt: "test",
+        reasoningEffort: "low",
         mcpClients: [createSimpleMCP()],
       },
       {
@@ -248,6 +259,10 @@ describe("anthropic-compatible streaming", () => {
       outputTokens: 3,
     });
     expect(chunks.some((chunk) => chunk.finishReason === "tool_use")).toBe(true);
+    expect(requests[0]?.output_config).toEqual({ effort: "low" });
+    expect(requests[0]?.thinking).toEqual({ type: "adaptive" });
+    expect(requests[1]?.output_config).toEqual({ effort: "low" });
+    expect(requests[1]?.thinking).toEqual({ type: "adaptive" });
   });
 
   test("extracts delta from content_block.text", async () => {

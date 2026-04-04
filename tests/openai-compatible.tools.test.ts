@@ -83,6 +83,38 @@ describe("openai-compatible MCP tools", () => {
     ]);
   });
 
+  test("serializes reasoning_effort for chat completions pass-through", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "ok",
+            },
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "Need help",
+      reasoningEffort: "max",
+    });
+
+    expect(requests[0]?.reasoning_effort).toBe("xhigh");
+  });
+
   test("executes MCP tools with chat completions", async () => {
     const requests: Record<string, unknown>[] = [];
     let round = 0;
@@ -163,6 +195,7 @@ describe("openai-compatible MCP tools", () => {
     expect(executions).toEqual([{ callId: "call_add", name: "add", clientId: "calculator" }]);
 
     const first = requests[0];
+    expect(first?.reasoning_effort).toBeUndefined();
     expect(first?.messages).toEqual([
       { role: "system", content: "You are helpful." },
       { role: "user", content: "Hello" },
@@ -175,6 +208,93 @@ describe("openai-compatible MCP tools", () => {
     const second = requests[1];
     const messages = Array.isArray(second?.messages) ? second.messages : [];
     expect(messages.some((entry) => (entry as { role?: string }).role === "tool")).toBe(true);
+  });
+
+  test("serializes reasoning_effort for chat completions MCP requests", async () => {
+    const requests: Record<string, unknown>[] = [];
+    let round = 0;
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      round += 1;
+
+      if (round === 1) {
+        return jsonResponse({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_add",
+                    type: "function",
+                    function: {
+                      name: "add",
+                      arguments: JSON.stringify({ a: 2, b: 3 }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "5",
+            },
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "Compute 2+3",
+      reasoningEffort: "medium",
+      mcpClients: [createCalculatorMCP()],
+    });
+
+    expect(requests[0]?.reasoning_effort).toBe("medium");
+    expect(requests[1]?.reasoning_effort).toBe("medium");
+  });
+
+  test("serializes reasoning_effort for responses API requests", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        output_text: "ok",
+        status: "completed",
+      });
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      path: "/v1/responses",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "Need help",
+      reasoningEffort: "max",
+    });
+
+    expect(requests[0]?.reasoning_effort).toBe("xhigh");
   });
 
   test("surfaces unknown MCP tool as tool error and continues", async () => {

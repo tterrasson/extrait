@@ -40,18 +40,21 @@ function createSimpleMCP(): MCPToolClient {
 
 describe("openai-compatible streaming", () => {
   test("streams SSE chunks with token and chunk callbacks", async () => {
+    const requests: Record<string, unknown>[] = [];
     const tokens: string[] = [];
     const chunks: LLMStreamChunk[] = [];
     let started = false;
     let completed = false;
 
-    const fetcher = (async () =>
-      sseResponse([
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return sseResponse([
         JSON.stringify({ choices: [{ delta: { content: "Hello" } }] }),
         JSON.stringify({ choices: [{ delta: { content: " world" } }] }),
         JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }),
         "[DONE]",
-      ])) as unknown as typeof fetch;
+      ]);
+    }) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
@@ -60,7 +63,7 @@ describe("openai-compatible streaming", () => {
     });
 
     const result = await adapter.stream!(
-      { prompt: "Say hello" },
+      { prompt: "Say hello", reasoningEffort: "max" },
       {
         onStart: () => (started = true),
         onToken: (t) => tokens.push(t),
@@ -77,6 +80,7 @@ describe("openai-compatible streaming", () => {
     expect(result.usage?.inputTokens).toBe(5);
     expect(result.usage?.outputTokens).toBe(2);
     expect(chunks.length).toBe(3);
+    expect(requests[0]?.reasoning_effort).toBe("xhigh");
   });
 
   test("keeps the latest stream usage snapshot instead of summing chunk usage", async () => {

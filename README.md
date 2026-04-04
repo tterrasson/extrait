@@ -241,6 +241,7 @@ const result = await llm.structured(
     },
     request: {
       signal: AbortSignal.timeout(30_000),  // optional AbortSignal
+      reasoningEffort: "medium",            // optional reasoning effort hint
     },
     timeout: {
       request: 30_000,  // ms per LLM HTTP request
@@ -342,12 +343,15 @@ const result = await llm.generate(
     request: {
       temperature: 0,
       maxTokens: 800,
+      reasoningEffort: "medium",
       mcpClients: [calculatorMCP],
       maxToolRounds: 8,
     },
   }
 );
 ```
+
+On `openai-compatible`, this is sent as `reasoning_effort`, with `max` mapped to `xhigh`. On `anthropic-compatible`, this is sent as `output_config.effort` and auto-enables `thinking: { type: "adaptive" }`.
 
 For existing history or multi-turn conversations, pass `messages` directly:
 

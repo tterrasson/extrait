@@ -165,6 +165,7 @@ export interface LLMRequest {
   systemPrompt?: string;
   messages?: LLMMessage[];
   temperature?: number;
+  reasoningEffort?: "low" | "medium" | "high" | "max";
   maxTokens?: number;
   mcpClients?: MCPToolClient[];
   toolChoice?: LLMToolChoice;
