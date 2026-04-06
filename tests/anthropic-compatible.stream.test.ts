@@ -46,7 +46,7 @@ describe("anthropic-compatible streaming", () => {
     let started = false;
     let completed = false;
 
-    const fetcher = (async (_input, init) => {
+    const fetcher = (async (_input: string | URL | Request, init: RequestInit) => {
       requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
       return sseResponse([
         JSON.stringify({ type: "content_block_delta", delta: { text: "Hello" } }),
