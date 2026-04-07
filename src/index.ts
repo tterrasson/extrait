@@ -78,6 +78,7 @@ export type {
   EmbeddingResult,
   LLMImageContent,
   LLMMessageContent,
+  LLMReasoningEffort,
   LLMTextContent,
   ExtractJsonCandidatesOptions,
   ExtractionCandidate,

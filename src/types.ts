@@ -160,12 +160,14 @@ export interface LLMMessage {
   [key: string]: unknown;
 }
 
+export type LLMReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+
 export interface LLMRequest {
   prompt?: string;
   systemPrompt?: string;
   messages?: LLMMessage[];
   temperature?: number;
-  reasoningEffort?: "low" | "medium" | "high" | "max";
+  reasoningEffort?: LLMReasoningEffort;
   maxTokens?: number;
   mcpClients?: MCPToolClient[];
   toolChoice?: LLMToolChoice;

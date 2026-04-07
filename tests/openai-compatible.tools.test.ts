@@ -115,6 +115,43 @@ describe("openai-compatible MCP tools", () => {
     expect(requests[0]?.reasoning_effort).toBe("xhigh");
   });
 
+  test("forwards minimal and none reasoning_effort values as-is", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "ok",
+            },
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "Need help",
+      reasoningEffort: "minimal",
+    });
+    await adapter.complete({
+      prompt: "Need help again",
+      reasoningEffort: "none",
+    });
+
+    expect(requests[0]?.reasoning_effort).toBe("minimal");
+    expect(requests[1]?.reasoning_effort).toBe("none");
+  });
+
   test("executes MCP tools with chat completions", async () => {
     const requests: Record<string, unknown>[] = [];
     let round = 0;

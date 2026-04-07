@@ -46,7 +46,7 @@ describe("openai-compatible streaming", () => {
     let started = false;
     let completed = false;
 
-    const fetcher = (async (_input, init) => {
+    const fetcher = (async (_input: Request | string | URL, init?: RequestInit) => {
       requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
       return sseResponse([
         JSON.stringify({ choices: [{ delta: { content: "Hello" } }] }),
@@ -54,7 +54,7 @@ describe("openai-compatible streaming", () => {
         JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }),
         "[DONE]",
       ]);
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",

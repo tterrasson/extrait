@@ -44,7 +44,7 @@ export interface OpenAICompatibleAdapterOptions {
   fetcher?: typeof fetch;
 }
 
-type OpenAIReasoningEffort = "low" | "medium" | "high" | "xhigh";
+type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOptions): LLMAdapter {
   const fetcher = options.fetcher ?? fetch;

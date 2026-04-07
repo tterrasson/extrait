@@ -307,6 +307,46 @@ describe("anthropic-compatible MCP tools", () => {
     expect(requests[0]?.max_tokens).toBe(DEFAULT_ANTHROPIC_MAX_TOKENS);
   });
 
+  test("forwards minimal and none output_config.effort values as-is", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      requests.push(body);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "hello",
+      reasoningEffort: "minimal",
+    });
+    await adapter.complete({
+      prompt: "hello again",
+      reasoningEffort: "none",
+    });
+
+    expect(requests[0]?.output_config).toEqual({
+      effort: "minimal",
+    });
+    expect(requests[0]?.thinking).toEqual({
+      type: "adaptive",
+    });
+    expect(requests[1]?.output_config).toEqual({
+      effort: "none",
+    });
+    expect(requests[1]?.thinking).toEqual({
+      type: "adaptive",
+    });
+  });
+
   test("falls back to library default max tokens when adapter default is invalid", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {

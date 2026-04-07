@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createLLM } from "@/llm";
 import { createProviderRegistry } from "@/providers/registry";
 import { DEFAULT_SCHEMA_INSTRUCTION} from "@/format";
+import type { LLMReasoningEffort } from "@/types";
 
 describe("createLLM", () => {
   test("configures a single client with defaults + override per call", async () => {
@@ -465,7 +466,7 @@ describe("createLLM", () => {
     const requests: Array<{
       prompt?: string;
       temperature?: number;
-      reasoningEffort?: "low" | "medium" | "high" | "max";
+      reasoningEffort?: LLMReasoningEffort;
       systemPrompt?: string;
     }> = [];
 
