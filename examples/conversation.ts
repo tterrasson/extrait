@@ -24,12 +24,13 @@ import {
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"
   | "anthropic-compatible";
+const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
   provider,
   model: process.env.LLM_MODEL ?? "gpt-4o-mini",
   transport: { baseURL: process.env.LLM_BASE_URL, apiKey: process.env.LLM_API_KEY },
-  defaults: { mode: "loose", selfHeal: 1 },
+  defaults: { mode: "loose", selfHeal: 1, debug: debugEnabled },
 });
 
 const ReplySchema = s.schema(

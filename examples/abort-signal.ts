@@ -18,6 +18,7 @@ const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
 const model = process.env.LLM_MODEL ?? "gpt-5-nano";
 const baseURL = process.env.LLM_BASE_URL;
 const apiKey = process.env.LLM_API_KEY;
+const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 if (!apiKey) {
   console.error("Missing LLM_API_KEY in environment.");
@@ -35,6 +36,7 @@ const llm = createLLM({
   defaults: {
     mode: "strict",
     selfHeal: false,
+    debug: debugEnabled,
   },
 });
 

@@ -37,12 +37,13 @@ const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
 const model = process.env.LLM_MODEL ?? "gpt-4o-mini";
 const baseURL = process.env.LLM_BASE_URL;
 const apiKey = process.env.LLM_API_KEY;
+const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
   provider,
   model,
   transport: { baseURL, apiKey },
-  defaults: { mode: "loose", selfHeal: 1 },
+  defaults: { mode: "loose", selfHeal: 1, debug: debugEnabled },
 });
 
 const ImageAnalysisSchema = s.schema(

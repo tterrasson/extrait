@@ -20,6 +20,7 @@ const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
 const model = process.env.LLM_MODEL ?? "gpt-5-nano";
 const baseURL = process.env.LLM_BASE_URL;
 const apiKey = process.env.LLM_API_KEY;
+const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
   provider,
@@ -31,7 +32,7 @@ const llm = createLLM({
   defaults: {
     mode: "loose",
     selfHeal: 2, // Allow up to 2 self-heal attempts
-    debug: true, // Enable debug to inspect visible text, reasoning, and repair attempts
+    debug: debugEnabled,
   },
 });
 

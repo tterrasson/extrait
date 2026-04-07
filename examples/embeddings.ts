@@ -16,12 +16,17 @@
 
 import { createLLM } from "@/index";
 
+const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
+
 const embedder = createLLM({
   provider: "openai-compatible",
   model: process.env.EMBED_MODEL ?? process.env.LLM_MODEL ?? "text-embedding-3-small",
   transport: {
     baseURL: process.env.LLM_BASE_URL,
     apiKey: process.env.LLM_API_KEY,
+  },
+  defaults: {
+    debug: debugEnabled,
   },
 });
 

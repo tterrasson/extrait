@@ -33,6 +33,7 @@ const llm = createLLM({
   defaults: {
     mode: "strict", // Use strict mode for faster, simpler execution
     selfHeal: false,
+    debug: debugEnabled
   },
 });
 
@@ -111,23 +112,21 @@ try {
         "No schema issues were reported. The model response was likely not valid JSON.",
       );
     }
-    if (debugEnabled) {
-      console.error("\nModel text:");
-      console.error(error.text);
-      if (error.reasoning.length > 0) {
-        console.error("\nModel reasoning:");
-        console.error(error.reasoning);
-      }
-      if (error.candidates.length > 0) {
-        console.error("\nExtracted JSON candidates:");
-        error.candidates.forEach((candidate, index) => {
-          console.error(`  [${index + 1}] ${candidate}`);
-        });
-      }
-      if ((error.repairLog?.length ?? 0) > 0) {
-        console.error("\nRepair diagnostics:");
-        error.repairLog?.forEach((line) => console.error(`  - ${line}`));
-      }
+    console.error("\nModel text:");
+    console.error(error.text);
+    if (error.reasoning.length > 0) {
+      console.error("\nModel reasoning:");
+      console.error(error.reasoning);
+    }
+    if (error.candidates.length > 0) {
+      console.error("\nExtracted JSON candidates:");
+      error.candidates.forEach((candidate, index) => {
+        console.error(`  [${index + 1}] ${candidate}`);
+      });
+    }
+    if ((error.repairLog?.length ?? 0) > 0) {
+      console.error("\nRepair diagnostics:");
+      error.repairLog?.forEach((line) => console.error(`  - ${line}`));
     }
     process.exit(1);
   }
