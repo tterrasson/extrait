@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeBaseURL, preferLatestUsage } from "@/providers/utils";
+import { buildURL, normalizeBaseURL, preferLatestUsage } from "@/providers/utils";
 
 describe("providers/utils normalizeBaseURL", () => {
   test("adds a trailing slash if absent", () => {
@@ -28,6 +28,32 @@ describe("providers/utils normalizeBaseURL", () => {
 
   test("handles URLs with multiple slashes", () => {
     expect(normalizeBaseURL("https://api.example.com/")).toBe("https://api.example.com/");
+  });
+});
+
+describe("providers/utils buildURL", () => {
+  test("preserves a base path for openai-compatible style endpoints", () => {
+    expect(buildURL("https://example.com/api/", "/v1/chat/completions")).toBe(
+      "https://example.com/api/v1/chat/completions",
+    );
+  });
+
+  test("deduplicates overlapping version segments", () => {
+    expect(buildURL("https://openrouter.ai/api/v1/", "/v1/chat/completions")).toBe(
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+  });
+
+  test("keeps root-based providers unchanged", () => {
+    expect(buildURL("https://api.openai.com", "/v1/chat/completions")).toBe(
+      "https://api.openai.com/v1/chat/completions",
+    );
+  });
+
+  test("preserves a base path for anthropic-compatible style endpoints", () => {
+    expect(buildURL("https://example.com/api/", "/v1/messages")).toBe(
+      "https://example.com/api/v1/messages",
+    );
   });
 });
 

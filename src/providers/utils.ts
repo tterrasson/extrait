@@ -5,7 +5,20 @@ export function normalizeBaseURL(baseURL: string): string {
 }
 
 export function buildURL(baseURL: string, path: string): string {
-  return new URL(path, normalizeBaseURL(baseURL)).toString();
+  try {
+    return new URL(path).toString();
+  } catch {
+    // Treat provider paths as relative to the configured base URL, even when they start with "/".
+  }
+
+  const base = new URL(normalizeBaseURL(baseURL));
+  const resolvedPath = new URL(path, "http://provider-path.local");
+
+  base.pathname = mergePathnames(base.pathname, resolvedPath.pathname);
+  base.search = resolvedPath.search;
+  base.hash = resolvedPath.hash;
+
+  return base.toString();
 }
 
 export function safeJSONParse(input: string): unknown {
@@ -94,4 +107,43 @@ function addOptional(a: number | undefined, b: number | undefined): number | und
   }
 
   return (a ?? 0) + (b ?? 0);
+}
+
+function mergePathnames(basePathname: string, pathPathname: string): string {
+  const baseSegments = splitPathSegments(basePathname);
+  const pathSegments = splitPathSegments(pathPathname);
+  const overlap = findPathOverlap(baseSegments, pathSegments);
+  const mergedSegments = [...baseSegments, ...pathSegments.slice(overlap)];
+
+  if (mergedSegments.length === 0) {
+    return "/";
+  }
+
+  const mergedPathname = `/${mergedSegments.join("/")}`;
+  return pathPathname.endsWith("/") && pathPathname !== "/" ? `${mergedPathname}/` : mergedPathname;
+}
+
+function splitPathSegments(pathname: string): string[] {
+  return pathname.split("/").filter((segment) => segment.length > 0);
+}
+
+function findPathOverlap(baseSegments: string[], pathSegments: string[]): number {
+  const maxOverlap = Math.min(baseSegments.length, pathSegments.length);
+
+  for (let size = maxOverlap; size > 0; size -= 1) {
+    let matches = true;
+
+    for (let index = 0; index < size; index += 1) {
+      if (baseSegments[baseSegments.length - size + index] !== pathSegments[index]) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (matches) {
+      return size;
+    }
+  }
+
+  return 0;
 }
