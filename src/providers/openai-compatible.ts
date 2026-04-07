@@ -243,7 +243,10 @@ async function completeWithChatCompletionsPassThrough(
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 
-  const payload = (await response.json()) as Record<string, unknown>;
+  const payload = await parseOpenAICompatibleJSONResponse(
+    response,
+    "Failed to parse OpenAI-compatible chat completion response",
+  );
   const assistantMessage = pickAssistantMessage(payload);
   if (!assistantMessage) {
     throw new Error("No assistant message in OpenAI-compatible response.");
@@ -259,6 +262,35 @@ async function completeWithChatCompletionsPassThrough(
     finishReason: pickFinishReason(payload),
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
   };
+}
+
+async function parseOpenAICompatibleJSONResponse(
+  response: Response,
+  context: string,
+): Promise<Record<string, unknown>> {
+  const rawBody = await response.text();
+
+  try {
+    return JSON.parse(rawBody) as Record<string, unknown>;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${context} (HTTP ${response.status}): ${message}. Raw body: ${formatResponseBodyForError(rawBody)}`,
+    );
+  }
+}
+
+function formatResponseBodyForError(rawBody: string, maxLength = 2_000): string {
+  const normalized = rawBody.trim();
+  if (normalized.length === 0) {
+    return "[empty body]";
+  }
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength)}...[truncated ${normalized.length - maxLength} chars]`;
 }
 
 async function completeWithChatCompletionsWithMCP(
