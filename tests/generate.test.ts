@@ -7,6 +7,7 @@ import type {
   LLMRequest,
   LLMResponse,
   LLMStreamCallbacks,
+  MCPToolClient,
 } from "@/types";
 
 class MockAdapter implements LLMAdapter {
@@ -200,6 +201,57 @@ describe("generate", () => {
     ]);
   });
 
+  test("streaming suppresses duplicate snapshots but still emits final done event", async () => {
+    const events: GenerateStreamEvent[] = [];
+
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: "ok" };
+      },
+      async stream(_request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        callbacks.onStart?.();
+        callbacks.onChunk?.({ textDelta: "<think>" });
+        callbacks.onChunk?.({ textDelta: "</think>" });
+        callbacks.onChunk?.({ textDelta: "ok", finishReason: "stop" });
+        const out = { text: "<think></think>ok", finishReason: "stop" };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    const result = await generate(model, "Say hello", {
+      stream: {
+        enabled: true,
+        onData: (event) => events.push(event),
+      },
+    });
+
+    expect(result.text).toBe("ok");
+    expect(events).toEqual([
+      {
+        delta: { text: "", reasoning: "" },
+        snapshot: { text: "", reasoning: "" },
+        done: false,
+        usage: undefined,
+        finishReason: undefined,
+      },
+      {
+        delta: { text: "ok", reasoning: "" },
+        snapshot: { text: "ok", reasoning: "" },
+        done: false,
+        usage: undefined,
+        finishReason: undefined,
+      },
+      {
+        delta: { text: "", reasoning: "" },
+        snapshot: { text: "ok", reasoning: "" },
+        done: true,
+        usage: undefined,
+        finishReason: "stop",
+      },
+    ]);
+  });
+
   test("stream.to stdout writes only visible text", async () => {
     const writes: string[] = [];
     const originalWrite = process.stdout.write.bind(process.stdout);
@@ -283,5 +335,82 @@ describe("generate", () => {
     });
 
     expect(signals).toEqual([controller.signal, controller.signal]);
+  });
+
+  test("uses timeout.request signal when no request signal is provided", async () => {
+    const signals: AbortSignal[] = [];
+
+    const model: LLMAdapter = {
+      async complete(request: LLMRequest): Promise<LLMResponse> {
+        signals.push(request.signal as AbortSignal);
+        return { text: "done", finishReason: "stop" };
+      },
+      async stream(request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        signals.push(request.signal as AbortSignal);
+        callbacks.onStart?.();
+        callbacks.onChunk?.({ textDelta: "done", finishReason: "stop" });
+        const out = { text: "done", finishReason: "stop" };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    await generate(model, "one", {
+      timeout: { request: 1_000 },
+    });
+    await generate(model, "two", {
+      timeout: { request: 1_000 },
+      stream: true,
+    });
+
+    expect(signals).toHaveLength(2);
+    expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
+  });
+
+  test("request.signal takes precedence over timeout.request", async () => {
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+
+    const model: LLMAdapter = {
+      async complete(request: LLMRequest): Promise<LLMResponse> {
+        receivedSignal = request.signal;
+        return { text: "done", finishReason: "stop" };
+      },
+    };
+
+    await generate(model, "one", {
+      request: { signal: controller.signal },
+      timeout: { request: 1_000 },
+    });
+
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
+  test("applies timeout.tool to MCP clients passed through generate", async () => {
+    const slowClient: MCPToolClient = {
+      id: "slow",
+      async listTools() {
+        return { tools: [{ name: "wait", inputSchema: { type: "object", properties: {} } }] };
+      },
+      async callTool() {
+        return new Promise(() => undefined);
+      },
+    };
+
+    const model: LLMAdapter = {
+      async complete(request: LLMRequest): Promise<LLMResponse> {
+        await request.mcpClients?.[0]?.callTool({ name: "wait", arguments: {} });
+        return { text: "unreachable" };
+      },
+    };
+
+    await expect(
+      generate(model, "Use the tool", {
+        request: {
+          mcpClients: [slowClient],
+        },
+        timeout: { tool: 5 },
+      }),
+    ).rejects.toThrow("Tool call timed out after 5ms");
   });
 });

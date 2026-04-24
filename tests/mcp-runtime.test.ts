@@ -59,6 +59,36 @@ describe("resolveMCPToolset", () => {
     expect(result.byName.has("add")).toBe(true);
   });
 
+  test("loads paginated tool listings", async () => {
+    const cursors: Array<string | undefined> = [];
+    const client: MCPToolClient = {
+      id: "paged",
+      async listTools(params) {
+        cursors.push(params?.cursor);
+        if (!params?.cursor) {
+          return {
+            tools: [{ name: "first", inputSchema: { type: "object", properties: {} } as MCPToolSchema }],
+            nextCursor: "page-2",
+          };
+        }
+
+        return {
+          tools: [{ name: "second", inputSchema: { type: "object", properties: {} } as MCPToolSchema }],
+        };
+      },
+      async callTool() {
+        return { ok: true };
+      },
+    };
+
+    const result = await resolveMCPToolset([client]);
+
+    expect(cursors).toEqual([undefined, "page-2"]);
+    expect(result.tools.map((tool) => tool.name)).toEqual(["first", "second"]);
+    expect(result.byName.has("first")).toBe(true);
+    expect(result.byName.has("second")).toBe(true);
+  });
+
   test("prefixes names on collision across clients", async () => {
     const client1 = createMockClient("alpha", [{ name: "run" }]);
     const client2 = createMockClient("beta", [{ name: "run" }]);

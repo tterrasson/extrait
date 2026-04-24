@@ -102,6 +102,24 @@ describe("anthropic-compatible MCP tools", () => {
     ).rejects.toThrow('Anthropic-compatible messages only support "system" turns at the beginning.');
   });
 
+  test("throws when response has no assistant text or tool calls", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        content: [],
+        stop_reason: "end_turn",
+      })) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await expect(adapter.complete({ prompt: "hello" })).rejects.toThrow(
+      "No assistant text in Anthropic-compatible response.",
+    );
+  });
+
   test("executes MCP tools with local handler loop", async () => {
     const requests: Record<string, unknown>[] = [];
     let round = 0;

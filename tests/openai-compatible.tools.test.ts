@@ -152,6 +152,54 @@ describe("openai-compatible MCP tools", () => {
     expect(requests[1]?.reasoning_effort).toBe("none");
   });
 
+  test("throws a contextual error when chat completions returns invalid JSON", async () => {
+    const fetcher = (async () =>
+      new Response("{ invalid json", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    let captured: unknown;
+    try {
+      await adapter.complete({ prompt: "Need help" });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(captured).toBeInstanceOf(Error);
+    const message = (captured as Error).message;
+    expect(message).toContain("Failed to parse OpenAI-compatible chat completion response");
+    expect(message).toContain("HTTP 200");
+    expect(message).toContain("Raw body: { invalid json");
+  });
+
+  test("throws when chat completions response has no assistant message", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+          },
+        ],
+      })) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await expect(adapter.complete({ prompt: "Need help" })).rejects.toThrow(
+      "No assistant message in OpenAI-compatible response.",
+    );
+  });
+
   test("executes MCP tools with chat completions", async () => {
     const requests: Record<string, unknown>[] = [];
     let round = 0;
