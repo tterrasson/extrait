@@ -346,7 +346,7 @@ const result = await llm.generate(
       maxTokens: 800,
       reasoningEffort: "medium",
       mcpClients: [calculatorMCP],
-      maxToolRounds: 8,
+      maxToolRounds: 10,
     },
   }
 );

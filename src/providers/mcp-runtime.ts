@@ -40,7 +40,7 @@ export interface ExecutedMCPToolCall {
   execution: LLMToolExecution;
 }
 
-export const DEFAULT_MAX_TOOL_ROUNDS = 8;
+export const DEFAULT_MAX_TOOL_ROUNDS = 100;
 
 export async function resolveMCPToolset(clients: MCPToolClient[] | undefined): Promise<ResolvedMCPToolset> {
   if (!Array.isArray(clients) || clients.length === 0) {
