@@ -1,7 +1,3 @@
-# extrait — Agent Context
-
-LLM text generation + structured JSON extraction library (Zod v4, jsonrepair, MCP tools).
-
 ## Commands
 
 - `bun run test` — run tests
