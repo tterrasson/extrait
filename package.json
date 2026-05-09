@@ -34,9 +34,6 @@
     "LICENSE"
   ],
   "license": "MIT",
-  "overrides": {
-    "zod": "^4.3.6"
-  },
   "peerDependencies": {
     "sharp": "^0.34.5"
   },
@@ -44,9 +41,6 @@
     "sharp": {
       "optional": true
     }
-  },
-  "resolutions": {
-    "zod": "^4.3.6"
   },
   "scripts": {
     "dev": "bun run examples/runner.ts",
