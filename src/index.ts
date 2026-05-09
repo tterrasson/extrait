@@ -111,6 +111,8 @@ export type {
   ParseLLMOutputResult,
   ParseTraceEvent,
   PipelineError,
+  ReasoningBlock,
+  StreamTurnTransition,
   StructuredAttempt,
   StructuredCallOptions,
   StructuredDebugOptions,

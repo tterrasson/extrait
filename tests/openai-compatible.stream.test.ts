@@ -334,6 +334,7 @@ describe("openai-compatible streaming", () => {
 
   test("streams reasoning in MCP mode before tool calls", async () => {
     const chunks: LLMStreamChunk[] = [];
+    const transitions: string[] = [];
     let round = 0;
 
     const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
@@ -371,6 +372,7 @@ describe("openai-compatible streaming", () => {
       expect(assistantMessage?.reasoning).toBe("Need addition. ");
 
       return sseResponse([
+        JSON.stringify({ choices: [{ delta: { reasoning: "Final answer. " } }] }),
         JSON.stringify({ choices: [{ delta: { content: "5" }, finish_reason: "stop" }] }),
         "[DONE]",
       ]);
@@ -386,12 +388,27 @@ describe("openai-compatible streaming", () => {
       {
         prompt: "test",
         mcpClients: [createSimpleMCP()],
+        onTurnTransition: (transition) => transitions.push(`${transition.turnIndex}:${transition.kind}`),
       },
       { onChunk: (chunk) => chunks.push(chunk) },
     );
 
     expect(chunks[0]?.reasoningDelta).toBe("Need addition. ");
+    expect(chunks[0]?.turnIndex).toBe(1);
+    expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "call_add_reasoning")).toBe(true);
     expect(result.text).toBe("5");
+    expect(result.reasoning).toBe("Need addition.\n\nFinal answer.");
+    expect(result.reasoningBlocks).toEqual([
+      { turnIndex: 1, text: "Need addition." },
+      { turnIndex: 2, text: "Final answer." },
+    ]);
+    expect(transitions).toEqual([
+      "1:reasoningComplete",
+      "1:toolCallsEmit",
+      "1:toolResultsReceived",
+      "2:reasoningComplete",
+      "2:streamEnd",
+    ]);
   });
 
   test("responses API stream does not call onToken when no text delta is emitted", async () => {

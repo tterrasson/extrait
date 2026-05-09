@@ -737,6 +737,38 @@ describe("structured", () => {
     expect(result.attempts[0]?.reasoning).toContain('{"value": 0}');
   });
 
+  test("self-heal keeps reasoning blocks scoped to the successful attempt", async () => {
+    const schema = z.object({ value: z.number() });
+    let calls = 0;
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            text: '{"value":"bad"}',
+            reasoning: "bad attempt",
+            reasoningBlocks: [{ turnIndex: 1, text: "bad attempt" }],
+          };
+        }
+
+        return {
+          text: '{"value":7}',
+          reasoning: "fixed attempt",
+          reasoningBlocks: [{ turnIndex: 1, text: "fixed attempt" }],
+        };
+      },
+    };
+
+    const result = await structured(model, schema, "Return JSON", {
+      selfHeal: { enabled: true, maxAttempts: 1 },
+    });
+
+    expect(result.data).toEqual({ value: 7 });
+    expect(result.reasoningBlocks).toEqual([{ turnIndex: 1, text: "fixed attempt" }]);
+    expect(result.attempts[0]?.reasoningBlocks).toEqual([{ turnIndex: 1, text: "bad attempt" }]);
+    expect(result.attempts[1]?.reasoningBlocks).toEqual([{ turnIndex: 1, text: "fixed attempt" }]);
+  });
+
   test("combines dedicated reasoning and inline think blocks without deduplication", async () => {
     const schema = z.object({ value: z.number() });
     const model: LLMAdapter = {

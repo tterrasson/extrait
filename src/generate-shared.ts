@@ -4,8 +4,11 @@ import type {
   LLMAdapter,
   LLMMessage,
   LLMRequest,
+  LLMToolCall,
   LLMUsage,
   MCPToolClient,
+  ReasoningBlock,
+  StreamTurnTransition,
   StructuredDebugOptions,
   StructuredPromptBuilder,
   StructuredPromptContext,
@@ -41,7 +44,10 @@ export interface NormalizedStreamConfig<TSnapshot> {
     done: boolean;
     usage?: LLMUsage;
     finishReason?: string;
+    turnIndex?: number;
+    toolCalls?: LLMToolCall[];
   }) => void;
+  onTurnTransition?: (transition: StreamTurnTransition) => void;
   to?: "stdout";
 }
 
@@ -55,6 +61,7 @@ export interface NormalizedDebugConfig {
 export interface NormalizedModelOutput {
   text: string;
   reasoning: string;
+  reasoningBlocks?: ReasoningBlock[];
   thinkBlocks: ThinkBlock[];
   parseSource: string;
 }
@@ -88,6 +95,7 @@ export interface ModelCallResult {
   via: "complete" | "stream";
   usage?: LLMUsage;
   finishReason?: string;
+  reasoningBlocks?: ReasoningBlock[];
 }
 
 export function resolvePrompt(
@@ -171,6 +179,7 @@ export function normalizeStreamConfig<TSnapshot>(
     | {
         enabled?: boolean;
         onData?: NormalizedStreamConfig<TSnapshot>["onData"];
+        onTurnTransition?: NormalizedStreamConfig<TSnapshot>["onTurnTransition"];
         to?: "stdout";
       }
     | undefined,
@@ -190,6 +199,7 @@ export function normalizeStreamConfig<TSnapshot>(
   return {
     enabled: option.enabled ?? true,
     onData: option.onData,
+    onTurnTransition: option.onTurnTransition,
     to: option.to,
   };
 }
@@ -276,6 +286,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
     transformToolCallParams: options.request?.transformToolCallParams,
     unknownToolError: options.request?.unknownToolError,
     toolDebug: options.request?.toolDebug,
+    onTurnTransition: options.stream.onTurnTransition,
     body: options.request?.body,
     signal: requestSignal,
   };
@@ -308,6 +319,9 @@ export async function callModel<TSnapshot, TTraceEvent>(
     let latestFinishReason: string | undefined;
     let streamedProviderText = "";
     let streamedDedicatedReasoning = "";
+    let currentTurnIndex: number | undefined;
+    let currentToolCalls: LLMToolCall[] | undefined;
+    let streamedReasoningBlocks: ReasoningBlock[] | undefined;
     let lastSnapshotFingerprint: string | undefined;
     let previousSnapshotText = "";
     let previousSnapshotReasoning = "";
@@ -317,9 +331,18 @@ export async function callModel<TSnapshot, TTraceEvent>(
       usage?: LLMUsage,
       finishReason?: string,
     ): void => {
-      const normalized = normalizeModelOutput(streamedProviderText, streamedDedicatedReasoning);
+      const normalized = normalizeModelOutput(
+        streamedProviderText,
+        streamedDedicatedReasoning,
+        streamedReasoningBlocks,
+      );
       const snapshot = options.buildSnapshot(normalized);
-      const fingerprint = toStreamDataFingerprint(snapshot);
+      const fingerprint = toStreamDataFingerprint({
+        snapshot,
+        done,
+        turnIndex: currentTurnIndex,
+        toolCalls: currentToolCalls,
+      });
       if (!done && fingerprint === lastSnapshotFingerprint) {
         return;
       }
@@ -342,6 +365,8 @@ export async function callModel<TSnapshot, TTraceEvent>(
         done,
         usage,
         finishReason,
+        turnIndex: currentTurnIndex,
+        toolCalls: currentToolCalls,
       });
 
       if (options.stream.to === "stdout" && delta.text) {
@@ -389,8 +414,23 @@ export async function callModel<TSnapshot, TTraceEvent>(
       emitStreamingData(false);
     };
 
-    const response = await adapter.stream(requestPayload, {
+    const streamRequestPayload: LLMRequest = {
+      ...requestPayload,
+      onTurnTransition: (transition) => {
+        if (transition.kind === "reasoningComplete") {
+          streamedReasoningBlocks = appendReasoningBlock(streamedReasoningBlocks, transition);
+        }
+        options.stream.onTurnTransition?.(transition);
+      },
+    };
+
+    const response = await adapter.stream(streamRequestPayload, {
       onChunk: (chunk) => {
+        if (chunk.turnIndex !== undefined) {
+          currentTurnIndex = chunk.turnIndex;
+        }
+        currentToolCalls = chunk.toolCalls;
+
         if (chunk.textDelta) {
           handleTextDelta(chunk.textDelta);
         }
@@ -406,6 +446,10 @@ export async function callModel<TSnapshot, TTraceEvent>(
         if (chunk.finishReason) {
           latestFinishReason = chunk.finishReason;
         }
+
+        if (!chunk.textDelta && !chunk.reasoningDelta && (chunk.turnIndex !== undefined || chunk.toolCalls)) {
+          emitStreamingData(false, chunk.usage, chunk.finishReason);
+        }
       },
     });
 
@@ -413,7 +457,12 @@ export async function callModel<TSnapshot, TTraceEvent>(
       typeof response.text === "string" ? response.text : streamedProviderText;
     streamedDedicatedReasoning =
       typeof response.reasoning === "string" ? response.reasoning : streamedDedicatedReasoning;
-    const finalNormalized = normalizeModelOutput(streamedProviderText, streamedDedicatedReasoning);
+    streamedReasoningBlocks = response.reasoningBlocks ?? streamedReasoningBlocks;
+    const finalNormalized = normalizeModelOutput(
+      streamedProviderText,
+      streamedDedicatedReasoning,
+      streamedReasoningBlocks,
+    );
     const usage = preferLatestStreamUsage(latestUsage, response.usage);
     const finishReason = response.finishReason ?? latestFinishReason;
     emitStreamingData(true, usage, finishReason);
@@ -451,11 +500,12 @@ export async function callModel<TSnapshot, TTraceEvent>(
       via: "stream",
       usage,
       finishReason,
+      reasoningBlocks: finalNormalized.reasoningBlocks,
     };
   }
 
   const response = await adapter.complete(requestPayload);
-  const normalized = normalizeModelOutput(response.text, response.reasoning);
+  const normalized = normalizeModelOutput(response.text, response.reasoning, response.reasoningBlocks);
 
   options.observe?.(
     options.buildEvent({
@@ -490,10 +540,15 @@ export async function callModel<TSnapshot, TTraceEvent>(
     via: "complete",
     usage: response.usage,
     finishReason: response.finishReason,
+    reasoningBlocks: normalized.reasoningBlocks,
   };
 }
 
-export function normalizeModelOutput(text: string, dedicatedReasoning?: string): NormalizedModelOutput {
+export function normalizeModelOutput(
+  text: string,
+  dedicatedReasoning?: string,
+  reasoningBlocks?: ReasoningBlock[],
+): NormalizedModelOutput {
   const sanitized = sanitizeThink(text);
   const visibleText = stripThinkBlocks(text, sanitized.thinkBlocks);
   const reasoning = joinReasoningSegments([
@@ -504,9 +559,38 @@ export function normalizeModelOutput(text: string, dedicatedReasoning?: string):
   return {
     text: visibleText,
     reasoning,
+    reasoningBlocks: normalizeReasoningBlocks(reasoningBlocks),
     thinkBlocks: sanitized.thinkBlocks,
     parseSource: composeParseSource(visibleText, reasoning),
   };
+}
+
+function normalizeReasoningBlocks(blocks: ReasoningBlock[] | undefined): ReasoningBlock[] | undefined {
+  if (!Array.isArray(blocks)) {
+    return undefined;
+  }
+
+  const normalized = blocks
+    .map((block) => ({
+      turnIndex: block.turnIndex,
+      text: block.text.replace(RE_THINK_TAGS, "").trim(),
+    }))
+    .filter((block) => Number.isFinite(block.turnIndex) && block.text.length > 0);
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function appendReasoningBlock(
+  blocks: ReasoningBlock[] | undefined,
+  transition: StreamTurnTransition,
+): ReasoningBlock[] | undefined {
+  const text = transition.reasoningText?.replace(RE_THINK_TAGS, "").trim();
+  if (!text) {
+    return blocks;
+  }
+
+  const next = [...(blocks ?? []), { turnIndex: transition.turnIndex, text }];
+  return normalizeReasoningBlocks(next);
 }
 
 export function composeParseSource(text: string, reasoning?: string): string {

@@ -71,6 +71,7 @@ These examples cover the most common usage patterns in the repository.
 - [`examples/generate.ts`](examples/generate.ts) - High-level text generation
 - [`examples/streaming.ts`](examples/streaming.ts) - Real-time partial output and snapshot updates
 - [`examples/calculator-tool.ts`](examples/calculator-tool.ts) - Structured extraction with MCP tools
+- [`examples/streaming-turns-with-tools.ts`](examples/streaming-turns-with-tools.ts) - Streaming MCP turns, transitions, and reasoning blocks
 - [`examples/conversation.ts`](examples/conversation.ts) - Multi-turn prompts and multimodal content
 - [`examples/image-analysis.ts`](examples/image-analysis.ts) - Vision input with structured output
 - [`examples/embeddings.ts`](examples/embeddings.ts) - Embeddings and similarity workflows
@@ -695,6 +696,7 @@ Available examples:
 - `generate` - High-level text generation ([generate.ts](examples/generate.ts))
 - `streaming` - Real LLM streaming + snapshot self-check ([streaming.ts](examples/streaming.ts))
 - `streaming-with-tools` - Real text streaming with MCP tools + self-check ([streaming-with-tools.ts](examples/streaming-with-tools.ts))
+- `streaming-turns-with-tools` - Streaming MCP turns, transitions, and reasoning blocks ([streaming-turns-with-tools.ts](examples/streaming-turns-with-tools.ts))
 - `abort-signal` - Start a generation then cancel quickly with `AbortSignal` ([abort-signal.ts](examples/abort-signal.ts))
 - `timeout` - Set per-request and per-tool timeouts via the `timeout` option ([timeout.ts](examples/timeout.ts))
 - `simple` - Basic structured output with streaming ([simple.ts](examples/simple.ts))

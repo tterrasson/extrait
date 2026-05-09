@@ -154,6 +154,18 @@ export interface LLMToolCallRef {
   function: { name: string; arguments: string };
 }
 
+export interface ReasoningBlock {
+  turnIndex: number;
+  text: string;
+}
+
+export interface StreamTurnTransition {
+  turnIndex: number;
+  kind: "reasoningComplete" | "toolCallsEmit" | "toolResultsReceived" | "streamEnd";
+  reasoningText?: string;
+  toolCalls?: LLMToolCall[];
+}
+
 export interface LLMMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: LLMMessageContent;
@@ -179,6 +191,7 @@ export interface LLMRequest {
   transformToolCallParams?: LLMToolCallParamsTransformer;
   unknownToolError?: (toolName: string) => string;
   toolDebug?: boolean | LLMToolDebugOptions;
+  onTurnTransition?: (transition: StreamTurnTransition) => void;
   body?: Record<string, unknown>;
   signal?: AbortSignal;
 }
@@ -193,6 +206,7 @@ export interface LLMUsage {
 export interface LLMResponse {
   text: string;
   reasoning?: string;
+  reasoningBlocks?: ReasoningBlock[];
   raw?: unknown;
   usage?: LLMUsage;
   finishReason?: string;
@@ -203,6 +217,8 @@ export interface LLMResponse {
 export interface LLMStreamChunk {
   textDelta: string;
   reasoningDelta?: string;
+  turnIndex?: number;
+  toolCalls?: LLMToolCall[];
   raw?: unknown;
   done?: boolean;
   usage?: LLMUsage;
@@ -380,6 +396,7 @@ export interface StructuredStreamDelta {
 export interface StructuredStreamSnapshot<T = unknown> {
   text: string;
   reasoning: string;
+  reasoningBlocks?: ReasoningBlock[];
   data: StructuredStreamData<T> | null;
 }
 
@@ -389,11 +406,14 @@ export interface StructuredStreamEvent<T = unknown> {
   done: boolean;
   usage?: LLMUsage;
   finishReason?: string;
+  turnIndex?: number;
+  toolCalls?: LLMToolCall[];
 }
 
 export interface StructuredStreamOptions<T = unknown> {
   enabled?: boolean;
   onData?: (event: StructuredStreamEvent<T>) => void;
+  onTurnTransition?: (transition: StreamTurnTransition) => void;
   to?: "stdout";
 }
 
@@ -407,6 +427,7 @@ export interface GenerateStreamDelta {
 export interface GenerateStreamSnapshot {
   text: string;
   reasoning: string;
+  reasoningBlocks?: ReasoningBlock[];
 }
 
 export interface GenerateStreamEvent {
@@ -415,11 +436,14 @@ export interface GenerateStreamEvent {
   done: boolean;
   usage?: LLMUsage;
   finishReason?: string;
+  turnIndex?: number;
+  toolCalls?: LLMToolCall[];
 }
 
 export interface GenerateStreamOptions {
   enabled?: boolean;
   onData?: (event: GenerateStreamEvent) => void;
+  onTurnTransition?: (transition: StreamTurnTransition) => void;
   to?: "stdout";
 }
 
@@ -471,6 +495,7 @@ export interface StructuredAttempt<T> {
   success: boolean;
   usage?: LLMUsage;
   finishReason?: string;
+  reasoningBlocks?: ReasoningBlock[];
   parsed: ParseLLMOutputResult<T>;
 }
 
@@ -481,6 +506,7 @@ export interface GenerateAttempt {
   reasoning: string;
   usage?: LLMUsage;
   finishReason?: string;
+  reasoningBlocks?: ReasoningBlock[];
 }
 
 export interface StructuredResult<T> {
@@ -491,6 +517,7 @@ export interface StructuredResult<T> {
   attempts: StructuredAttempt<T>[];
   usage?: LLMUsage;
   finishReason?: string;
+  reasoningBlocks?: ReasoningBlock[];
 }
 
 export interface GenerateResult {
@@ -499,6 +526,7 @@ export interface GenerateResult {
   attempts: GenerateAttempt[];
   usage?: LLMUsage;
   finishReason?: string;
+  reasoningBlocks?: ReasoningBlock[];
 }
 
 export interface StructuredError {

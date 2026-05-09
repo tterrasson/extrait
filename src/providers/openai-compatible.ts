@@ -10,6 +10,7 @@ import type {
   LLMStreamChunk,
   LLMToolCall,
   LLMUsage,
+  ReasoningBlock,
 } from "../types";
 import { consumeSSE } from "./stream-utils";
 import {
@@ -307,6 +308,7 @@ async function completeWithChatCompletionsWithMCP(
   let lastPayload: Record<string, unknown> | undefined;
   const toolCalls: LLMToolCall[] = [];
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+  const reasoningBlocks: ReasoningBlock[] = [];
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
@@ -344,16 +346,19 @@ async function completeWithChatCompletionsWithMCP(
 
     const assistantMessage = pickAssistantMessage(payload);
     const calledTools = pickChatToolCalls(payload);
+    const roundReasoning = pickAssistantReasoning(payload);
+    pushReasoningBlock(reasoningBlocks, round, roundReasoning);
 
     if (!assistantMessage) {
       throw new Error("No assistant message in OpenAI-compatible response.");
     }
 
     if (calledTools.length === 0) {
-      const reasoning = pickAssistantReasoning(payload);
+      const reasoning = joinReasoningBlocks(reasoningBlocks) || undefined;
       return {
         text: pickAssistantText(payload),
-        reasoning: reasoning.length > 0 ? reasoning : undefined,
+        reasoning,
+        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
         raw: payload,
         usage: aggregatedUsage,
         finishReason,
@@ -385,10 +390,8 @@ async function completeWithChatCompletionsWithMCP(
 
   return {
     text: pickAssistantText(lastPayload ?? {}),
-    reasoning: (() => {
-      const value = pickAssistantReasoning(lastPayload ?? {});
-      return value.length > 0 ? value : undefined;
-    })(),
+    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
@@ -455,6 +458,7 @@ async function completeWithResponsesAPIWithMCP(
   let lastPayload: Record<string, unknown> | undefined;
   const executedToolCalls: LLMToolCall[] = [];
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+  const reasoningBlocks: ReasoningBlock[] = [];
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
@@ -490,6 +494,7 @@ async function completeWithResponsesAPIWithMCP(
     lastPayload = payload;
     aggregatedUsage = mergeUsage(aggregatedUsage, pickUsage(payload));
     finishReason = pickResponsesFinishReason(payload) ?? finishReason;
+    pushReasoningBlock(reasoningBlocks, round, pickResponsesReasoning(payload));
 
     const providerToolCalls = pickResponsesToolCalls(payload);
     const functionCalls = providerToolCalls.filter(
@@ -501,6 +506,8 @@ async function completeWithResponsesAPIWithMCP(
       const text = pickResponsesText(payload) || pickAssistantText(payload);
       return {
         text,
+        reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
         raw: payload,
         usage: aggregatedUsage,
         finishReason,
@@ -532,6 +539,8 @@ async function completeWithResponsesAPIWithMCP(
 
   return {
     text: pickResponsesText(lastPayload ?? {}) || pickAssistantText(lastPayload ?? {}),
+    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
@@ -555,10 +564,10 @@ async function streamWithChatCompletionsWithMCP(
   let lastPayload: Record<string, unknown> | undefined;
   const executedToolCalls: LLMToolCall[] = [];
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+  const reasoningBlocks: ReasoningBlock[] = [];
 
   callbacks.onStart?.();
   let lastRoundText = "";
-  let lastRoundReasoning = "";
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
@@ -634,6 +643,7 @@ async function streamWithChatCompletionsWithMCP(
         const chunk: LLMStreamChunk = {
           textDelta: delta,
           reasoningDelta: reasoningDelta || undefined,
+          turnIndex: round,
           raw: json,
           usage: chunkUsage,
           finishReason: chunkFinishReason,
@@ -648,16 +658,25 @@ async function streamWithChatCompletionsWithMCP(
     }
 
     const calledTools = buildOpenAIStreamToolCalls(streamedToolCalls);
+    pushReasoningBlock(reasoningBlocks, round, roundReasoning);
+    request.onTurnTransition?.({
+      turnIndex: round,
+      kind: "reasoningComplete",
+      reasoningText: roundReasoning,
+    });
+
     if (calledTools.length === 0) {
       const out: LLMResponse = {
         text: roundText,
-        reasoning: roundReasoning.length > 0 ? roundReasoning : undefined,
+        reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
         raw: lastPayload,
         usage: aggregatedUsage,
         finishReason,
         toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
       };
+      request.onTurnTransition?.({ turnIndex: round, kind: "streamEnd" });
       callbacks.onComplete?.(out);
       return out;
     }
@@ -665,6 +684,18 @@ async function streamWithChatCompletionsWithMCP(
     if (round > maxToolRounds) {
       throw new Error(`Tool call loop exceeded maxToolRounds (${maxToolRounds}).`);
     }
+
+    request.onTurnTransition?.({
+      turnIndex: round,
+      kind: "toolCallsEmit",
+      toolCalls: calledTools,
+    });
+    callbacks.onChunk?.({
+      textDelta: "",
+      turnIndex: round,
+      toolCalls: calledTools,
+      finishReason: roundFinishReason,
+    });
 
     const outputs = await executeMCPToolCalls(calledTools, mcpToolset, {
       round,
@@ -674,9 +705,9 @@ async function streamWithChatCompletionsWithMCP(
     });
     executedToolCalls.push(...outputs.map((entry) => entry.call));
     toolExecutions.push(...outputs.map((entry) => entry.execution));
+    request.onTurnTransition?.({ turnIndex: round, kind: "toolResultsReceived" });
 
     lastRoundText = roundText;
-    lastRoundReasoning = roundReasoning;
 
     const assistantMessage = buildOpenAIAssistantToolMessage(roundText, calledTools, {
       reasoning: roundReasoning,
@@ -692,13 +723,15 @@ async function streamWithChatCompletionsWithMCP(
 
   const out: LLMResponse = {
     text: lastRoundText,
-    reasoning: lastRoundReasoning.length > 0 ? lastRoundReasoning : undefined,
+    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
     toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
     toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
   };
+  request.onTurnTransition?.({ turnIndex: maxToolRounds + 1, kind: "streamEnd" });
   callbacks.onComplete?.(out);
   return out;
 }
@@ -811,6 +844,7 @@ async function streamWithResponsesAPIWithMCP(
   let lastPayload: Record<string, unknown> | undefined;
   const executedToolCalls: LLMToolCall[] = [];
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+  const reasoningBlocks: ReasoningBlock[] = [];
 
   callbacks.onStart?.();
 
@@ -846,6 +880,7 @@ async function streamWithResponsesAPIWithMCP(
     }
 
     let roundText = "";
+    let roundReasoning = "";
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
     let roundPayload: Record<string, unknown> | undefined;
@@ -868,6 +903,7 @@ async function streamWithResponsesAPIWithMCP(
       }
 
       const delta = pickResponsesStreamTextDelta(json);
+      const reasoningDelta = pickResponsesStreamReasoningDelta(json);
       const chunkUsage = pickResponsesStreamUsage(json);
       const chunkFinishReason = pickResponsesStreamFinishReason(json);
 
@@ -882,9 +918,15 @@ async function streamWithResponsesAPIWithMCP(
         callbacks.onToken?.(delta);
       }
 
-      if (delta || chunkUsage || chunkFinishReason) {
+      if (reasoningDelta) {
+        roundReasoning += reasoningDelta;
+      }
+
+      if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
         const chunk: LLMStreamChunk = {
           textDelta: delta,
+          reasoningDelta: reasoningDelta || undefined,
+          turnIndex: round,
           raw: json,
           usage: chunkUsage,
           finishReason: chunkFinishReason,
@@ -902,12 +944,21 @@ async function streamWithResponsesAPIWithMCP(
     }
 
     const payloadToolCalls = roundPayload ? pickResponsesToolCalls(roundPayload) : [];
+    if (roundPayload && roundReasoning.length === 0) {
+      roundReasoning = pickResponsesReasoning(roundPayload);
+    }
     const streamedCalls = buildResponsesStreamToolCalls(streamedToolCalls);
     const providerToolCalls = payloadToolCalls.length > 0 ? payloadToolCalls : streamedCalls;
     const functionCalls = providerToolCalls.filter(
       (toolCall): toolCall is LLMToolCall & { id: string; name: string } =>
         toolCall.type === "function" && typeof toolCall.id === "string" && typeof toolCall.name === "string",
     );
+    pushReasoningBlock(reasoningBlocks, round, roundReasoning);
+    request.onTurnTransition?.({
+      turnIndex: round,
+      kind: "reasoningComplete",
+      reasoningText: roundReasoning,
+    });
 
     if (functionCalls.length === 0) {
       const finalText = roundText.length > 0
@@ -915,12 +966,15 @@ async function streamWithResponsesAPIWithMCP(
         : (roundPayload ? (pickResponsesText(roundPayload) || pickAssistantText(roundPayload)) : "");
       const out: LLMResponse = {
         text: finalText,
+        reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
         raw: roundPayload ?? lastPayload,
         usage: aggregatedUsage,
         finishReason,
         toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
       };
+      request.onTurnTransition?.({ turnIndex: round, kind: "streamEnd" });
       callbacks.onComplete?.(out);
       return out;
     }
@@ -928,6 +982,18 @@ async function streamWithResponsesAPIWithMCP(
     if (round > maxToolRounds) {
       throw new Error(`Tool call loop exceeded maxToolRounds (${maxToolRounds}).`);
     }
+
+    request.onTurnTransition?.({
+      turnIndex: round,
+      kind: "toolCallsEmit",
+      toolCalls: functionCalls,
+    });
+    callbacks.onChunk?.({
+      textDelta: "",
+      turnIndex: round,
+      toolCalls: functionCalls,
+      finishReason: roundFinishReason,
+    });
 
     const outputs = await executeMCPToolCalls(functionCalls, mcpToolset, {
       round,
@@ -937,6 +1003,7 @@ async function streamWithResponsesAPIWithMCP(
     });
     executedToolCalls.push(...outputs.map((entry) => entry.call));
     toolExecutions.push(...outputs.map((entry) => entry.execution));
+    request.onTurnTransition?.({ turnIndex: round, kind: "toolResultsReceived" });
 
     input = outputs.map((entry) => ({
       type: "function_call_output",
@@ -948,12 +1015,15 @@ async function streamWithResponsesAPIWithMCP(
 
   const out: LLMResponse = {
     text: pickResponsesText(lastPayload ?? {}) || pickAssistantText(lastPayload ?? {}),
+    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
     toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
     toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
   };
+  request.onTurnTransition?.({ turnIndex: maxToolRounds + 1, kind: "streamEnd" });
   callbacks.onComplete?.(out);
   return out;
 }
@@ -1335,6 +1405,27 @@ function pickResponsesStreamTextDelta(payload: Record<string, unknown>): string 
   return "";
 }
 
+function pickResponsesStreamReasoningDelta(payload: Record<string, unknown>): string {
+  const eventType = pickString(payload.type) ?? "";
+  if (!eventType.includes("reasoning") && !eventType.includes("thinking")) {
+    return "";
+  }
+
+  const direct = pickString(payload.delta);
+  if (direct) {
+    return direct;
+  }
+
+  if (isRecord(payload.delta)) {
+    return pickReasoningText(payload.delta)
+      || pickString(payload.delta.text)
+      || pickString(payload.delta.summary_text)
+      || "";
+  }
+
+  return "";
+}
+
 function pickResponsesStreamUsage(payload: Record<string, unknown>): LLMUsage | undefined {
   const direct = pickUsage(payload);
   if (direct) {
@@ -1515,6 +1606,38 @@ function pickResponsesText(payload: Record<string, unknown>): string {
     .join("");
 }
 
+function pickResponsesReasoning(payload: Record<string, unknown>): string {
+  const direct = pickReasoningText(payload);
+  if (direct) {
+    return direct;
+  }
+
+  const output = payload.output;
+  if (!Array.isArray(output)) {
+    return "";
+  }
+
+  return output
+    .map((item) => {
+      if (!isRecord(item)) {
+        return "";
+      }
+
+      const itemReasoning = pickReasoningText(item);
+      if (itemReasoning) {
+        return itemReasoning;
+      }
+
+      const itemType = pickString(item.type) ?? "";
+      if ((itemType.includes("reasoning") || itemType.includes("thinking")) && Array.isArray(item.content)) {
+        return item.content.map((part) => isRecord(part) ? pickTextLike(part) : "").join("");
+      }
+
+      return "";
+    })
+    .join("");
+}
+
 function pickAssistantText(payload: Record<string, unknown>): string {
   const message = pickAssistantMessage(payload);
   if (message) {
@@ -1537,6 +1660,19 @@ function pickAssistantText(payload: Record<string, unknown>): string {
 
 function pickReasoningText(value: Record<string, unknown>): string {
   return pickTextLike(value.reasoning) || pickTextLike(value.reasoning_content);
+}
+
+function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: string | undefined): void {
+  const clean = text?.replace(/<\/?think\s*>/gi, "").trim();
+  if (!clean) {
+    return;
+  }
+
+  blocks.push({ turnIndex, text: clean });
+}
+
+function joinReasoningBlocks(blocks: ReasoningBlock[]): string {
+  return blocks.map((block) => block.text).filter(Boolean).join("\n\n");
 }
 
 function pickTextFromOpenAIContent(value: unknown): string {

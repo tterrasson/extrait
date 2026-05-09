@@ -41,6 +41,66 @@ function createCalculatorMCP(onCall?: (args: Record<string, unknown>) => void): 
 }
 
 describe("openai-compatible MCP tools", () => {
+  test("returns reasoning blocks for non-streaming MCP rounds", async () => {
+    let round = 0;
+    const fetcher = (async () => {
+      round += 1;
+
+      if (round === 1) {
+        return jsonResponse({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning: "Need addition.",
+                tool_calls: [
+                  {
+                    id: "call_add",
+                    type: "function",
+                    function: { name: "add", arguments: JSON.stringify({ a: 2, b: 3 }) },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "5",
+              reasoning: "Now answer.",
+            },
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "2+3?",
+      mcpClients: [createCalculatorMCP()],
+    });
+
+    expect(out.text).toBe("5");
+    expect(out.reasoning).toBe("Need addition.\n\nNow answer.");
+    expect(out.reasoningBlocks).toEqual([
+      { turnIndex: 1, text: "Need addition." },
+      { turnIndex: 2, text: "Now answer." },
+    ]);
+  });
+
   test("uses request.messages for chat completions pass-through", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {
@@ -658,7 +718,11 @@ describe("openai-compatible MCP tools", () => {
     });
 
     expect(out.text).toBe("10");
-    expect(out.reasoning).toBe("Computed from tool output.");
+    expect(out.reasoning).toBe("Need a calculator.\n\nComputed from tool output.");
+    expect(out.reasoningBlocks).toEqual([
+      { turnIndex: 1, text: "Need a calculator." },
+      { turnIndex: 2, text: "Computed from tool output." },
+    ]);
     expect(out.toolCalls?.[0]).toMatchObject({
       id: "call_add_reasoning_complete",
       name: "add",

@@ -10,6 +10,7 @@ import type {
   LLMToolCall,
   LLMToolCallRef,
   LLMUsage,
+  ReasoningBlock,
 } from "../types";
 import { consumeSSE } from "./stream-utils";
 import {
@@ -208,6 +209,7 @@ async function completeWithMCPToolLoop(
   let lastPayload: Record<string, unknown> | undefined;
   const toolCalls: LLMToolCall[] = [];
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+  const reasoningBlocks: ReasoningBlock[] = [];
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
@@ -244,10 +246,13 @@ async function completeWithMCPToolLoop(
 
     const content = Array.isArray(payload.content) ? payload.content : [];
     const calledTools = pickAnthropicToolCalls(payload).filter((call) => call.type === "function");
+    pushReasoningBlock(reasoningBlocks, round, extractAnthropicReasoning(payload));
 
     if (calledTools.length === 0) {
       return {
         text: extractAnthropicText(payload),
+        reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
         raw: payload,
         usage: aggregatedUsage,
         finishReason,
@@ -288,6 +293,8 @@ async function completeWithMCPToolLoop(
 
   return {
     text: extractAnthropicText(lastPayload ?? {}),
+    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
@@ -312,6 +319,7 @@ async function streamWithMCPToolLoop(
   let lastPayload: Record<string, unknown> | undefined;
   const toolCalls: LLMToolCall[] = [];
   const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
+  const reasoningBlocks: ReasoningBlock[] = [];
 
   callbacks.onStart?.();
 
@@ -344,6 +352,7 @@ async function streamWithMCPToolLoop(
     }
 
     let roundText = "";
+    let roundReasoning = "";
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
     const streamedToolCalls = new Map<number, AnthropicStreamToolCallState>();
@@ -361,6 +370,7 @@ async function streamWithMCPToolLoop(
       lastPayload = json;
 
       const delta = pickAnthropicDelta(json);
+      const reasoningDelta = pickAnthropicReasoningDelta(json);
       const chunkUsage = pickUsage(json);
       const chunkFinishReason = pickFinishReason(json);
 
@@ -375,9 +385,15 @@ async function streamWithMCPToolLoop(
         callbacks.onToken?.(delta);
       }
 
-      if (delta || chunkUsage || chunkFinishReason) {
+      if (reasoningDelta) {
+        roundReasoning += reasoningDelta;
+      }
+
+      if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
         const chunk: LLMStreamChunk = {
           textDelta: delta,
+          reasoningDelta: reasoningDelta || undefined,
+          turnIndex: round,
           raw: json,
           usage: chunkUsage,
           finishReason: chunkFinishReason,
@@ -392,15 +408,25 @@ async function streamWithMCPToolLoop(
     }
 
     const calledTools = buildAnthropicStreamToolCalls(streamedToolCalls);
+    pushReasoningBlock(reasoningBlocks, round, roundReasoning);
+    request.onTurnTransition?.({
+      turnIndex: round,
+      kind: "reasoningComplete",
+      reasoningText: roundReasoning,
+    });
+
     if (calledTools.length === 0) {
       const out: LLMResponse = {
         text: roundText,
+        reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
         raw: lastPayload,
         usage: aggregatedUsage,
         finishReason,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
       };
+      request.onTurnTransition?.({ turnIndex: round, kind: "streamEnd" });
       callbacks.onComplete?.(out);
       return out;
     }
@@ -408,6 +434,18 @@ async function streamWithMCPToolLoop(
     if (round > maxToolRounds) {
       throw new Error(`Tool call loop exceeded maxToolRounds (${maxToolRounds}).`);
     }
+
+    request.onTurnTransition?.({
+      turnIndex: round,
+      kind: "toolCallsEmit",
+      toolCalls: calledTools,
+    });
+    callbacks.onChunk?.({
+      textDelta: "",
+      turnIndex: round,
+      toolCalls: calledTools,
+      finishReason: roundFinishReason,
+    });
 
     const toolResultContent: Array<Record<string, unknown>> = [];
     const outputs = await executeMCPToolCalls(calledTools, mcpToolset, {
@@ -418,6 +456,7 @@ async function streamWithMCPToolLoop(
     });
     toolCalls.push(...outputs.map((entry) => entry.call));
     toolExecutions.push(...outputs.map((entry) => entry.execution));
+    request.onTurnTransition?.({ turnIndex: round, kind: "toolResultsReceived" });
 
     for (const entry of outputs) {
       toolResultContent.push({
@@ -437,12 +476,15 @@ async function streamWithMCPToolLoop(
 
   const out: LLMResponse = {
     text: "",
+    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
+    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
   };
+  request.onTurnTransition?.({ turnIndex: maxToolRounds + 1, kind: "streamEnd" });
   callbacks.onComplete?.(out);
   return out;
 }
@@ -598,6 +640,28 @@ function extractAnthropicText(payload: Record<string, unknown>): string {
     .join("");
 }
 
+function extractAnthropicReasoning(payload: Record<string, unknown>): string {
+  const content = payload.content;
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  return content
+    .map((part) => {
+      if (!isRecord(part)) {
+        return "";
+      }
+
+      const type = pickString(part.type) ?? "";
+      if (type !== "thinking" && type !== "reasoning") {
+        return "";
+      }
+
+      return pickString(part.thinking) ?? pickString(part.text) ?? pickString(part.reasoning) ?? "";
+    })
+    .join("");
+}
+
 function pickAnthropicToolCalls(payload: Record<string, unknown>): LLMToolCall[] {
   const content = payload.content;
   if (!Array.isArray(content)) {
@@ -633,6 +697,39 @@ function pickAnthropicDelta(payload: Record<string, unknown>): string {
   }
 
   return "";
+}
+
+function pickAnthropicReasoningDelta(payload: Record<string, unknown>): string {
+  const deltaObject = payload.delta;
+  if (isRecord(deltaObject)) {
+    const type = pickString(deltaObject.type) ?? "";
+    if (type === "thinking_delta" || type === "reasoning_delta") {
+      return pickString(deltaObject.thinking) ?? pickString(deltaObject.text) ?? "";
+    }
+  }
+
+  const contentBlock = payload.content_block;
+  if (isRecord(contentBlock)) {
+    const type = pickString(contentBlock.type) ?? "";
+    if (type === "thinking" || type === "reasoning") {
+      return pickString(contentBlock.thinking) ?? pickString(contentBlock.text) ?? "";
+    }
+  }
+
+  return "";
+}
+
+function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: string | undefined): void {
+  const clean = text?.replace(/<\/?think\s*>/gi, "").trim();
+  if (!clean) {
+    return;
+  }
+
+  blocks.push({ turnIndex, text: clean });
+}
+
+function joinReasoningBlocks(blocks: ReasoningBlock[]): string {
+  return blocks.map((block) => block.text).filter(Boolean).join("\n\n");
 }
 
 interface AnthropicStreamToolCallState {

@@ -24,6 +24,8 @@ import type {
   LLMMessage,
   ParseLLMOutputOptions,
   ParseTraceEvent,
+  ReasoningBlock,
+  StreamTurnTransition,
   StructuredAttempt,
   StructuredCallOptions,
   StructuredError,
@@ -250,14 +252,21 @@ export async function structured<TSchema extends z.ZodTypeAny>(
   const streamConfig = normalizeStreamConfig<{
     text: string;
     reasoning: string;
+    reasoningBlocks?: ReasoningBlock[];
     data: unknown | null;
   }>(normalized.stream as {
     enabled?: boolean;
     onData?: (event: {
       delta: { text: string; reasoning: string };
-      snapshot: { text: string; reasoning: string; data: unknown | null };
+      snapshot: {
+        text: string;
+        reasoning: string;
+        reasoningBlocks?: ReasoningBlock[];
+        data: unknown | null;
+      };
       done: boolean;
     }) => void;
+    onTurnTransition?: (transition: StreamTurnTransition) => void;
     to?: "stdout";
   } | boolean | undefined);
   const debugConfig = normalizeDebugConfig(normalized.debug);
@@ -743,7 +752,12 @@ interface ExecuteAttemptInput<TSchema extends z.ZodTypeAny> {
   messages?: LLMMessage[];
   schema: TSchema;
   parseOptions: ParseLLMOutputOptions;
-  stream: NormalizedStreamConfig<{ text: string; reasoning: string; data: unknown | null }>;
+  stream: NormalizedStreamConfig<{
+    text: string;
+    reasoning: string;
+    reasoningBlocks?: ReasoningBlock[];
+    data: unknown | null;
+  }>;
   request?: StructuredCallOptions<TSchema>["request"];
   systemPrompt?: string;
   observe?: StructuredCallOptions<TSchema>["observe"];
@@ -756,7 +770,7 @@ interface ExecuteAttemptInput<TSchema extends z.ZodTypeAny> {
 
 type StructuredModelCallOptions = Omit<
   ModelCallOptions<
-    { text: string; reasoning: string; data: unknown | null },
+    { text: string; reasoning: string; reasoningBlocks?: ReasoningBlock[]; data: unknown | null },
     StructuredTraceEvent
   >,
   "buildEvent" | "buildSnapshot" | "debugLabel"
@@ -799,6 +813,7 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
     success: parsed.success,
     usage: response.usage,
     finishReason: response.finishReason,
+    ...(response.reasoningBlocks ? { reasoningBlocks: response.reasoningBlocks } : {}),
     parsed,
   };
 
@@ -824,6 +839,7 @@ async function callModel(
     buildSnapshot: (normalized) => ({
       text: normalized.text,
       reasoning: normalized.reasoning,
+      ...(normalized.reasoningBlocks ? { reasoningBlocks: normalized.reasoningBlocks } : {}),
       data: parseStreamingStructuredData(normalized.parseSource) ?? null,
     }),
     debugLabel: "structured",
@@ -959,6 +975,7 @@ function buildSuccessResult<T>(data: T, attempts: StructuredAttempt<T>[]): Struc
     attempts,
     usage: aggregateUsage(attempts),
     finishReason: final?.finishReason,
+    ...(final?.reasoningBlocks ? { reasoningBlocks: final.reasoningBlocks } : {}),
   };
 }
 

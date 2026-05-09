@@ -201,6 +201,74 @@ describe("generate", () => {
     ]);
   });
 
+  test("streaming exposes turn metadata and cumulative reasoning blocks", async () => {
+    const events: GenerateStreamEvent[] = [];
+    const transitions: string[] = [];
+
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: "done" };
+      },
+      async stream(request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        callbacks.onStart?.();
+        callbacks.onChunk?.({ textDelta: "", reasoningDelta: "first", turnIndex: 1 });
+        request.onTurnTransition?.({ turnIndex: 1, kind: "reasoningComplete", reasoningText: "first" });
+        request.onTurnTransition?.({
+          turnIndex: 1,
+          kind: "toolCallsEmit",
+          toolCalls: [{ id: "call_1", type: "function", name: "add" }],
+        });
+        callbacks.onChunk?.({
+          textDelta: "",
+          turnIndex: 1,
+          toolCalls: [{ id: "call_1", type: "function", name: "add" }],
+        });
+        request.onTurnTransition?.({ turnIndex: 1, kind: "toolResultsReceived" });
+        callbacks.onChunk?.({ textDelta: "", reasoningDelta: "second", turnIndex: 2 });
+        callbacks.onChunk?.({ textDelta: "done", turnIndex: 2, finishReason: "stop" });
+        request.onTurnTransition?.({ turnIndex: 2, kind: "reasoningComplete", reasoningText: "second" });
+        request.onTurnTransition?.({ turnIndex: 2, kind: "streamEnd" });
+        const out: LLMResponse = {
+          text: "done",
+          reasoning: "first\n\nsecond",
+          reasoningBlocks: [
+            { turnIndex: 1, text: "first" },
+            { turnIndex: 2, text: "second" },
+          ],
+          finishReason: "stop",
+        };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    const result = await generate(model, "Say hello", {
+      stream: {
+        enabled: true,
+        onTurnTransition: (transition) => transitions.push(`${transition.turnIndex}:${transition.kind}`),
+        onData: (event) => events.push(event),
+      },
+    });
+
+    expect(result.reasoningBlocks).toEqual([
+      { turnIndex: 1, text: "first" },
+      { turnIndex: 2, text: "second" },
+    ]);
+    expect(events.some((event) => event.turnIndex === 1)).toBe(true);
+    expect(events.some((event) => event.toolCalls?.[0]?.id === "call_1")).toBe(true);
+    expect(events.find((event) => event.toolCalls)?.snapshot.reasoningBlocks).toEqual([
+      { turnIndex: 1, text: "first" },
+    ]);
+    expect(events.at(-1)?.snapshot.reasoningBlocks).toEqual(result.reasoningBlocks);
+    expect(transitions).toEqual([
+      "1:reasoningComplete",
+      "1:toolCallsEmit",
+      "1:toolResultsReceived",
+      "2:reasoningComplete",
+      "2:streamEnd",
+    ]);
+  });
+
   test("streaming suppresses duplicate snapshots but still emits final done event", async () => {
     const events: GenerateStreamEvent[] = [];
 

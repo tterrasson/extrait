@@ -49,6 +49,49 @@ function createSumMCP(onCall?: (args: Record<string, unknown>) => void): MCPTool
 }
 
 describe("anthropic-compatible MCP tools", () => {
+  test("returns thinking blocks as reasoning blocks for non-streaming MCP rounds", async () => {
+    let round = 0;
+    const fetcher = (async () => {
+      round += 1;
+
+      if (round === 1) {
+        return jsonResponse({
+          content: [
+            { type: "thinking", thinking: "Need sum." },
+            { type: "tool_use", id: "toolu_sum", name: "sum", input: { a: 2, b: 3 } },
+          ],
+          stop_reason: "tool_use",
+        });
+      }
+
+      return jsonResponse({
+        content: [
+          { type: "thinking", thinking: "Answer from tool." },
+          { type: "text", text: "5" },
+        ],
+        stop_reason: "end_turn",
+      });
+    }) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "2+3?",
+      mcpClients: [createSumMCP()],
+    });
+
+    expect(out.text).toBe("5");
+    expect(out.reasoning).toBe("Need sum.\n\nAnswer from tool.");
+    expect(out.reasoningBlocks).toEqual([
+      { turnIndex: 1, text: "Need sum." },
+      { turnIndex: 2, text: "Answer from tool." },
+    ]);
+  });
+
   test("uses request.messages and extracts leading system turns", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {

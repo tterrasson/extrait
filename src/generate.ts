@@ -65,6 +65,7 @@ export async function generate(
     buildSnapshot: (model) => ({
       text: model.text,
       reasoning: model.reasoning,
+      ...(model.reasoningBlocks ? { reasoningBlocks: model.reasoningBlocks } : {}),
     }),
     debug: debugConfig,
     debugLabel: "generate",
@@ -81,6 +82,7 @@ export async function generate(
     reasoning: response.reasoning,
     usage: response.usage,
     finishReason: response.finishReason,
+    ...(response.reasoningBlocks ? { reasoningBlocks: response.reasoningBlocks } : {}),
   };
   const attempts = [attempt];
 
@@ -100,6 +102,7 @@ export async function generate(
     attempts,
     usage: aggregateUsage(attempts),
     finishReason: attempt.finishReason,
+    ...(attempt.reasoningBlocks ? { reasoningBlocks: attempt.reasoningBlocks } : {}),
   };
 }
 

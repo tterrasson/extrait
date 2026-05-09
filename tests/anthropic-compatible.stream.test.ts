@@ -160,6 +160,7 @@ describe("anthropic-compatible streaming", () => {
     let completed = false;
     const tokens: string[] = [];
     const chunks: LLMStreamChunk[] = [];
+    const transitions: string[] = [];
     const requests: Record<string, unknown>[] = [];
     let round = 0;
     const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
@@ -169,6 +170,7 @@ describe("anthropic-compatible streaming", () => {
 
       if (round === 1) {
         return sseResponse([
+          JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "Need math. " } }),
           JSON.stringify({ type: "content_block_start", content_block: { type: "text", text: "Let me check. " } }),
           JSON.stringify({
             type: "content_block_start",
@@ -210,6 +212,7 @@ describe("anthropic-compatible streaming", () => {
       expect(hasToolResultMessage).toBe(true);
 
       return sseResponse([
+        JSON.stringify({ type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Got result. " } }),
         JSON.stringify({ type: "content_block_delta", delta: { text: "Result: " } }),
         JSON.stringify({ type: "content_block_delta", delta: { text: "5" } }),
         JSON.stringify({
@@ -231,6 +234,7 @@ describe("anthropic-compatible streaming", () => {
         prompt: "test",
         reasoningEffort: "low",
         mcpClients: [createSimpleMCP()],
+        onTurnTransition: (transition) => transitions.push(`${transition.turnIndex}:${transition.kind}`),
       },
       {
         onStart: () => (startedCount += 1),
@@ -244,6 +248,11 @@ describe("anthropic-compatible streaming", () => {
     expect(completed).toBe(true);
     expect(tokens).toEqual(["Let me check. ", "Result: ", "5"]);
     expect(result.text).toBe("Result: 5");
+    expect(result.reasoning).toBe("Need math.\n\nGot result.");
+    expect(result.reasoningBlocks).toEqual([
+      { turnIndex: 1, text: "Need math." },
+      { turnIndex: 2, text: "Got result." },
+    ]);
     expect(result.toolCalls?.[0]).toMatchObject({
       id: "toolu_add",
       name: "add",
@@ -259,6 +268,15 @@ describe("anthropic-compatible streaming", () => {
       outputTokens: 3,
     });
     expect(chunks.some((chunk) => chunk.finishReason === "tool_use")).toBe(true);
+    expect(chunks.some((chunk) => chunk.reasoningDelta === "Need math. " && chunk.turnIndex === 1)).toBe(true);
+    expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "toolu_add")).toBe(true);
+    expect(transitions).toEqual([
+      "1:reasoningComplete",
+      "1:toolCallsEmit",
+      "1:toolResultsReceived",
+      "2:reasoningComplete",
+      "2:streamEnd",
+    ]);
     expect(requests[0]?.output_config).toEqual({ effort: "low" });
     expect(requests[0]?.thinking).toEqual({ type: "adaptive" });
     expect(requests[1]?.output_config).toEqual({ effort: "low" });
