@@ -50,15 +50,15 @@
   },
   "scripts": {
     "dev": "bun run examples/runner.ts",
-    "build": "bun run build:esm && bun run build:cjs",
+    "build": "bun run build:types && bun run build:esm && bun run build:cjs",
     "build:esm": "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm --packages external",
     "build:cjs": "bun build ./src/index.ts --outfile ./dist/index.cjs --target node --format cjs --packages external",
     "build:types": "bunx tsc -p tsconfig.build.json",
     "lint": "bunx tsc -p tsconfig.lint.json",
-    "prepublishOnly": "bun run lint && bun run build && bun run build:types",
+    "prepublishOnly": "bun run lint && bun run build",
     "test": "bun test tests/ --reporter=dots --only-failures",
     "typecheck": "bunx tsc --noEmit",
-    "pack": "bun run build:types && bun run build && npm pack"
+    "pack": "bun run build && npm pack"
   },
   "type": "module",
   "types": "./dist/index.d.ts"
