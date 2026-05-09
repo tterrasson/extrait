@@ -72,7 +72,7 @@ export interface CandidateDiagnostics {
   selected: boolean;
   stage: "repair" | "parse" | "validate" | "success";
   message?: string;
-  zodIssues?: z.ZodIssue[];
+  zodIssues?: z.core.$ZodIssue[];
 }
 
 export interface ThinkBlock {
@@ -102,7 +102,7 @@ export interface ParseLLMOutputResult<T> {
   candidates: ExtractionCandidate[];
   diagnostics: CandidateDiagnostics[];
   errors: PipelineError[];
-  zodIssues: z.ZodIssue[];
+  zodIssues: z.core.$ZodIssue[];
 }
 
 export interface MCPToolSchema {
@@ -467,7 +467,7 @@ export interface StructuredAttempt<T> {
   json: unknown | null;
   candidates: string[];
   repairLog: string[];
-  zodIssues: z.ZodIssue[];
+  zodIssues: z.core.$ZodIssue[];
   success: boolean;
   usage?: LLMUsage;
   finishReason?: string;
@@ -506,7 +506,7 @@ export interface StructuredError {
   text: string;
   reasoning: string;
   candidates: string[];
-  zodIssues?: z.ZodIssue[];
+  zodIssues?: z.core.$ZodIssue[];
   repairLog?: string[];
   attempt: number;
 }

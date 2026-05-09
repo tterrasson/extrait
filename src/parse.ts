@@ -47,7 +47,7 @@ export function parseLLMOutput<TSchema extends z.ZodTypeAny>(
 
   const errors: PipelineError[] = [];
   const diagnostics: CandidateDiagnostics[] = [];
-  let bestIssues: z.ZodIssue[] = [];
+  let bestIssues: z.core.$ZodIssue[] = [];
   let bestCandidate = candidates[0] ?? null;
   let bestParsed: unknown | null = null;
   let bestRepaired: string | null = null;
@@ -360,7 +360,7 @@ function emitTrace(
   onTrace?.(event);
 }
 
-export function formatZodIssues(issues: z.ZodIssue[]): string {
+export function formatZodIssues(issues: z.core.$ZodIssue[]): string {
   if (issues.length === 0) {
     return "Validation failed without details.";
   }

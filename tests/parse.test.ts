@@ -355,8 +355,19 @@ describe("parseLLMOutput - repair and hint edge cases", () => {
 describe("formatZodIssues", () => {
   test("formats nested paths", () => {
     const result = formatZodIssues([
-      { path: ["user", "name"], message: "Required", code: "invalid_type", expected: "string", received: "undefined" } as z.ZodIssue,
-      { path: [], message: "Unrecognized key", code: "unrecognized_keys", keys: [] } as unknown as z.ZodIssue,
+      {
+        path: ["user", "name"],
+        message: "Required",
+        code: "invalid_type",
+        expected: "string",
+        received: "undefined"
+      } as z.core.$ZodIssue,
+      {
+        path: [],
+        message: "Unrecognized key",
+        code: "unrecognized_keys",
+        keys: []
+      } as unknown as z.core.$ZodIssue,
     ]);
 
     expect(result).toBe("user.name: Required\n<root>: Unrecognized key");

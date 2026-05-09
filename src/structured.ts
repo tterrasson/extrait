@@ -40,7 +40,7 @@ export class StructuredParseError extends Error implements StructuredError {
   readonly text: string;
   readonly reasoning: string;
   readonly candidates: string[];
-  readonly zodIssues?: z.ZodIssue[];
+  readonly zodIssues?: z.core.$ZodIssue[];
   readonly repairLog?: string[];
   readonly attempt: number;
 
@@ -49,7 +49,7 @@ export class StructuredParseError extends Error implements StructuredError {
     text: string;
     reasoning: string;
     candidates: string[];
-    zodIssues?: z.ZodIssue[];
+    zodIssues?: z.core.$ZodIssue[];
     repairLog?: string[];
     attempt: number;
   }) {
@@ -147,7 +147,7 @@ export function buildDefaultStructuredPrompt(
 
 interface SelfHealPromptInput {
   rawOutput: string;
-  issues: z.ZodIssue[];
+  issues: z.core.$ZodIssue[];
   schema: z.ZodTypeAny;
   schemaInstruction?: string;
   selectedOutput?: string;

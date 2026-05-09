@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 type ZodLike = z.ZodTypeAny & {
-  _def?: {
+  def?: {
     type?: string;
     [key: string]: unknown;
   };
@@ -144,13 +144,13 @@ export function inferSchemaExample(schema: z.ZodTypeAny): unknown | null {
 
 function getObjectShape(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> | null {
   const unwrapped = unwrap(schema).schema;
-  const typeName = unwrapped._def?.type;
+  const typeName = unwrapped.def?.type;
 
   if (typeName !== "object") {
     return null;
   }
 
-  const rawShape = unwrapped._def?.shape;
+  const rawShape = unwrapped.def?.shape;
   if (typeof rawShape === "function") {
     return (rawShape as () => Record<string, z.ZodTypeAny>)();
   }
@@ -161,12 +161,12 @@ function getObjectShape(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> | nu
 function readDefaultValue(schema: z.ZodTypeAny): unknown {
   let current = schema as ZodLike;
 
-  while (current?._def?.type) {
-    const typeName = current._def.type;
+  while (current?.def?.type) {
+    const typeName = current.def.type;
 
     if (typeName === "default") {
       try {
-        const raw = current._def.defaultValue;
+        const raw = current.def.defaultValue;
         if (typeof raw === "function") {
           return (raw as () => unknown)();
         }
@@ -182,12 +182,12 @@ function readDefaultValue(schema: z.ZodTypeAny): unknown {
       typeName === "catch" ||
       typeName === "readonly"
     ) {
-      current = (current._def.innerType as ZodLike) ?? current;
+      current = (current.def.innerType as ZodLike) ?? current;
       continue;
     }
 
     if (typeName === "pipe") {
-      current = (current._def.in as ZodLike) ?? current;
+      current = (current.def.in as ZodLike) ?? current;
       continue;
     }
 
@@ -200,26 +200,26 @@ function readDefaultValue(schema: z.ZodTypeAny): unknown {
 function readSchemaDescription(schema: z.ZodTypeAny): string | undefined {
   let current = schema as ZodLike;
 
-  while (current?._def?.type) {
+  while (current?.def?.type) {
     const desc = (current as { description?: unknown }).description;
     if (typeof desc === "string" && desc.trim().length > 0) {
       return desc.trim();
     }
 
-    const typeName = current._def.type;
+    const typeName = current.def.type;
 
     if (typeName === "optional" || typeName === "default" || typeName === "nullable") {
-      current = (current._def.innerType as ZodLike) ?? current;
+      current = (current.def.innerType as ZodLike) ?? current;
       continue;
     }
 
     if (typeName === "catch" || typeName === "readonly") {
-      current = (current._def.innerType as ZodLike) ?? current;
+      current = (current.def.innerType as ZodLike) ?? current;
       continue;
     }
 
     if (typeName === "pipe") {
-      current = (current._def.in as ZodLike) ?? current;
+      current = (current.def.in as ZodLike) ?? current;
       continue;
     }
 
@@ -233,22 +233,22 @@ function unwrap(schema: z.ZodTypeAny): { schema: ZodLike; optional: boolean } {
   let current = schema as ZodLike;
   let optional = false;
 
-  while (current?._def?.type) {
-    const typeName = current._def.type;
+  while (current?.def?.type) {
+    const typeName = current.def.type;
 
     if (typeName === "optional" || typeName === "default") {
       optional = true;
-      current = (current._def.innerType as ZodLike) ?? current;
+      current = (current.def.innerType as ZodLike) ?? current;
       continue;
     }
 
     if (typeName === "nullable" || typeName === "catch" || typeName === "readonly") {
-      current = (current._def.innerType as ZodLike) ?? current;
+      current = (current.def.innerType as ZodLike) ?? current;
       continue;
     }
 
     if (typeName === "pipe") {
-      current = (current._def.in as ZodLike) ?? current;
+      current = (current.def.in as ZodLike) ?? current;
       continue;
     }
 

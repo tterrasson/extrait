@@ -453,7 +453,7 @@ describe("structured", () => {
     const result = buildSelfHealPrompt({
       rawOutput: '{"name": 42}',
       issues: [
-        { path: ["name"], message: "Expected string, received number", code: "invalid_type", expected: "string", received: "number" } as z.ZodIssue,
+        { path: ["name"], message: "Expected string, received number", code: "invalid_type", expected: "string", received: "number" } as z.core.$ZodIssue,
       ],
       schema,
     });
@@ -486,7 +486,7 @@ describe("structured", () => {
     const result = buildSelfHealPrompt({
       rawOutput: '{"name": 42}',
       issues: [
-        { path: ["name"], message: "Expected string, received number", code: "invalid_type", expected: "string", received: "number" } as z.ZodIssue,
+        { path: ["name"], message: "Expected string, received number", code: "invalid_type", expected: "string", received: "number" } as z.core.$ZodIssue,
       ],
       schema,
       selectedInput: "candidate",
