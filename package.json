@@ -51,7 +51,7 @@
     "lint": "bunx tsc -p tsconfig.lint.json",
     "prepublishOnly": "bun run lint && bun run build",
     "test": "bun test tests/ --reporter=dots --only-failures",
-    "typecheck": "bunx tsc --noEmit",
+    "typecheck": "bunx tsc -p tsconfig.typecheck.json --noEmit",
     "pack": "bun run build && npm pack"
   },
   "type": "module",
