@@ -528,6 +528,60 @@ describe("createLLM", () => {
     });
   });
 
+  test("generate object overload keeps prompt while merging shared defaults", async () => {
+    const registry = createProviderRegistry();
+    const requests: Array<{
+      prompt?: string;
+      temperature?: number;
+      systemPrompt?: string;
+    }> = [];
+
+    registry.register(
+      "mock",
+      () => ({
+        provider: "mock",
+        model: "m1",
+        async complete(request) {
+          requests.push({
+            prompt: request.prompt,
+            temperature: request.temperature,
+            systemPrompt: request.systemPrompt,
+          });
+          return {
+            text: "object overload",
+            finishReason: "stop",
+          };
+        },
+      }),
+    );
+
+    const llm = createLLM(
+      {
+        provider: "mock",
+        model: "m1",
+        defaults: {
+          systemPrompt: "default system",
+          request: {
+            temperature: 0.2,
+          },
+        },
+      },
+      registry,
+    );
+
+    const result = await llm.generate({
+      prompt: "Answer plainly",
+      systemPrompt: "call system",
+    });
+
+    expect(result.text).toBe("object overload");
+    expect(requests[0]).toEqual({
+      prompt: "Answer plainly",
+      temperature: 0.2,
+      systemPrompt: "call system",
+    });
+  });
+
   test("generate ignores structured-specific defaults", async () => {
     const registry = createProviderRegistry();
     const requests: string[] = [];

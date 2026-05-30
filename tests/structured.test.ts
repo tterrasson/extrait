@@ -341,6 +341,46 @@ describe("structured", () => {
     ]);
   });
 
+  test("streaming ignores JSON-looking braces inside quoted prose before JSON", async () => {
+    const schema = z.object({
+      value: z.number(),
+    });
+
+    const text = `"draft: {not the payload}" {"value":1}`;
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text };
+      },
+      async stream(_request: LLMRequest, callbacks: LLMStreamCallbacks = {}): Promise<LLMResponse> {
+        callbacks.onStart?.();
+        const deltas = [`"draft: {not`, ` the payload}" `, `{"value":1}`];
+        for (const delta of deltas) {
+          callbacks.onToken?.(delta);
+          callbacks.onChunk?.({ textDelta: delta });
+        }
+        const out = {
+          text,
+          finishReason: "stop",
+        };
+        callbacks.onComplete?.(out);
+        return out;
+      },
+    };
+
+    const snapshots: Array<unknown> = [];
+    const result = await structured(model, schema, "Return JSON", {
+      stream: {
+        enabled: true,
+        onData: (event) => snapshots.push(event.snapshot.data),
+      },
+      selfHeal: false,
+    });
+
+    expect(result.data).toEqual({ value: 1 });
+    expect(snapshots.at(-1)).toEqual({ value: 1 });
+    expect(snapshots).not.toContainEqual({});
+  });
+
   test("streaming emits a final done event even without parsable partial data", async () => {
     const schema = z.object({ value: z.number() });
 
@@ -557,6 +597,42 @@ describe("structured", () => {
       },
     ]);
     expect((model.requests[0]?.messages?.[1] as { content?: string } | undefined)?.content).toContain("Return a value.");
+  });
+
+  test("injects format into multimodal user text while preserving image blocks", async () => {
+    const schema = z.object({ value: z.number() });
+    const model = new MockAdapter(['{"value": 7}']);
+    const imageBlock = { type: "image_url" as const, image_url: { url: "data:image/png;base64,abc123" } };
+
+    const result = await structured(
+      model,
+      schema,
+      prompt().user([
+        { type: "text", text: "Read the number from this image." },
+        imageBlock,
+      ]),
+      { selfHeal: false },
+    );
+
+    expect(result.data).toEqual({ value: 7 });
+    const content = model.requests[0]?.messages?.[0]?.content;
+    expect(Array.isArray(content)).toBe(true);
+    const parts = content as Array<{ type: string; text?: string; image_url?: { url: string } }>;
+    expect(parts[0]?.type).toBe("text");
+    expect(parts[0]?.text).toContain(DEFAULT_SCHEMA_INSTRUCTION);
+    expect(parts[0]?.text).toContain("Read the number from this image.");
+    expect(parts[1]).toEqual(imageBlock);
+
+    const imageOnlyModel = new MockAdapter(['{"value": 3}']);
+    const imageOnlyResult = await structured(imageOnlyModel, schema, prompt().user([imageBlock]), { selfHeal: false });
+
+    expect(imageOnlyResult.data).toEqual({ value: 3 });
+    const imageOnlyContent = imageOnlyModel.requests[0]?.messages?.[0]?.content;
+    expect(Array.isArray(imageOnlyContent)).toBe(true);
+    const imageOnlyParts = imageOnlyContent as Array<{ type: string; text?: string; image_url?: { url: string } }>;
+    expect(imageOnlyParts[0]?.type).toBe("text");
+    expect(imageOnlyParts[0]?.text).toContain(DEFAULT_SCHEMA_INSTRUCTION);
+    expect(imageOnlyParts[1]).toEqual(imageBlock);
   });
 
   test("injects format into last user message in multi-turn conversation", async () => {

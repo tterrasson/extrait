@@ -548,6 +548,32 @@ describe("executeMCPToolCalls", () => {
     expect(logs.some((l) => l.includes("[tool:mcp:error]"))).toBe(true);
     expect(logs.some((l) => l.includes("[tool:mcp:result:error]"))).toBe(true);
   });
+
+  test("does not emit error result debug line when includeResultOnError is false", async () => {
+    const logs: string[] = [];
+    const client = createMockClient("svc", [{ name: "run" }], () => {
+      throw new Error("boom");
+    });
+    const toolset = await resolveMCPToolset([client]);
+    await executeMCPToolCalls(
+      [{ id: "c1", name: "run" }],
+      toolset,
+      {
+        round: 1,
+        request: {
+          prompt: "test",
+          toolDebug: {
+            enabled: true,
+            logger: (line) => logs.push(line),
+            includeResultOnError: false,
+          },
+        },
+      },
+    );
+
+    expect(logs.some((l) => l.includes("[tool:mcp:error]"))).toBe(true);
+    expect(logs.some((l) => l.includes("[tool:mcp:result:error]"))).toBe(false);
+  });
 });
 
 describe("normalizeMaxToolRounds", () => {
