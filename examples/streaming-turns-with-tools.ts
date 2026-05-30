@@ -55,10 +55,11 @@ const calculatorMCP = await createMCPClient({
 
 const transitions: StreamTurnTransition[] = [];
 const streamedText: string[] = [];
-const streamedReasoningBlocks: ReasoningBlock[][] = [];
+const snapshotBlockCountChanges: number[] = [];
 const reasoningByTurn = new Map<number, string>();
 const printedReasoningTurns = new Set<number>();
 let currentlyStreamingReasoning = false;
+let lastSnapshotBlockCount = 0;
 const useColor = process.env.NO_COLOR !== "1";
 
 console.log(bold("Streaming turns with tools"));
@@ -125,8 +126,10 @@ try {
             process.stdout.write(green(event.delta.text));
           }
 
-          if (event.snapshot.reasoningBlocks) {
-            streamedReasoningBlocks.push(event.snapshot.reasoningBlocks);
+          const snapshotBlockCount = event.snapshot.reasoningBlocks?.length ?? 0;
+          if (snapshotBlockCount !== lastSnapshotBlockCount) {
+            snapshotBlockCountChanges.push(snapshotBlockCount);
+            lastSnapshotBlockCount = snapshotBlockCount;
           }
 
           if (event.delta.reasoning) {
@@ -157,8 +160,8 @@ try {
     console.log(cyan(`- turn ${block.turnIndex}: ${JSON.stringify(block.text)}`));
   }
 
-  console.log(`\n${bold("Snapshot block counts observed")}`);
-  console.log(dim(streamedReasoningBlocks.map((blocks) => blocks.length).join(" -> ") || "(none)"));
+  console.log(`\n${bold("Snapshot block count changes")}`);
+  console.log(dim(snapshotBlockCountChanges.join(" -> ") || "(none)"));
 
   console.log(`\n${bold("Final text")}: ${green(JSON.stringify(result.text))}`);
   console.log(`${bold("Streamed text")}: ${green(JSON.stringify(streamedText.join("")))}`);
