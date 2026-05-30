@@ -1,7 +1,7 @@
-import { jsonrepair } from "jsonrepair";
 import type { z } from "zod";
 import { resolveSchemaInstruction, formatPrompt, withFormat } from "./format";
 import { formatZodIssues, parseLLMOutput } from "./parse";
+import { parseStreamingStructuredData } from "./structured-streaming";
 import {
   aggregateUsage,
   applyOutdentToOptionalPrompt,
@@ -18,7 +18,6 @@ import {
   type NormalizedDebugConfig,
   type NormalizedStreamConfig,
 } from "./generate-shared";
-import { sanitizeThink } from "./think";
 import type {
   LLMAdapter,
   LLMMessage,
@@ -844,81 +843,6 @@ async function callModel(
     }),
     debugLabel: "structured",
   });
-}
-
-function parseStreamingStructuredData(parseSource: string): unknown | null {
-  const sanitized = sanitizeThink(parseSource);
-  const start = findFirstJsonRootStart(sanitized.visibleText);
-  if (start < 0) {
-    return null;
-  }
-
-  const candidate = sanitized.visibleText.slice(start).trim();
-  if (!candidate) {
-    return null;
-  }
-
-  try {
-    const repaired = jsonrepair(candidate);
-    const parsed = JSON.parse(repaired);
-    if (typeof parsed !== "object" || parsed === null) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function findFirstJsonRootStart(input: string): number {
-  let inString = false;
-  let escaped = false;
-
-  for (let index = 0; index < input.length; index += 1) {
-    const char = input[index];
-    if (!char) {
-      continue;
-    }
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-
-      if (char === "\\") {
-        escaped = true;
-        continue;
-      }
-
-      if (char === '"') {
-        inString = false;
-      }
-
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (char === "{" || char === "[") {
-      return index;
-    }
-  }
-
-  const objectStart = input.indexOf("{");
-  const arrayStart = input.indexOf("[");
-
-  if (objectStart < 0) {
-    return arrayStart;
-  }
-  if (arrayStart < 0) {
-    return objectStart;
-  }
-
-  return Math.min(objectStart, arrayStart);
 }
 
 function parseWithObserve<TSchema extends z.ZodTypeAny>(

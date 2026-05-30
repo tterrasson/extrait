@@ -278,6 +278,23 @@ function sendOpenAIRequest(
   });
 }
 
+async function sendOpenAIJsonRequest(
+  options: OpenAICompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const response = await sendOpenAIRequest(options, fetcher, path, request, body);
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`HTTP ${response.status}: ${message}`);
+  }
+
+  return (await response.json()) as Record<string, unknown>;
+}
+
 function createResponsesMCPState(request: LLMRequest): OpenAIResponsesMCPState {
   return {
     input: buildResponsesInput(request),
@@ -423,7 +440,7 @@ async function completeWithChatCompletionsWithMCP(
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const transportTools = toProviderFunctionTools(mcpToolset);
 
-    const response = await sendOpenAIRequest(
+    const payload = await sendOpenAIJsonRequest(
       options,
       fetcher,
       path,
@@ -435,13 +452,6 @@ async function completeWithChatCompletionsWithMCP(
         parallel_tool_calls: request.parallelToolCalls,
       }),
     );
-
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(`HTTP ${response.status}: ${message}`);
-    }
-
-    const payload = (await response.json()) as Record<string, unknown>;
     lastPayload = payload;
     aggregatedUsage = mergeUsage(aggregatedUsage, pickUsage(payload));
     finishReason = pickFinishReason(payload);
@@ -509,7 +519,7 @@ async function completeWithResponsesAPIPassThrough(
   request: LLMRequest,
 ): Promise<LLMResponse> {
   const body = isRecord(request.body) ? request.body : undefined;
-  const response = await sendOpenAIRequest(
+  const payload = await sendOpenAIJsonRequest(
     options,
     fetcher,
     path,
@@ -519,13 +529,6 @@ async function completeWithResponsesAPIPassThrough(
       previous_response_id: pickString(body?.previous_response_id),
     }),
   );
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`HTTP ${response.status}: ${message}`);
-  }
-
-  const payload = (await response.json()) as Record<string, unknown>;
   const toolCalls = pickResponsesToolCalls(payload);
   return {
     text: pickResponsesText(payload) || pickAssistantText(payload),
@@ -549,7 +552,7 @@ async function completeWithResponsesAPIWithMCP(
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const transportTools = toResponsesTools(toProviderFunctionTools(mcpToolset));
 
-    const response = await sendOpenAIRequest(
+    const payload = await sendOpenAIJsonRequest(
       options,
       fetcher,
       path,
@@ -562,13 +565,6 @@ async function completeWithResponsesAPIWithMCP(
         parallel_tool_calls: request.parallelToolCalls,
       }),
     );
-
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(`HTTP ${response.status}: ${message}`);
-    }
-
-    const payload = (await response.json()) as Record<string, unknown>;
     state.lastPayload = payload;
     state.aggregatedUsage = mergeUsage(state.aggregatedUsage, pickUsage(payload));
     state.finishReason = pickResponsesFinishReason(payload) ?? state.finishReason;
