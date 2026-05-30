@@ -212,7 +212,7 @@ export function normalizeDebugConfig(
       enabled: option,
       colors: true,
       verbose: false,
-      logger: (line: string) => console.log(line),
+      logger: defaultDebugLogger,
     };
   }
 
@@ -221,7 +221,7 @@ export function normalizeDebugConfig(
       enabled: false,
       colors: true,
       verbose: false,
-      logger: (line: string) => console.log(line),
+      logger: defaultDebugLogger,
     };
   }
 
@@ -229,8 +229,13 @@ export function normalizeDebugConfig(
     enabled: option.enabled ?? true,
     colors: option.colors ?? true,
     verbose: option.verbose ?? false,
-    logger: option.logger ?? ((line: string) => console.log(line)),
+    logger: option.logger ?? defaultDebugLogger,
   };
+}
+
+function defaultDebugLogger(line: string): void {
+  const { log } = globalThis.console;
+  log(line);
 }
 
 export function withToolTimeout(client: MCPToolClient, toolTimeoutMs: number): MCPToolClient {

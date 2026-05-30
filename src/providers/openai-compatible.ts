@@ -7,7 +7,6 @@ import type {
   LLMRequest,
   LLMResponse,
   LLMStreamCallbacks,
-  LLMStreamChunk,
   LLMToolCall,
   LLMUsage,
   ReasoningBlock,
@@ -47,6 +46,17 @@ export interface OpenAICompatibleAdapterOptions {
 
 type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
+interface OpenAIResponsesMCPState {
+  input: ReturnType<typeof buildResponsesInput>;
+  previousResponseId: string | undefined;
+  aggregatedUsage: LLMUsage | undefined;
+  finishReason: string | undefined;
+  lastPayload: Record<string, unknown> | undefined;
+  executedToolCalls: LLMToolCall[];
+  toolExecutions: NonNullable<LLMResponse["toolExecutions"]>;
+  reasoningBlocks: ReasoningBlock[];
+}
+
 export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOptions): LLMAdapter {
   const fetcher = options.fetcher ?? fetch;
   const path = options.path ?? "/v1/chat/completions";
@@ -74,120 +84,125 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
         return streamWithChatCompletionsWithMCP(options, fetcher, path, request, callbacks);
       }
 
-      const response = await fetcher(buildURL(options.baseURL, path), {
-        method: "POST",
-        headers: buildHeaders(options),
-        body: JSON.stringify(
-          cleanUndefined({
-            ...options.defaultBody,
-            ...request.body,
-            model: options.model,
-            messages: buildMessages(request),
-            temperature: request.temperature,
-            reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-            max_tokens: request.maxTokens,
-            stream: true,
-          }),
-        ),
-        signal: request.signal,
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(`HTTP ${response.status}: ${message}`);
-      }
-
-      callbacks.onStart?.();
-      let text = "";
-      let reasoning = "";
-      let usage: LLMUsage | undefined;
-      let finishReason: string | undefined;
-
-      await consumeSSE(response, (data) => {
-        if (data === "[DONE]") {
-          return;
-        }
-
-        const json = safeJSONParse(data);
-        if (!isRecord(json)) {
-          return;
-        }
-
-        const delta = pickAssistantDelta(json);
-        const reasoningDelta = pickAssistantReasoningDelta(json);
-        const chunkUsage = pickUsage(json);
-        const chunkFinishReason = pickFinishReason(json);
-
-        usage = preferLatestUsage(usage, chunkUsage);
-        if (chunkFinishReason) {
-          finishReason = chunkFinishReason;
-        }
-
-        if (delta) {
-          text += delta;
-          callbacks.onToken?.(delta);
-        }
-
-        if (reasoningDelta) {
-          reasoning += reasoningDelta;
-        }
-
-        if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
-          const chunk: LLMStreamChunk = {
-            textDelta: delta,
-            reasoningDelta: reasoningDelta || undefined,
-            raw: json,
-            usage: chunkUsage,
-            finishReason: chunkFinishReason,
-          };
-          callbacks.onChunk?.(chunk);
-        }
-      });
-
-      const out = {
-        text,
-        reasoning: reasoning.length > 0 ? reasoning : undefined,
-        usage,
-        finishReason,
-      };
-      callbacks.onComplete?.(out);
-      return out;
+      return streamWithChatCompletionsPassThrough(options, fetcher, path, request, callbacks);
     },
 
     async embed(request: EmbeddingRequest): Promise<EmbeddingResult> {
-      const body = cleanUndefined({
-        ...options.defaultBody,
-        ...request.body,
-        model: request.model ?? options.model,
-        input: request.input,
-        dimensions: request.dimensions,
-        encoding_format: "float",
-      });
-
-      const response = await fetcher(buildURL(options.baseURL, embeddingPath), {
-        method: "POST",
-        headers: buildHeaders(options),
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(`HTTP ${response.status}: ${message}`);
-      }
-
-      const json = (await response.json()) as Record<string, unknown>;
-      const data = json.data;
-      if (!Array.isArray(data)) {
-        throw new Error("Unexpected embedding response: missing data array");
-      }
-
-      return {
-        embeddings: data.map((d: unknown) => (isRecord(d) && Array.isArray(d.embedding) ? (d.embedding as number[]) : [])),
-        model: pickString(json.model) ?? (body.model as string),
-        usage: pickUsage(json),
-        raw: json,
-      };
+      return embedOpenAI(options, fetcher, embeddingPath, request);
     },
+  };
+}
+
+async function streamWithChatCompletionsPassThrough(
+  options: OpenAICompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  callbacks: LLMStreamCallbacks,
+): Promise<LLMResponse> {
+  const response = await sendOpenAIRequest(
+    options,
+    fetcher,
+    path,
+    request,
+    buildChatCompletionsBody(options, request, {
+      messages: buildMessages(request),
+      stream: true,
+    }),
+  );
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`HTTP ${response.status}: ${message}`);
+  }
+
+  callbacks.onStart?.();
+  let text = "";
+  let reasoning = "";
+  let usage: LLMUsage | undefined;
+  let finishReason: string | undefined;
+
+  await consumeSSE(response, (data) => {
+    if (data === "[DONE]") {
+      return;
+    }
+
+    const json = safeJSONParse(data);
+    if (!isRecord(json)) {
+      return;
+    }
+
+    const delta = pickAssistantDelta(json);
+    const reasoningDelta = pickAssistantReasoningDelta(json);
+    const chunkUsage = pickUsage(json);
+    const chunkFinishReason = pickFinishReason(json);
+
+    usage = preferLatestUsage(usage, chunkUsage);
+    if (chunkFinishReason) {
+      finishReason = chunkFinishReason;
+    }
+
+    if (delta) {
+      text += delta;
+      callbacks.onToken?.(delta);
+    }
+
+    if (reasoningDelta) {
+      reasoning += reasoningDelta;
+    }
+
+    emitOpenAIStreamChunk(callbacks, undefined, json, delta, reasoningDelta, chunkUsage, chunkFinishReason);
+  });
+
+  const out = {
+    text,
+    reasoning: reasoning.length > 0 ? reasoning : undefined,
+    usage,
+    finishReason,
+  };
+  callbacks.onComplete?.(out);
+  return out;
+}
+
+async function embedOpenAI(
+  options: OpenAICompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: EmbeddingRequest,
+): Promise<EmbeddingResult> {
+  const body = cleanUndefined({
+    ...options.defaultBody,
+    ...request.body,
+    model: request.model ?? options.model,
+    input: request.input,
+    dimensions: request.dimensions,
+    encoding_format: "float",
+  });
+
+  const response = await fetcher(buildURL(options.baseURL, path), {
+    method: "POST",
+    headers: buildHeaders(options),
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`HTTP ${response.status}: ${message}`);
+  }
+
+  const json = (await response.json()) as Record<string, unknown>;
+  const data = json.data;
+  if (!Array.isArray(data)) {
+    throw new Error("Unexpected embedding response: missing data array");
+  }
+
+  return {
+    embeddings: data.map((d: unknown) => (
+      isRecord(d) && Array.isArray(d.embedding) ? (d.embedding as number[]) : []
+    )),
+    model: pickString(json.model) ?? (body.model as string),
+    usage: pickUsage(json),
+    raw: json,
   };
 }
 
@@ -215,29 +230,123 @@ async function completeOpenAIRequest(
   return completeWithChatCompletionsPassThrough(options, fetcher, chatPath, request);
 }
 
+function buildChatCompletionsBody(
+  options: OpenAICompatibleAdapterOptions,
+  request: LLMRequest,
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  return buildOpenAIRequestBody(options, request, "max_tokens", overrides);
+}
+
+function buildResponsesBody(
+  options: OpenAICompatibleAdapterOptions,
+  request: LLMRequest,
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  return buildOpenAIRequestBody(options, request, "max_output_tokens", overrides);
+}
+
+function buildOpenAIRequestBody(
+  options: OpenAICompatibleAdapterOptions,
+  request: LLMRequest,
+  maxTokenKey: "max_tokens" | "max_output_tokens",
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  return cleanUndefined({
+    ...options.defaultBody,
+    ...request.body,
+    model: options.model,
+    temperature: request.temperature,
+    reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
+    [maxTokenKey]: request.maxTokens,
+    ...overrides,
+  });
+}
+
+function sendOpenAIRequest(
+  options: OpenAICompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return fetcher(buildURL(options.baseURL, path), {
+    method: "POST",
+    headers: buildHeaders(options),
+    body: JSON.stringify(body),
+    signal: request.signal,
+  });
+}
+
+function createResponsesMCPState(request: LLMRequest): OpenAIResponsesMCPState {
+  return {
+    input: buildResponsesInput(request),
+    previousResponseId: pickString(
+      isRecord(request.body) ? (request.body.previous_response_id as unknown) : undefined,
+    ),
+    aggregatedUsage: undefined,
+    finishReason: undefined,
+    lastPayload: undefined,
+    executedToolCalls: [],
+    toolExecutions: [],
+    reasoningBlocks: [],
+  };
+}
+
+function buildResponsesMCPResult(
+  state: OpenAIResponsesMCPState,
+  text: string,
+  raw: Record<string, unknown> | undefined,
+): LLMResponse {
+  return {
+    text,
+    reasoning: joinReasoningBlocks(state.reasoningBlocks) || undefined,
+    reasoningBlocks: state.reasoningBlocks.length > 0 ? state.reasoningBlocks : undefined,
+    raw,
+    usage: state.aggregatedUsage,
+    finishReason: state.finishReason,
+    toolCalls: state.executedToolCalls.length > 0 ? state.executedToolCalls : undefined,
+    toolExecutions: state.toolExecutions.length > 0 ? state.toolExecutions : undefined,
+  };
+}
+
+function emitOpenAIStreamChunk(
+  callbacks: LLMStreamCallbacks,
+  round: number | undefined,
+  raw: Record<string, unknown>,
+  delta: string,
+  reasoningDelta: string,
+  usage: LLMUsage | undefined,
+  finishReason: string | undefined,
+): void {
+  if (delta || reasoningDelta || usage || finishReason) {
+    callbacks.onChunk?.({
+      textDelta: delta,
+      reasoningDelta: reasoningDelta || undefined,
+      ...(round !== undefined ? { turnIndex: round } : {}),
+      raw,
+      usage,
+      finishReason,
+    });
+  }
+}
+
 async function completeWithChatCompletionsPassThrough(
   options: OpenAICompatibleAdapterOptions,
   fetcher: typeof fetch,
   path: string,
   request: LLMRequest,
 ): Promise<LLMResponse> {
-  const response = await fetcher(buildURL(options.baseURL, path), {
-    method: "POST",
-    headers: buildHeaders(options),
-    body: JSON.stringify(
-      cleanUndefined({
-        ...options.defaultBody,
-        ...request.body,
-        model: options.model,
-        messages: buildMessages(request),
-        temperature: request.temperature,
-        reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-        max_tokens: request.maxTokens,
-        stream: false,
-      }),
-    ),
-    signal: request.signal,
-  });
+  const response = await sendOpenAIRequest(
+    options,
+    fetcher,
+    path,
+    request,
+    buildChatCompletionsBody(options, request, {
+      messages: buildMessages(request),
+      stream: false,
+    }),
+  );
 
   if (!response.ok) {
     const message = await response.text();
@@ -314,25 +423,18 @@ async function completeWithChatCompletionsWithMCP(
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const transportTools = toProviderFunctionTools(mcpToolset);
 
-    const response = await fetcher(buildURL(options.baseURL, path), {
-      method: "POST",
-      headers: buildHeaders(options),
-      body: JSON.stringify(
-        cleanUndefined({
-          ...options.defaultBody,
-          ...request.body,
-          model: options.model,
-          messages,
-          temperature: request.temperature,
-          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-          max_tokens: request.maxTokens,
-          tools: transportTools,
-          tool_choice: request.toolChoice,
-          parallel_tool_calls: request.parallelToolCalls,
-        }),
-      ),
-      signal: request.signal,
-    });
+    const response = await sendOpenAIRequest(
+      options,
+      fetcher,
+      path,
+      request,
+      buildChatCompletionsBody(options, request, {
+        messages,
+        tools: transportTools,
+        tool_choice: request.toolChoice,
+        parallel_tool_calls: request.parallelToolCalls,
+      }),
+    );
 
     if (!response.ok) {
       const message = await response.text();
@@ -407,23 +509,16 @@ async function completeWithResponsesAPIPassThrough(
   request: LLMRequest,
 ): Promise<LLMResponse> {
   const body = isRecord(request.body) ? request.body : undefined;
-  const response = await fetcher(buildURL(options.baseURL, path), {
-    method: "POST",
-    headers: buildHeaders(options),
-    body: JSON.stringify(
-      cleanUndefined({
-        ...options.defaultBody,
-        ...request.body,
-        model: options.model,
-        input: buildResponsesInput(request),
-        previous_response_id: pickString(body?.previous_response_id),
-        temperature: request.temperature,
-        reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-        max_output_tokens: request.maxTokens,
-      }),
-    ),
-    signal: request.signal,
-  });
+  const response = await sendOpenAIRequest(
+    options,
+    fetcher,
+    path,
+    request,
+    buildResponsesBody(options, request, {
+      input: buildResponsesInput(request),
+      previous_response_id: pickString(body?.previous_response_id),
+    }),
+  );
 
   if (!response.ok) {
     const message = await response.text();
@@ -448,42 +543,25 @@ async function completeWithResponsesAPIWithMCP(
   request: LLMRequest,
 ): Promise<LLMResponse> {
   const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
-
-  let input = buildResponsesInput(request);
-  let previousResponseId = pickString(
-    isRecord(request.body) ? (request.body.previous_response_id as unknown) : undefined,
-  );
-  let aggregatedUsage: LLMUsage | undefined;
-  let finishReason: string | undefined;
-  let lastPayload: Record<string, unknown> | undefined;
-  const executedToolCalls: LLMToolCall[] = [];
-  const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
-  const reasoningBlocks: ReasoningBlock[] = [];
+  const state = createResponsesMCPState(request);
 
   for (let round = 1; round <= maxToolRounds + 1; round += 1) {
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const transportTools = toResponsesTools(toProviderFunctionTools(mcpToolset));
 
-    const response = await fetcher(buildURL(options.baseURL, path), {
-      method: "POST",
-      headers: buildHeaders(options),
-      body: JSON.stringify(
-        cleanUndefined({
-          ...options.defaultBody,
-          ...request.body,
-          model: options.model,
-          input,
-          previous_response_id: previousResponseId,
-          temperature: request.temperature,
-          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-          max_output_tokens: request.maxTokens,
-          tools: transportTools,
-          tool_choice: request.toolChoice,
-          parallel_tool_calls: request.parallelToolCalls,
-        }),
-      ),
-      signal: request.signal,
-    });
+    const response = await sendOpenAIRequest(
+      options,
+      fetcher,
+      path,
+      request,
+      buildResponsesBody(options, request, {
+        input: state.input,
+        previous_response_id: state.previousResponseId,
+        tools: transportTools,
+        tool_choice: request.toolChoice,
+        parallel_tool_calls: request.parallelToolCalls,
+      }),
+    );
 
     if (!response.ok) {
       const message = await response.text();
@@ -491,10 +569,10 @@ async function completeWithResponsesAPIWithMCP(
     }
 
     const payload = (await response.json()) as Record<string, unknown>;
-    lastPayload = payload;
-    aggregatedUsage = mergeUsage(aggregatedUsage, pickUsage(payload));
-    finishReason = pickResponsesFinishReason(payload) ?? finishReason;
-    pushReasoningBlock(reasoningBlocks, round, pickResponsesReasoning(payload));
+    state.lastPayload = payload;
+    state.aggregatedUsage = mergeUsage(state.aggregatedUsage, pickUsage(payload));
+    state.finishReason = pickResponsesFinishReason(payload) ?? state.finishReason;
+    pushReasoningBlock(state.reasoningBlocks, round, pickResponsesReasoning(payload));
 
     const providerToolCalls = pickResponsesToolCalls(payload);
     const functionCalls = providerToolCalls.filter(
@@ -504,16 +582,7 @@ async function completeWithResponsesAPIWithMCP(
 
     if (functionCalls.length === 0) {
       const text = pickResponsesText(payload) || pickAssistantText(payload);
-      return {
-        text,
-        reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
-        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
-        raw: payload,
-        usage: aggregatedUsage,
-        finishReason,
-        toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
-        toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
-      };
+      return buildResponsesMCPResult(state, text, payload);
     }
 
     if (round > maxToolRounds) {
@@ -526,27 +595,22 @@ async function completeWithResponsesAPIWithMCP(
       provider: "openai-compatible",
       model: options.model,
     });
-    executedToolCalls.push(...outputs.map((entry) => entry.call));
-    toolExecutions.push(...outputs.map((entry) => entry.execution));
+    state.executedToolCalls.push(...outputs.map((entry) => entry.call));
+    state.toolExecutions.push(...outputs.map((entry) => entry.execution));
 
-    input = outputs.map((entry) => ({
+    state.input = outputs.map((entry) => ({
       type: "function_call_output",
       call_id: entry.call.id,
       output: stringifyToolOutput(entry.call.error ? { error: entry.call.error } : entry.call.output),
     }));
-    previousResponseId = pickString(payload.id);
+    state.previousResponseId = pickString(payload.id);
   }
 
-  return {
-    text: pickResponsesText(lastPayload ?? {}) || pickAssistantText(lastPayload ?? {}),
-    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
-    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
-    raw: lastPayload,
-    usage: aggregatedUsage,
-    finishReason,
-    toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
-    toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
-  };
+  return buildResponsesMCPResult(
+    state,
+    pickResponsesText(state.lastPayload ?? {}) || pickAssistantText(state.lastPayload ?? {}),
+    state.lastPayload,
+  );
 }
 
 async function streamWithChatCompletionsWithMCP(
@@ -573,26 +637,19 @@ async function streamWithChatCompletionsWithMCP(
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const transportTools = toProviderFunctionTools(mcpToolset);
 
-    const response = await fetcher(buildURL(options.baseURL, path), {
-      method: "POST",
-      headers: buildHeaders(options),
-      body: JSON.stringify(
-        cleanUndefined({
-          ...options.defaultBody,
-          ...request.body,
-          model: options.model,
-          messages,
-          temperature: request.temperature,
-          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-          max_tokens: request.maxTokens,
-          tools: transportTools,
-          tool_choice: request.toolChoice,
-          parallel_tool_calls: request.parallelToolCalls,
-          stream: true,
-        }),
-      ),
-      signal: request.signal,
-    });
+    const response = await sendOpenAIRequest(
+      options,
+      fetcher,
+      path,
+      request,
+      buildChatCompletionsBody(options, request, {
+        messages,
+        tools: transportTools,
+        tool_choice: request.toolChoice,
+        parallel_tool_calls: request.parallelToolCalls,
+        stream: true,
+      }),
+    );
 
     if (!response.ok) {
       const message = await response.text();
@@ -639,17 +696,7 @@ async function streamWithChatCompletionsWithMCP(
         reasoningFieldName ??= pickAssistantReasoningDeltaFieldName(json);
       }
 
-      if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
-        const chunk: LLMStreamChunk = {
-          textDelta: delta,
-          reasoningDelta: reasoningDelta || undefined,
-          turnIndex: round,
-          raw: json,
-          usage: chunkUsage,
-          finishReason: chunkFinishReason,
-        };
-        callbacks.onChunk?.(chunk);
-      }
+      emitOpenAIStreamChunk(callbacks, round, json, delta, reasoningDelta, chunkUsage, chunkFinishReason);
     });
 
     aggregatedUsage = mergeUsage(aggregatedUsage, roundUsage);
@@ -744,24 +791,17 @@ async function streamWithResponsesAPIPassThrough(
   callbacks: LLMStreamCallbacks,
 ): Promise<LLMResponse> {
   const body = isRecord(request.body) ? request.body : undefined;
-  const response = await fetcher(buildURL(options.baseURL, path), {
-    method: "POST",
-    headers: buildHeaders(options),
-    body: JSON.stringify(
-      cleanUndefined({
-        ...options.defaultBody,
-        ...request.body,
-        model: options.model,
-        input: buildResponsesInput(request),
-        previous_response_id: pickString(body?.previous_response_id),
-        temperature: request.temperature,
-        reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-        max_output_tokens: request.maxTokens,
-        stream: true,
-      }),
-    ),
-    signal: request.signal,
-  });
+  const response = await sendOpenAIRequest(
+    options,
+    fetcher,
+    path,
+    request,
+    buildResponsesBody(options, request, {
+      input: buildResponsesInput(request),
+      previous_response_id: pickString(body?.previous_response_id),
+      stream: true,
+    }),
+  );
 
   if (!response.ok) {
     const message = await response.text();
@@ -804,15 +844,7 @@ async function streamWithResponsesAPIPassThrough(
       callbacks.onToken?.(delta);
     }
 
-    if (delta || chunkUsage || chunkFinishReason) {
-      const chunk: LLMStreamChunk = {
-        textDelta: delta,
-        raw: json,
-        usage: chunkUsage,
-        finishReason: chunkFinishReason,
-      };
-      callbacks.onChunk?.(chunk);
-    }
+    emitOpenAIStreamChunk(callbacks, undefined, json, delta, "", chunkUsage, chunkFinishReason);
   });
 
   const finalPayload = lastPayload ?? {};
@@ -834,17 +866,7 @@ async function streamWithResponsesAPIWithMCP(
   callbacks: LLMStreamCallbacks,
 ): Promise<LLMResponse> {
   const maxToolRounds = normalizeMaxToolRounds(request.maxToolRounds ?? options.defaultMaxToolRounds);
-
-  let input = buildResponsesInput(request);
-  let previousResponseId = pickString(
-    isRecord(request.body) ? (request.body.previous_response_id as unknown) : undefined,
-  );
-  let aggregatedUsage: LLMUsage | undefined;
-  let finishReason: string | undefined;
-  let lastPayload: Record<string, unknown> | undefined;
-  const executedToolCalls: LLMToolCall[] = [];
-  const toolExecutions: NonNullable<LLMResponse["toolExecutions"]> = [];
-  const reasoningBlocks: ReasoningBlock[] = [];
+  const state = createResponsesMCPState(request);
 
   callbacks.onStart?.();
 
@@ -852,27 +874,20 @@ async function streamWithResponsesAPIWithMCP(
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const transportTools = toResponsesTools(toProviderFunctionTools(mcpToolset));
 
-    const response = await fetcher(buildURL(options.baseURL, path), {
-      method: "POST",
-      headers: buildHeaders(options),
-      body: JSON.stringify(
-        cleanUndefined({
-          ...options.defaultBody,
-          ...request.body,
-          model: options.model,
-          input,
-          previous_response_id: previousResponseId,
-          temperature: request.temperature,
-          reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort),
-          max_output_tokens: request.maxTokens,
-          tools: transportTools,
-          tool_choice: request.toolChoice,
-          parallel_tool_calls: request.parallelToolCalls,
-          stream: true,
-        }),
-      ),
-      signal: request.signal,
-    });
+    const response = await sendOpenAIRequest(
+      options,
+      fetcher,
+      path,
+      request,
+      buildResponsesBody(options, request, {
+        input: state.input,
+        previous_response_id: state.previousResponseId,
+        tools: transportTools,
+        tool_choice: request.toolChoice,
+        parallel_tool_calls: request.parallelToolCalls,
+        stream: true,
+      }),
+    );
 
     if (!response.ok) {
       const message = await response.text();
@@ -899,7 +914,7 @@ async function streamWithResponsesAPIWithMCP(
       const payload = pickResponsesStreamPayload(json);
       if (payload) {
         roundPayload = payload;
-        lastPayload = payload;
+        state.lastPayload = payload;
       }
 
       const delta = pickResponsesStreamTextDelta(json);
@@ -922,25 +937,15 @@ async function streamWithResponsesAPIWithMCP(
         roundReasoning += reasoningDelta;
       }
 
-      if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
-        const chunk: LLMStreamChunk = {
-          textDelta: delta,
-          reasoningDelta: reasoningDelta || undefined,
-          turnIndex: round,
-          raw: json,
-          usage: chunkUsage,
-          finishReason: chunkFinishReason,
-        };
-        callbacks.onChunk?.(chunk);
-      }
+      emitOpenAIStreamChunk(callbacks, round, json, delta, reasoningDelta, chunkUsage, chunkFinishReason);
     });
 
     const resolvedRoundUsage = preferLatestUsage(roundUsage, roundPayload ? pickUsage(roundPayload) : undefined);
-    aggregatedUsage = mergeUsage(aggregatedUsage, resolvedRoundUsage);
+    state.aggregatedUsage = mergeUsage(state.aggregatedUsage, resolvedRoundUsage);
     if (roundFinishReason) {
-      finishReason = roundFinishReason;
+      state.finishReason = roundFinishReason;
     } else if (roundPayload) {
-      finishReason = pickResponsesFinishReason(roundPayload) ?? finishReason;
+      state.finishReason = pickResponsesFinishReason(roundPayload) ?? state.finishReason;
     }
 
     const payloadToolCalls = roundPayload ? pickResponsesToolCalls(roundPayload) : [];
@@ -953,7 +958,7 @@ async function streamWithResponsesAPIWithMCP(
       (toolCall): toolCall is LLMToolCall & { id: string; name: string } =>
         toolCall.type === "function" && typeof toolCall.id === "string" && typeof toolCall.name === "string",
     );
-    pushReasoningBlock(reasoningBlocks, round, roundReasoning);
+    pushReasoningBlock(state.reasoningBlocks, round, roundReasoning);
     request.onTurnTransition?.({
       turnIndex: round,
       kind: "reasoningComplete",
@@ -964,16 +969,7 @@ async function streamWithResponsesAPIWithMCP(
       const finalText = roundText.length > 0
         ? roundText
         : (roundPayload ? (pickResponsesText(roundPayload) || pickAssistantText(roundPayload)) : "");
-      const out: LLMResponse = {
-        text: finalText,
-        reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
-        reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
-        raw: roundPayload ?? lastPayload,
-        usage: aggregatedUsage,
-        finishReason,
-        toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
-        toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
-      };
+      const out = buildResponsesMCPResult(state, finalText, roundPayload ?? state.lastPayload);
       request.onTurnTransition?.({ turnIndex: round, kind: "streamEnd" });
       callbacks.onComplete?.(out);
       return out;
@@ -1001,28 +997,23 @@ async function streamWithResponsesAPIWithMCP(
       provider: "openai-compatible",
       model: options.model,
     });
-    executedToolCalls.push(...outputs.map((entry) => entry.call));
-    toolExecutions.push(...outputs.map((entry) => entry.execution));
+    state.executedToolCalls.push(...outputs.map((entry) => entry.call));
+    state.toolExecutions.push(...outputs.map((entry) => entry.execution));
     request.onTurnTransition?.({ turnIndex: round, kind: "toolResultsReceived" });
 
-    input = outputs.map((entry) => ({
+    state.input = outputs.map((entry) => ({
       type: "function_call_output",
       call_id: entry.call.id,
       output: stringifyToolOutput(entry.call.error ? { error: entry.call.error } : entry.call.output),
     }));
-    previousResponseId = pickString(roundPayload?.id);
+    state.previousResponseId = pickString(roundPayload?.id);
   }
 
-  const out: LLMResponse = {
-    text: pickResponsesText(lastPayload ?? {}) || pickAssistantText(lastPayload ?? {}),
-    reasoning: joinReasoningBlocks(reasoningBlocks) || undefined,
-    reasoningBlocks: reasoningBlocks.length > 0 ? reasoningBlocks : undefined,
-    raw: lastPayload,
-    usage: aggregatedUsage,
-    finishReason,
-    toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
-    toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
-  };
+  const out = buildResponsesMCPResult(
+    state,
+    pickResponsesText(state.lastPayload ?? {}) || pickAssistantText(state.lastPayload ?? {}),
+    state.lastPayload,
+  );
   request.onTurnTransition?.({ turnIndex: maxToolRounds + 1, kind: "streamEnd" });
   callbacks.onComplete?.(out);
   return out;
@@ -1211,7 +1202,7 @@ function pickAssistantDelta(payload: Record<string, unknown>): string {
     return "";
   }
 
-  return pickTextFromOpenAIContent(delta.content);
+  return pickTextLike(delta.content);
 }
 
 function pickAssistantReasoning(payload: Record<string, unknown>): string {
@@ -1641,7 +1632,7 @@ function pickResponsesReasoning(payload: Record<string, unknown>): string {
 function pickAssistantText(payload: Record<string, unknown>): string {
   const message = pickAssistantMessage(payload);
   if (message) {
-    const text = pickTextFromOpenAIContent(message.content);
+    const text = pickTextLike(message.content);
     if (text.length > 0) {
       return text;
     }
@@ -1673,10 +1664,6 @@ function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: s
 
 function joinReasoningBlocks(blocks: ReasoningBlock[]): string {
   return blocks.map((block) => block.text).filter(Boolean).join("\n\n");
-}
-
-function pickTextFromOpenAIContent(value: unknown): string {
-  return pickTextLike(value);
 }
 
 function pickTextLike(value: unknown): string {

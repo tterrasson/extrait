@@ -70,72 +70,7 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
         return streamWithMCPToolLoop(options, fetcher, path, request, callbacks);
       }
 
-      const input = resolveAnthropicInput(request);
-      const response = await fetcher(buildURL(options.baseURL, path), {
-        method: "POST",
-        headers: buildHeaders(options),
-        body: JSON.stringify(
-          buildAnthropicRequestBody(options, request, {
-            ...options.defaultBody,
-            ...request.body,
-            model: options.model,
-            system: input.systemPrompt,
-            messages: input.messages,
-            temperature: request.temperature,
-            stream: true,
-          }),
-        ),
-        signal: request.signal,
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(`HTTP ${response.status}: ${message}`);
-      }
-
-      callbacks.onStart?.();
-      let text = "";
-      let usage: LLMUsage | undefined;
-      let finishReason: string | undefined;
-
-      await consumeSSE(response, (data) => {
-        if (data === "[DONE]") {
-          return;
-        }
-
-        const json = safeJSONParse(data);
-        if (!isRecord(json)) {
-          return;
-        }
-
-        const delta = pickAnthropicDelta(json);
-        const chunkUsage = pickUsage(json);
-        const chunkFinishReason = pickFinishReason(json);
-
-        usage = preferLatestUsage(usage, chunkUsage);
-        if (chunkFinishReason) {
-          finishReason = chunkFinishReason;
-        }
-
-        if (delta) {
-          text += delta;
-          callbacks.onToken?.(delta);
-        }
-
-        if (delta || chunkUsage || chunkFinishReason) {
-          const chunk: LLMStreamChunk = {
-            textDelta: delta,
-            raw: json,
-            usage: chunkUsage,
-            finishReason: chunkFinishReason,
-          };
-          callbacks.onChunk?.(chunk);
-        }
-      });
-
-      const out = { text, usage, finishReason };
-      callbacks.onComplete?.(out);
-      return out;
+      return streamPassThrough(options, fetcher, path, request, callbacks);
     },
 
     async embed(): Promise<EmbeddingResult> {
@@ -148,14 +83,77 @@ export function createAnthropicCompatibleAdapter(options: AnthropicCompatibleAda
   };
 }
 
-async function completePassThrough(
+async function streamPassThrough(
   options: AnthropicCompatibleAdapterOptions,
   fetcher: typeof fetch,
   path: string,
   request: LLMRequest,
+  callbacks: LLMStreamCallbacks,
 ): Promise<LLMResponse> {
   const input = resolveAnthropicInput(request);
-  const response = await fetcher(buildURL(options.baseURL, path), {
+  const response = await sendAnthropicMessage(options, fetcher, path, request, {
+    system: input.systemPrompt,
+    messages: input.messages,
+    stream: true,
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`HTTP ${response.status}: ${message}`);
+  }
+
+  callbacks.onStart?.();
+  let text = "";
+  let usage: LLMUsage | undefined;
+  let finishReason: string | undefined;
+
+  await consumeSSE(response, (data) => {
+    if (data === "[DONE]") {
+      return;
+    }
+
+    const json = safeJSONParse(data);
+    if (!isRecord(json)) {
+      return;
+    }
+
+    const delta = pickAnthropicDelta(json);
+    const chunkUsage = pickUsage(json);
+    const chunkFinishReason = pickFinishReason(json);
+
+    usage = preferLatestUsage(usage, chunkUsage);
+    if (chunkFinishReason) {
+      finishReason = chunkFinishReason;
+    }
+
+    if (delta) {
+      text += delta;
+      callbacks.onToken?.(delta);
+    }
+
+    if (delta || chunkUsage || chunkFinishReason) {
+      callbacks.onChunk?.({
+        textDelta: delta,
+        raw: json,
+        usage: chunkUsage,
+        finishReason: chunkFinishReason,
+      });
+    }
+  });
+
+  const out = { text, usage, finishReason };
+  callbacks.onComplete?.(out);
+  return out;
+}
+
+function sendAnthropicMessage(
+  options: AnthropicCompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return fetcher(buildURL(options.baseURL, path), {
     method: "POST",
     headers: buildHeaders(options),
     body: JSON.stringify(
@@ -163,13 +161,25 @@ async function completePassThrough(
         ...options.defaultBody,
         ...request.body,
         model: options.model,
-        system: input.systemPrompt,
-        messages: input.messages,
         temperature: request.temperature,
-        stream: false,
+        ...body,
       }),
     ),
     signal: request.signal,
+  });
+}
+
+async function completePassThrough(
+  options: AnthropicCompatibleAdapterOptions,
+  fetcher: typeof fetch,
+  path: string,
+  request: LLMRequest,
+): Promise<LLMResponse> {
+  const input = resolveAnthropicInput(request);
+  const response = await sendAnthropicMessage(options, fetcher, path, request, {
+    system: input.systemPrompt,
+    messages: input.messages,
+    stream: false,
   });
 
   if (!response.ok) {
@@ -215,23 +225,12 @@ async function completeWithMCPToolLoop(
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const tools = toAnthropicTools(toProviderFunctionTools(mcpToolset));
 
-    const response = await fetcher(buildURL(options.baseURL, path), {
-      method: "POST",
-      headers: buildHeaders(options),
-      body: JSON.stringify(
-        buildAnthropicRequestBody(options, request, {
-          ...options.defaultBody,
-          ...request.body,
-          model: options.model,
-          system: input.systemPrompt,
-          messages,
-          temperature: request.temperature,
-          tools,
-          tool_choice: toAnthropicToolChoice(request.toolChoice),
-          stream: false,
-        }),
-      ),
-      signal: request.signal,
+    const response = await sendAnthropicMessage(options, fetcher, path, request, {
+      system: input.systemPrompt,
+      messages,
+      tools,
+      tool_choice: toAnthropicToolChoice(request.toolChoice),
+      stream: false,
     });
 
     if (!response.ok) {
@@ -327,23 +326,12 @@ async function streamWithMCPToolLoop(
     const mcpToolset = await resolveMCPToolset(request.mcpClients);
     const tools = toAnthropicTools(toProviderFunctionTools(mcpToolset));
 
-    const response = await fetcher(buildURL(options.baseURL, path), {
-      method: "POST",
-      headers: buildHeaders(options),
-      body: JSON.stringify(
-        buildAnthropicRequestBody(options, request, {
-          ...options.defaultBody,
-          ...request.body,
-          model: options.model,
-          system: input.systemPrompt,
-          messages,
-          temperature: request.temperature,
-          tools,
-          tool_choice: toAnthropicToolChoice(request.toolChoice),
-          stream: true,
-        }),
-      ),
-      signal: request.signal,
+    const response = await sendAnthropicMessage(options, fetcher, path, request, {
+      system: input.systemPrompt,
+      messages,
+      tools,
+      tool_choice: toAnthropicToolChoice(request.toolChoice),
+      stream: true,
     });
 
     if (!response.ok) {

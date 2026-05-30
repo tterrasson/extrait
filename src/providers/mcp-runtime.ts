@@ -324,7 +324,7 @@ function resolveToolDebugOptions(value: LLMRequest["toolDebug"]): Required<LLMTo
   if (value === true) {
     return {
       enabled: true,
-      logger: (line: string) => console.log(line),
+      logger: defaultToolDebugLogger,
       includeRequest: true,
       includeResult: true,
       includeResultOnError: true,
@@ -345,12 +345,17 @@ function resolveToolDebugOptions(value: LLMRequest["toolDebug"]): Required<LLMTo
 
   return {
     enabled: value.enabled ?? true,
-    logger: value.logger ?? ((line: string) => console.log(line)),
+    logger: value.logger ?? defaultToolDebugLogger,
     includeRequest: value.includeRequest ?? true,
     includeResult: value.includeResult ?? true,
     includeResultOnError: value.includeResultOnError ?? true,
     pretty: value.pretty ?? false,
   };
+}
+
+function defaultToolDebugLogger(line: string): void {
+  const { log } = globalThis.console;
+  log(line);
 }
 
 function formatToolExecutionRequestDebugLine(

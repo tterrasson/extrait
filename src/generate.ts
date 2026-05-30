@@ -119,7 +119,7 @@ function normalizeGenerateInput(
   }
 
   return {
-    ...(callOptions ?? {}),
+    ...callOptions,
     prompt: promptOrOptions,
   };
 }

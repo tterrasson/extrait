@@ -10,7 +10,7 @@ import type {
 
 const RE_EMPTY_OBJECT = /^\{\s*\}$/;
 const RE_EMPTY_ARRAY = /^\[\s*\]$/;
-const RE_BOUNDARY_CHAR = /[\s,.;:!?`"'()\[\]{}<>]/;
+const RE_BOUNDARY_CHAR = /[\s,.;:!?`"'()[\]{}<>]/;
 
 interface StackItem {
   char: "{" | "[";

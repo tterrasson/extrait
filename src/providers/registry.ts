@@ -126,6 +126,6 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
   return {
     model: config.model,
     ...transport,
-    ...(config.options ?? {}),
+    ...config.options,
   };
 }

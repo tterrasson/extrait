@@ -416,7 +416,7 @@ function normalizeStructuredInput<TSchema extends z.ZodTypeAny>(
   }
 
   return {
-    ...(callOptions ?? {}),
+    ...callOptions,
     schema: schemaOrOptions,
     prompt: promptInput,
   };

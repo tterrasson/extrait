@@ -120,12 +120,12 @@ function mergeStructuredOptions<TSchema extends z.ZodTypeAny>(
     ...(defaults as StructuredCallOptions<TSchema> | undefined),
     ...overrides,
     parse: {
-      ...(defaults?.parse ?? {}),
-      ...(overrides?.parse ?? {}),
+      ...defaults?.parse,
+      ...overrides?.parse,
     },
     request: {
-      ...(defaults?.request ?? {}),
-      ...(overrides?.request ?? {}),
+      ...defaults?.request,
+      ...overrides?.request,
     },
     stream: mergeObjectLike(defaults?.stream, overrides?.stream),
     selfHeal: mergeObjectLike(defaults?.selfHeal, overrides?.selfHeal),
@@ -146,8 +146,8 @@ function mergeGenerateOptions(
     outdent: overrides?.outdent ?? defaults?.outdent,
     systemPrompt: overrides?.systemPrompt ?? defaults?.systemPrompt,
     request: {
-      ...(defaults?.request ?? {}),
-      ...(overrides?.request ?? {}),
+      ...defaults?.request,
+      ...overrides?.request,
     },
     stream: mergeObjectLike(defaults?.stream as GenerateCallOptions["stream"], overrides?.stream),
     debug: mergeObjectLike(defaults?.debug, overrides?.debug),
