@@ -658,6 +658,8 @@ type MCPCallToolParams = {
 };
 ```
 
+MCP toolsets may change between tool rounds. Providers call `listTools()` before each round, so a client can expose additional tools after a previous `callTool()` result, or remove tools that are no longer available.
+
 Use `transformToolCallParams()` when you need to attach MCP-specific metadata, override the final remote tool name, or otherwise change the full request passed to `client.callTool()`. This hook is exported as `LLMToolCallParamsTransformer`.
 
 ### Timeouts

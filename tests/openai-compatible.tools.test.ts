@@ -41,6 +41,97 @@ function createCalculatorMCP(onCall?: (args: Record<string, unknown>) => void): 
 }
 
 describe("openai-compatible MCP tools", () => {
+  test("re-lists MCP tools between non-streaming chat completion rounds", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const listedToolNames: string[][] = [];
+    let enabledLookup = false;
+
+    const mcpClient: MCPToolClient = {
+      id: "dynamic",
+      async listTools() {
+        const tools = [
+          {
+            name: "activate",
+            description: "Activate more tools.",
+            inputSchema: { type: "object", properties: {} },
+          },
+          ...(enabledLookup
+            ? [
+                {
+                  name: "lookup",
+                  description: "Lookup after activation.",
+                  inputSchema: { type: "object", properties: {} },
+                },
+              ]
+            : []),
+        ];
+        listedToolNames.push(tools.map((tool) => tool.name));
+        return { tools };
+      },
+      async callTool(params) {
+        if (params.name === "activate") {
+          enabledLookup = true;
+          return { activated: true };
+        }
+        return { result: "ok" };
+      },
+    };
+
+    let round = 0;
+    const fetcher = (async (_input, init) => {
+      round += 1;
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+
+      if (round === 1) {
+        return jsonResponse({
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_activate",
+                    type: "function",
+                    function: { name: "activate", arguments: "{}" },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { role: "assistant", content: "done" },
+          },
+        ],
+      });
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "Activate tools.",
+      mcpClients: [mcpClient],
+    });
+
+    const firstRoundTools = requests[0]?.tools as Array<{ function?: { name?: string } }>;
+    const secondRoundTools = requests[1]?.tools as Array<{ function?: { name?: string } }>;
+    expect(out.text).toBe("done");
+    expect(listedToolNames).toEqual([["activate"], ["activate", "lookup"]]);
+    expect(firstRoundTools.map((tool) => tool.function?.name)).toEqual(["activate"]);
+    expect(secondRoundTools.map((tool) => tool.function?.name)).toEqual(["activate", "lookup"]);
+  });
+
   test("returns reasoning blocks for non-streaming MCP rounds", async () => {
     let round = 0;
     const fetcher = (async () => {
