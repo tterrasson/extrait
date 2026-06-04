@@ -24,7 +24,7 @@ export {
 } from "./mcp";
 export { images, resizeImage, type ImageInput, type ImageSize } from "./image";
 export { conversation, type ConversationEntry } from "./conversation";
-export { prompt, type PromptMessageBuilder } from "./prompt";
+export { dedent, prompt, type PromptMessageBuilder } from "./prompt";
 export { s, inspectSchemaMetadata, inferSchemaExample } from "./schema-builder";
 export {
   buildDefaultStructuredPrompt,

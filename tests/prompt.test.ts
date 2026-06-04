@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { prompt } from "@/prompt";
+import { dedent, prompt } from "@/prompt";
 
 describe("prompt", () => {
   test("dedents and removes leading/trailing empty lines", () => {
@@ -174,5 +174,42 @@ describe("prompt", () => {
     const built = prompt().assistant(content).build();
 
     expect(built.messages).toEqual([{ role: "assistant", content }]);
+  });
+});
+
+describe("dedent", () => {
+  test("dedents and trims surrounding blank lines, preserving newlines", () => {
+    const out = dedent`
+      Run Python in a session.
+      Variables stay available between calls.
+    `;
+
+    expect(out).toBe("Run Python in a session.\nVariables stay available between calls.");
+  });
+
+  test("preserves blank lines in the middle", () => {
+    const out = dedent`
+      Line 1
+
+      Line 2
+    `;
+
+    expect(out).toBe("Line 1\n\nLine 2");
+  });
+
+  test("coerces interpolated values like prompt", () => {
+    const out = dedent`
+      Object: ${{ key: "value" }}
+      Null: ${null}
+      Count: ${3}
+    `;
+
+    expect(out).toContain('"key": "value"');
+    expect(out).toContain("Null: \n");
+    expect(out).toContain("Count: 3");
+  });
+
+  test("returns a plain string", () => {
+    expect(typeof dedent`hello`).toBe("string");
   });
 });

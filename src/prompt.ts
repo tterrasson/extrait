@@ -31,7 +31,7 @@ function toPromptString(value: unknown): string {
   }
 }
 
-const dedent = createOutdent({
+const outdent = createOutdent({
   trimLeadingNewline: true,
   trimTrailingNewline: true,
   newline: "\n",
@@ -67,7 +67,7 @@ function stripOuterBlankLines(text: string): string {
 }
 
 function renderPromptTemplate(strings: TemplateStringsArray, values: unknown[]): string {
-  return stripOuterBlankLines(dedent(strings, ...values.map(toPromptString)));
+  return stripOuterBlankLines(outdent(strings, ...values.map(toPromptString)));
 }
 
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
@@ -142,6 +142,23 @@ class PromptMessageBuilderImpl implements PromptMessageBuilder {
 
 function createPromptMessageBuilder(): PromptMessageBuilder {
   return new PromptMessageBuilderImpl();
+}
+
+/**
+ * Tagged template for formatting multi-line prompt strings: dedents the block
+ * and trims surrounding blank lines, so you can write readable indented
+ * templates instead of concatenating strings with `+`. Interpolated values are
+ * coerced the same way as in `prompt`. Returns a plain string — no role/message
+ * handling.
+ *
+ * @example
+ * const instructions = dedent`
+ *   You are a helpful assistant.
+ *   Answer in ${language} and keep responses concise.
+ * `;
+ */
+export function dedent(strings: TemplateStringsArray, ...values: unknown[]): string {
+  return renderPromptTemplate(strings, values);
 }
 
 export function prompt(strings: TemplateStringsArray, ...values: unknown[]): string;
