@@ -81,6 +81,36 @@ describe("openai-compatible streaming", () => {
     expect(result.usage?.outputTokens).toBe(2);
     expect(chunks.length).toBe(3);
     expect(requests[0]?.reasoning_effort).toBe("xhigh");
+    expect(requests[0]?.stream_options).toEqual({ include_usage: true });
+  });
+
+  test("requests usage reporting on streamed chat completions and respects caller overrides", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input: Request | string | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "hi" }, finish_reason: "stop" }] }),
+        "[DONE]",
+      ]);
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.stream!({ prompt: "Say hi" });
+    expect(requests[0]?.stream_options).toEqual({ include_usage: true });
+
+    await adapter.stream!({
+      prompt: "Say hi",
+      body: { stream_options: { include_usage: false, continuous_usage_stats: true } },
+    });
+    expect(requests[1]?.stream_options).toEqual({
+      include_usage: false,
+      continuous_usage_stats: true,
+    });
   });
 
   test("keeps the latest stream usage snapshot instead of summing chunk usage", async () => {

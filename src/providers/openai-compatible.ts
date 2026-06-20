@@ -108,6 +108,7 @@ async function streamWithChatCompletionsPassThrough(
     buildChatCompletionsBody(options, request, {
       messages: buildMessages(request),
       stream: true,
+      stream_options: streamUsageOptions(request),
     }),
   );
 
@@ -236,6 +237,17 @@ function buildChatCompletionsBody(
   overrides: Record<string, unknown>,
 ): Record<string, unknown> {
   return buildOpenAIRequestBody(options, request, "max_tokens", overrides);
+}
+
+/**
+ * Opt into usage reporting for streamed chat completions. OpenAI-compatible
+ * servers only emit the `usage` block in streaming mode when
+ * `stream_options.include_usage` is set, so without this the final chunk
+ * carries no token counts. Any caller-provided `stream_options` win.
+ */
+function streamUsageOptions(request: LLMRequest): Record<string, unknown> {
+  const userOptions = isRecord(request.body?.stream_options) ? request.body.stream_options : undefined;
+  return { include_usage: true, ...userOptions };
 }
 
 function buildResponsesBody(
@@ -644,6 +656,7 @@ async function streamWithChatCompletionsWithMCP(
         tool_choice: request.toolChoice,
         parallel_tool_calls: request.parallelToolCalls,
         stream: true,
+        stream_options: streamUsageOptions(request),
       }),
     );
 
