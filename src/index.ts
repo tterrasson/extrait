@@ -8,6 +8,7 @@ export {
 } from "./format";
 export { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "./markdown";
 export { sanitizeThink } from "./think";
+export { normalizeModelOutput, withoutTrailingThinkTagPrefix } from "./generate-output";
 export { createLLM, type CreateLLMOptions, type LLMClient } from "./llm";
 export { generate } from "./generate";
 export { formatZodIssues, parseLLMOutput } from "./parse";

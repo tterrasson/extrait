@@ -1054,7 +1054,7 @@ describe("structured", () => {
     expect(snapshots.at(-1)).toEqual({ value: 1 });
   });
 
-  test("strips </think> tags from dedicated reasoning in composeParseSource", async () => {
+  test("strips think tags from dedicated reasoning", async () => {
     const schema = z.object({ value: z.number() });
     const model: LLMAdapter = {
       async complete(): Promise<LLMResponse> {
@@ -1072,7 +1072,7 @@ describe("structured", () => {
 
     expect(result.data).toEqual({ value: 42 });
     expect(result.text).toBe('{"value": 42}');
-    expect(result.reasoning).toBe("plan</think>leak");
+    expect(result.reasoning).toBe("planleak");
     expect(result.text).not.toContain("leak");
   });
 

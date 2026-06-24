@@ -375,6 +375,32 @@ describe("generate", () => {
     expect(result.reasoning).toBe("plan\n\ndraft");
   });
 
+  test("strips think tags from dedicated reasoning", async () => {
+    const model = new MockAdapter({
+      text: "Hello",
+      reasoning: "<think>plan</think>",
+      finishReason: "stop",
+    });
+
+    const result = await generate(model, "Say hello");
+
+    expect(result.text).toBe("Hello");
+    expect(result.reasoning).toBe("plan");
+  });
+
+  test("drops empty dedicated think tags", async () => {
+    const model = new MockAdapter({
+      text: "Hello",
+      reasoning: "<think>",
+      finishReason: "stop",
+    });
+
+    const result = await generate(model, "Say hello");
+
+    expect(result.text).toBe("Hello");
+    expect(result.reasoning).toBe("");
+  });
+
   test("forwards request.signal to complete and stream calls", async () => {
     const controller = new AbortController();
     const signals: AbortSignal[] = [];

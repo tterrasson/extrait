@@ -221,6 +221,265 @@ describe("openai-compatible streaming", () => {
     expect(result.finishReason).toBe("stop");
   });
 
+  test("streams chat completion tool calls in pass-through mode", async () => {
+    const chunks: LLMStreamChunk[] = [];
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_lookup",
+                    type: "function",
+                    function: { name: "lookup", arguments: "{\"q\"" },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        JSON.stringify({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    function: { arguments: ":\"x\"}" },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      {
+        prompt: "test",
+        body: {
+          tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+        },
+      },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(result.text).toBe("");
+    expect(result.finishReason).toBe("tool_calls");
+    expect(result.toolCalls).toEqual([
+      { id: "call_lookup", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+    ]);
+    expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "call_lookup")).toBe(true);
+  });
+
+  test("streams chat completion tool calls from final assistant message chunks", async () => {
+    const chunks: LLMStreamChunk[] = [];
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_lookup",
+                    type: "function",
+                    function: { name: "lookup", arguments: "{\"q\":\"x\"}" },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      {
+        prompt: "test",
+        body: {
+          tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+        },
+      },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(result.text).toBe("");
+    expect(result.finishReason).toBe("tool_calls");
+    expect(result.toolCalls).toEqual([
+      { id: "call_lookup", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+    ]);
+    expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "call_lookup")).toBe(true);
+  });
+
+  test("converts native XML tool-call text into toolCalls without streaming raw markup", async () => {
+    const chunks: LLMStreamChunk[] = [];
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "Let me check.\n<tool" } }] }),
+        JSON.stringify({
+          choices: [
+            {
+              delta: {
+                content:
+                  "_call>\n<function=bash>\n<parameter=command>\nfind ./src -type f\n</parameter>\n</function>\n",
+              },
+            },
+          ],
+        }),
+        JSON.stringify({
+          choices: [
+            {
+              delta: { content: "</tool_call>" },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      {
+        prompt: "test",
+        body: {
+          tools: [{ type: "function", function: { name: "bash", parameters: { type: "object" } } }],
+        },
+      },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(result.text).toBe("Let me check.\n");
+    expect(result.finishReason).toBe("tool_calls");
+    expect(result.toolCalls).toEqual([
+      { id: "call_native_0", type: "function", name: "bash", arguments: '{"command":"find ./src -type f"}' },
+    ]);
+    expect(chunks.map((chunk) => chunk.textDelta).join("")).toBe("Let me check.\n");
+    expect(chunks.map((chunk) => chunk.textDelta).join("")).not.toContain("<tool_call>");
+    expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.name === "bash")).toBe(true);
+  });
+
+  test("parses native JSON <tool_call> blocks emitted as content", async () => {
+    const tokens: string[] = [];
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "before <tool_" } }] }),
+        JSON.stringify({ choices: [{ delta: { content: "call>{\"name\":\"lookup\",\"arguments\":{\"q\":\"x\"}}</tool_" } }] }),
+        JSON.stringify({ choices: [{ delta: { content: "call> after" }, finish_reason: "stop" }] }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      {
+        prompt: "test",
+        body: { tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }] },
+      },
+      { onToken: (token) => tokens.push(token) },
+    );
+
+    // The tool-call block is stripped from the visible text and surfaced as a tool call.
+    expect(result.text).toBe("before  after");
+    expect(tokens.join("")).toBe("before  after");
+    expect(result.finishReason).toBe("stop");
+    expect(result.toolCalls).toEqual([
+      { id: "call_native_0", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+    ]);
+  });
+
+  test("parses native XML <tool_call> blocks and preserves parameter types", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          choices: [
+            {
+              delta: {
+                content:
+                  "<tool_call><function=search><parameter=query>hello</parameter><parameter=limit>5</parameter><parameter=fuzzy>true</parameter></function></tool_call>",
+              },
+            },
+          ],
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      {
+        prompt: "test",
+        body: { tools: [{ type: "function", function: { name: "search", parameters: { type: "object" } } }] },
+      },
+      {},
+    );
+
+    expect(result.text).toBe("");
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls?.[0]?.name).toBe("search");
+    // String stays a string; number/boolean keep their JSON type.
+    expect(JSON.parse(String(result.toolCalls?.[0]?.arguments))).toEqual({
+      query: "hello",
+      limit: 5,
+      fuzzy: true,
+    });
+  });
+
+  test("does not intercept <tool_call> markup when the request declares no tools", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "Use the <tool_call>{\"name\":\"x\"}</tool_call> format." } }] }),
+        JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({ prompt: "test" }, {});
+
+    // No tools declared: the literal markup stays in the text, untouched.
+    expect(result.text).toBe("Use the <tool_call>{\"name\":\"x\"}</tool_call> format.");
+    expect(result.toolCalls).toBeUndefined();
+    expect(result.finishReason).toBe("stop");
+  });
+
   test("ignores [DONE] sentinel in text", async () => {
     const tokens: string[] = [];
 
@@ -502,6 +761,74 @@ describe("openai-compatible streaming", () => {
 
     expect(result.text).toBe("from responses api");
     expect(tokens).toEqual(["from ", "responses api"]);
+  });
+
+  test("streams responses API tool calls in pass-through mode", async () => {
+    const chunks: LLMStreamChunk[] = [];
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          type: "response.output_item.added",
+          output_index: 0,
+          item: {
+            type: "function_call",
+            call_id: "call_lookup",
+            name: "lookup",
+            arguments: "",
+          },
+        }),
+        JSON.stringify({
+          type: "response.function_call_arguments.delta",
+          output_index: 0,
+          item_id: "call_lookup",
+          delta: "{\"q\"",
+        }),
+        JSON.stringify({
+          type: "response.function_call_arguments.done",
+          output_index: 0,
+          item_id: "call_lookup",
+          arguments: "{\"q\":\"x\"}",
+        }),
+        JSON.stringify({
+          type: "response.completed",
+          response: {
+            id: "resp_1",
+            status: "completed",
+            output: [
+              {
+                type: "function_call",
+                call_id: "call_lookup",
+                name: "lookup",
+                arguments: "{\"q\":\"x\"}",
+              },
+            ],
+          },
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      path: "/v1/responses",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!(
+      {
+        prompt: "test",
+        body: {
+          tools: [{ type: "function", name: "lookup", parameters: { type: "object" } }],
+        },
+      },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(result.text).toBe("");
+    expect(result.toolCalls).toEqual([
+      { id: "call_lookup", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+    ]);
+    expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "call_lookup")).toBe(true);
   });
 
   test("prefers final responses API usage over interim stream usage", async () => {

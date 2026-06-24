@@ -12,7 +12,7 @@ export function normalizeModelOutput(
   const sanitized = sanitizeThink(text);
   const visibleText = stripThinkBlocks(text, sanitized.thinkBlocks);
   const reasoning = joinReasoningSegments([
-    dedicatedReasoning,
+    sanitizeReasoningText(dedicatedReasoning),
     ...sanitized.thinkBlocks.map((block) => block.content),
   ]);
 
@@ -94,6 +94,37 @@ function joinReasoningSegments(parts: Array<string | undefined>): string {
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value))
     .join("\n\n");
+}
+
+function sanitizeReasoningText(value: string | undefined): string | undefined {
+  const sanitized = value?.replace(RE_THINK_TAGS, "").trim();
+  return sanitized ? sanitized : undefined;
+}
+
+const THINK_TAG_VARIANTS = ["<think>", "</think>"] as const;
+const MAX_THINK_TAG_PREFIX = Math.max(...THINK_TAG_VARIANTS.map((tag) => tag.length)) - 1;
+
+/**
+ * Drops a trailing run of `value` that could be the start of a `<think>` /
+ * `</think>` tag whose remaining characters have not streamed in yet (e.g. a
+ * chunk ending in `<th`). Streaming consumers diff successive snapshots to emit
+ * deltas; without this, a partial tag is emitted as a delta and then can never
+ * be retracted once it resolves into a real tag that sanitization removes.
+ *
+ * Only safe for incremental streaming snapshots — never apply it to a final
+ * result, where a legitimate trailing `<` must survive.
+ */
+export function withoutTrailingThinkTagPrefix(value: string): string {
+  const max = Math.min(value.length, MAX_THINK_TAG_PREFIX);
+  for (let length = max; length > 0; length -= 1) {
+    const suffix = value.slice(value.length - length);
+    // A strict prefix of a tag (tag.length > suffix.length) is a partial tag;
+    // a complete tag is left untouched — sanitization already handled it.
+    if (THINK_TAG_VARIANTS.some((tag) => tag.length > suffix.length && tag.startsWith(suffix))) {
+      return value.slice(0, value.length - length);
+    }
+  }
+  return value;
 }
 
 function stripThinkBlocks(text: string, thinkBlocks: ThinkBlock[]): string {

@@ -122,6 +122,8 @@ async function streamWithChatCompletionsPassThrough(
   let reasoning = "";
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
+  const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
+  const nativeToolCalls = new NativeToolCallStreamState(requestDeclaresTools(options, request));
 
   await consumeSSE(response, (data) => {
     if (data === "[DONE]") {
@@ -133,10 +135,14 @@ async function streamWithChatCompletionsPassThrough(
       return;
     }
 
-    const delta = pickAssistantDelta(json);
+    const rawDelta = pickAssistantDelta(json);
     const reasoningDelta = pickAssistantReasoningDelta(json);
     const chunkUsage = pickUsage(json);
     const chunkFinishReason = pickFinishReason(json);
+    collectOpenAIStreamToolCalls(json, streamedToolCalls);
+    const nativeDelta = nativeToolCalls.push(rawDelta);
+    const delta = nativeDelta.textDelta;
+    const chunkToolCalls = mergeToolCalls(buildOpenAIStreamToolCalls(streamedToolCalls), nativeDelta.toolCalls);
 
     usage = preferLatestUsage(usage, chunkUsage);
     if (chunkFinishReason) {
@@ -152,14 +158,32 @@ async function streamWithChatCompletionsPassThrough(
       reasoning += reasoningDelta;
     }
 
-    emitOpenAIStreamChunk(callbacks, undefined, json, delta, reasoningDelta, chunkUsage, chunkFinishReason);
+    emitOpenAIStreamChunk(
+      callbacks,
+      undefined,
+      json,
+      delta,
+      reasoningDelta,
+      chunkUsage,
+      chunkFinishReason,
+      chunkToolCalls.length > 0 ? chunkToolCalls : undefined,
+    );
   });
+
+  const tail = nativeToolCalls.flush();
+  if (tail.textDelta) {
+    text += tail.textDelta;
+    callbacks.onToken?.(tail.textDelta);
+    emitOpenAIStreamChunk(callbacks, undefined, {}, tail.textDelta, "", undefined, undefined);
+  }
+  const toolCalls = mergeToolCalls(buildOpenAIStreamToolCalls(streamedToolCalls), nativeToolCalls.calls);
 
   const out = {
     text,
     reasoning: reasoning.length > 0 ? reasoning : undefined,
     usage,
-    finishReason,
+    finishReason: finishReason ?? (toolCalls.length > 0 ? "tool_calls" : undefined),
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
   };
   callbacks.onComplete?.(out);
   return out;
@@ -347,8 +371,9 @@ function emitOpenAIStreamChunk(
   reasoningDelta: string,
   usage: LLMUsage | undefined,
   finishReason: string | undefined,
+  toolCalls?: LLMToolCall[],
 ): void {
-  if (delta || reasoningDelta || usage || finishReason) {
+  if (delta || reasoningDelta || usage || finishReason || toolCalls) {
     callbacks.onChunk?.({
       textDelta: delta,
       reasoningDelta: reasoningDelta || undefined,
@@ -356,6 +381,7 @@ function emitOpenAIStreamChunk(
       raw,
       usage,
       finishReason,
+      toolCalls,
     });
   }
 }
@@ -670,6 +696,7 @@ async function streamWithChatCompletionsWithMCP(
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
     const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
+    const nativeToolCalls = new NativeToolCallStreamState();
     let reasoningFieldName: OpenAIReasoningFieldName | undefined;
 
     await consumeSSE(response, (data) => {
@@ -684,10 +711,12 @@ async function streamWithChatCompletionsWithMCP(
 
       lastPayload = json;
 
-      const delta = pickAssistantDelta(json);
+      const rawDelta = pickAssistantDelta(json);
       const reasoningDelta = pickAssistantReasoningDelta(json);
       const chunkUsage = pickUsage(json);
       const chunkFinishReason = pickFinishReason(json);
+      const nativeDelta = nativeToolCalls.push(rawDelta);
+      const delta = nativeDelta.textDelta;
 
       collectOpenAIStreamToolCalls(json, streamedToolCalls);
       roundUsage = preferLatestUsage(roundUsage, chunkUsage);
@@ -705,15 +734,24 @@ async function streamWithChatCompletionsWithMCP(
         reasoningFieldName ??= pickAssistantReasoningDeltaFieldName(json);
       }
 
-      emitOpenAIStreamChunk(callbacks, round, json, delta, reasoningDelta, chunkUsage, chunkFinishReason);
+      const chunkToolCalls = nativeDelta.toolCalls.length > 0
+        ? mergeToolCalls(buildOpenAIStreamToolCalls(streamedToolCalls), nativeDelta.toolCalls)
+        : undefined;
+      emitOpenAIStreamChunk(callbacks, round, json, delta, reasoningDelta, chunkUsage, chunkFinishReason, chunkToolCalls);
     });
 
+    const tail = nativeToolCalls.flush();
+    if (tail.textDelta) {
+      roundText += tail.textDelta;
+      callbacks.onToken?.(tail.textDelta);
+      emitOpenAIStreamChunk(callbacks, round, {}, tail.textDelta, "", undefined, undefined);
+    }
     aggregatedUsage = mergeUsage(aggregatedUsage, roundUsage);
     if (roundFinishReason) {
       finishReason = roundFinishReason;
     }
 
-    const calledTools = buildOpenAIStreamToolCalls(streamedToolCalls);
+    const calledTools = mergeToolCalls(buildOpenAIStreamToolCalls(streamedToolCalls), nativeToolCalls.calls);
     pushReasoningBlock(reasoningBlocks, round, roundReasoning);
     request.onTurnTransition?.({
       turnIndex: round,
@@ -823,6 +861,7 @@ async function streamWithResponsesAPIPassThrough(
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
   let lastPayload: Record<string, unknown> | undefined;
+  const streamedToolCalls = new Map<string, OpenAIResponsesStreamToolCallState>();
 
   await consumeSSE(response, (data) => {
     if (data === "[DONE]") {
@@ -842,6 +881,8 @@ async function streamWithResponsesAPIPassThrough(
     const delta = pickResponsesStreamTextDelta(json);
     const chunkUsage = pickResponsesStreamUsage(json);
     const chunkFinishReason = pickResponsesStreamFinishReason(json);
+    collectResponsesStreamToolCalls(json, streamedToolCalls);
+    const chunkToolCalls = buildResponsesStreamToolCalls(streamedToolCalls);
 
     usage = preferLatestUsage(usage, chunkUsage);
     if (chunkFinishReason) {
@@ -853,15 +894,26 @@ async function streamWithResponsesAPIPassThrough(
       callbacks.onToken?.(delta);
     }
 
-    emitOpenAIStreamChunk(callbacks, undefined, json, delta, "", chunkUsage, chunkFinishReason);
+    emitOpenAIStreamChunk(
+      callbacks,
+      undefined,
+      json,
+      delta,
+      "",
+      chunkUsage,
+      chunkFinishReason,
+      chunkToolCalls.length > 0 ? chunkToolCalls : undefined,
+    );
   });
 
   const finalPayload = lastPayload ?? {};
+  const toolCalls = buildResponsesStreamToolCalls(streamedToolCalls);
   const out: LLMResponse = {
     text: text.length > 0 ? text : (pickResponsesText(finalPayload) || pickAssistantText(finalPayload)),
     raw: finalPayload,
     usage: preferLatestUsage(usage, pickUsage(finalPayload)),
     finishReason: finishReason ?? pickResponsesFinishReason(finalPayload) ?? pickFinishReason(finalPayload),
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
   };
   callbacks.onComplete?.(out);
   return out;
@@ -1285,54 +1337,265 @@ interface OpenAIResponsesStreamToolCallState {
   argumentsText: string;
 }
 
+interface ToolCallStreamDelta {
+  textDelta: string;
+  toolCalls: LLMToolCall[];
+}
+
+const NATIVE_TOOL_CALL_OPEN = "<tool_call";
+const NATIVE_TOOL_CALL_CLOSE = "</tool_call>";
+
+class NativeToolCallStreamState {
+  readonly calls: LLMToolCall[] = [];
+  private pending = "";
+
+  // Native `<tool_call>` markup is only intercepted when the request actually
+  // declares tools; otherwise the state is a transparent pass-through so prose
+  // that happens to contain the literal markup is never swallowed.
+  constructor(private readonly enabled = true) {}
+
+  push(delta: string): ToolCallStreamDelta {
+    if (!delta || !this.enabled) {
+      return { textDelta: delta, toolCalls: [] };
+    }
+
+    this.pending += delta;
+    return this.drain(false);
+  }
+
+  flush(): ToolCallStreamDelta {
+    return this.enabled ? this.drain(true) : { textDelta: "", toolCalls: [] };
+  }
+
+  private drain(flush: boolean): ToolCallStreamDelta {
+    let textDelta = "";
+    const toolCalls: LLMToolCall[] = [];
+
+    while (this.pending.length > 0) {
+      const openIndex = this.pending.indexOf(NATIVE_TOOL_CALL_OPEN);
+      if (openIndex < 0) {
+        const keep = flush ? 0 : nativeToolCallPrefixSuffixLength(this.pending);
+        const emitLength = this.pending.length - keep;
+        if (emitLength > 0) {
+          textDelta += this.pending.slice(0, emitLength);
+          this.pending = this.pending.slice(emitLength);
+        }
+        break;
+      }
+
+      if (openIndex > 0) {
+        textDelta += this.pending.slice(0, openIndex);
+        this.pending = this.pending.slice(openIndex);
+        continue;
+      }
+
+      const closeIndex = this.pending.indexOf(NATIVE_TOOL_CALL_CLOSE);
+      if (closeIndex < 0) {
+        if (flush) {
+          this.pending = "";
+        }
+        break;
+      }
+
+      const blockEnd = closeIndex + NATIVE_TOOL_CALL_CLOSE.length;
+      const call = parseNativeToolCallBlock(this.pending.slice(0, blockEnd), this.calls.length);
+      if (call) {
+        this.calls.push(call);
+        toolCalls.push(call);
+      }
+      this.pending = this.pending.slice(blockEnd);
+    }
+
+    return { textDelta, toolCalls };
+  }
+}
+
+function requestDeclaresTools(options: OpenAICompatibleAdapterOptions, request: LLMRequest): boolean {
+  const hasTools = (body: Record<string, unknown> | undefined): boolean =>
+    Array.isArray(body?.tools) && body.tools.length > 0;
+  return hasTools(request.body) || hasTools(options.defaultBody);
+}
+
+const NATIVE_FUNCTION_PATTERN = /<function=([^>\s]+)\s*>([\s\S]*?)<\/function>/;
+const NATIVE_PARAMETER_PATTERN = /<parameter=([^>\s]+)\s*>([\s\S]*?)<\/parameter>/g;
+
+function parseNativeToolCallBlock(block: string, index: number): LLMToolCall | undefined {
+  const inner = extractNativeToolCallInner(block);
+  if (inner === undefined) {
+    return undefined;
+  }
+
+  // Two shapes appear inside <tool_call>…</tool_call>: a JSON object (Hermes/Qwen
+  // style) or a nested <function=…><parameter=…> tree (Llama style).
+  return parseNativeJsonToolCall(inner, index) ?? parseNativeXmlToolCall(inner, index);
+}
+
+function extractNativeToolCallInner(block: string): string | undefined {
+  const openEnd = block.indexOf(">");
+  const closeStart = block.lastIndexOf(NATIVE_TOOL_CALL_CLOSE);
+  if (openEnd < 0 || closeStart < 0 || closeStart <= openEnd) {
+    return undefined;
+  }
+
+  return block.slice(openEnd + 1, closeStart).trim();
+}
+
+function parseNativeXmlToolCall(inner: string, index: number): LLMToolCall | undefined {
+  const functionMatch = NATIVE_FUNCTION_PATTERN.exec(inner);
+  const functionName = functionMatch?.[1];
+  const functionBody = functionMatch?.[2];
+  if (!functionName || functionBody === undefined) {
+    return undefined;
+  }
+
+  const args: Record<string, unknown> = {};
+  for (const [, key, rawValue] of functionBody.matchAll(NATIVE_PARAMETER_PATTERN)) {
+    if (key && rawValue !== undefined) {
+      args[key] = coerceNativeParameterValue(rawValue.trim());
+    }
+  }
+
+  return {
+    id: `call_native_${index}`,
+    type: "function",
+    name: functionName,
+    arguments: JSON.stringify(args),
+  };
+}
+
+/**
+ * Parameter values arrive as untyped text. Decode them as JSON so numbers,
+ * booleans, and nested objects keep their type, falling back to the raw string
+ * when the value is not valid JSON.
+ */
+function coerceNativeParameterValue(value: string): unknown {
+  if (value.length === 0) {
+    return "";
+  }
+
+  const parsed = safeJSONParse(value);
+  // safeJSONParse returns null both for the literal `null` and on parse failure;
+  // only the literal should survive as null, everything else stays a string.
+  if (parsed === null) {
+    return value === "null" ? null : value;
+  }
+
+  return parsed;
+}
+
+function nativeToolCallPrefixSuffixLength(value: string): number {
+  const max = Math.min(value.length, NATIVE_TOOL_CALL_OPEN.length - 1);
+  for (let length = max; length > 0; length -= 1) {
+    if (NATIVE_TOOL_CALL_OPEN.startsWith(value.slice(-length))) {
+      return length;
+    }
+  }
+  return 0;
+}
+
+function parseNativeJsonToolCall(inner: string, index: number): LLMToolCall | undefined {
+  const parsed = safeJSONParse(inner);
+  if (!isRecord(parsed)) {
+    return undefined;
+  }
+
+  const name = pickString(parsed.name) ?? pickString(parsed.function);
+  if (!name) {
+    return undefined;
+  }
+
+  const rawArguments = parsed.arguments ?? parsed.parameters ?? {};
+  const args = typeof rawArguments === "string" ? rawArguments : JSON.stringify(rawArguments);
+  return {
+    id: pickString(parsed.id) ?? `call_native_${index}`,
+    type: "function",
+    name,
+    arguments: args,
+  };
+}
+
+function mergeToolCalls(...groups: LLMToolCall[][]): LLMToolCall[] {
+  const merged: LLMToolCall[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const call of group) {
+      const key = call.id || `${call.name ?? ""}:${String(call.arguments ?? "")}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push(call);
+    }
+  }
+  return merged;
+}
+
 function collectOpenAIStreamToolCalls(
   payload: Record<string, unknown>,
   state: Map<number, OpenAIStreamToolCallState>,
 ): void {
   const choices = payload.choices;
-  if (!Array.isArray(choices) || choices.length === 0 || !isRecord(choices[0])) {
+  if (!Array.isArray(choices) || choices.length === 0) {
     return;
   }
 
-  const delta = choices[0].delta;
-  if (!isRecord(delta) || !Array.isArray(delta.tool_calls)) {
-    return;
-  }
-
-  for (const rawToolCall of delta.tool_calls) {
-    if (!isRecord(rawToolCall)) {
+  for (const choice of choices) {
+    if (!isRecord(choice)) {
       continue;
     }
 
-    const index = toFiniteNumber(rawToolCall.index);
-    const toolIndex = index !== undefined ? Math.floor(index) : 0;
-    const existing = state.get(toolIndex) ?? {
-      index: toolIndex,
-      argumentsText: "",
-    };
-
-    const id = pickString(rawToolCall.id);
-    if (id) {
-      existing.id = id;
+    const delta = isRecord(choice.delta) ? choice.delta : undefined;
+    const message = isRecord(choice.message) ? choice.message : undefined;
+    const toolCalls = Array.isArray(delta?.tool_calls)
+      ? delta.tool_calls
+      : Array.isArray(message?.tool_calls)
+        ? message.tool_calls
+        : Array.isArray(choice.tool_calls)
+          ? choice.tool_calls
+          : undefined;
+    if (!toolCalls) {
+      continue;
     }
 
-    const type = pickString(rawToolCall.type);
-    if (type) {
-      existing.type = type;
-    }
+    for (const rawToolCall of toolCalls) {
+      if (!isRecord(rawToolCall)) {
+        continue;
+      }
 
-    const functionCall = isRecord(rawToolCall.function) ? rawToolCall.function : undefined;
-    const name = pickString(functionCall?.name);
-    if (name) {
-      existing.name = `${existing.name ?? ""}${name}`;
-    }
+      const index = toFiniteNumber(rawToolCall.index);
+      const toolIndex = index !== undefined ? Math.floor(index) : state.size;
+      const existing = state.get(toolIndex) ?? {
+        index: toolIndex,
+        argumentsText: "",
+      };
 
-    const argumentsDelta = pickString(functionCall?.arguments);
-    if (argumentsDelta) {
-      existing.argumentsText += argumentsDelta;
-    }
+      const id = pickString(rawToolCall.id);
+      if (id) {
+        existing.id = id;
+      }
 
-    state.set(toolIndex, existing);
+      const type = pickString(rawToolCall.type);
+      if (type) {
+        existing.type = type;
+      }
+
+      const functionCall = isRecord(rawToolCall.function) ? rawToolCall.function : undefined;
+      const name = pickString(functionCall?.name);
+      if (name) {
+        existing.name = `${existing.name ?? ""}${name}`;
+      }
+
+      const argumentsDelta = pickString(functionCall?.arguments);
+      if (argumentsDelta) {
+        if (message?.tool_calls === toolCalls || choice.tool_calls === toolCalls) {
+          existing.argumentsText = argumentsDelta;
+        } else {
+          existing.argumentsText += argumentsDelta;
+        }
+      }
+
+      state.set(toolIndex, existing);
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import {
   appendReasoningBlock,
   normalizeModelOutput,
   toStreamDataFingerprint,
+  withoutTrailingThinkTagPrefix,
 } from "./generate-output";
 import type { ModelCallOptions, ModelCallResult } from "./generate-shared";
 import { emitDebugRequest, emitDebugResponse } from "./generate-debug";
@@ -102,18 +103,25 @@ export async function callModel<TSnapshot, TTraceEvent>(
         return;
       }
 
+      // Withhold a trailing partial `<think>`/`</think>` fragment while more
+      // chunks may still arrive; the final (done) emit releases it in full.
+      const stableText = done ? normalized.text : withoutTrailingThinkTagPrefix(normalized.text);
+      const stableReasoning = done
+        ? normalized.reasoning
+        : withoutTrailingThinkTagPrefix(normalized.reasoning);
+
       const delta = {
-        text: normalized.text.startsWith(previousSnapshotText)
-          ? normalized.text.slice(previousSnapshotText.length)
+        text: stableText.startsWith(previousSnapshotText)
+          ? stableText.slice(previousSnapshotText.length)
           : "",
-        reasoning: normalized.reasoning.startsWith(previousSnapshotReasoning)
-          ? normalized.reasoning.slice(previousSnapshotReasoning.length)
+        reasoning: stableReasoning.startsWith(previousSnapshotReasoning)
+          ? stableReasoning.slice(previousSnapshotReasoning.length)
           : "",
       };
 
       lastSnapshotFingerprint = fingerprint;
-      previousSnapshotText = normalized.text;
-      previousSnapshotReasoning = normalized.reasoning;
+      previousSnapshotText = stableText;
+      previousSnapshotReasoning = stableReasoning;
       options.stream.onData?.({
         delta,
         snapshot,
