@@ -734,9 +734,20 @@ async function streamWithChatCompletionsWithMCP(
         reasoningFieldName ??= pickAssistantReasoningDeltaFieldName(json);
       }
 
-      const chunkToolCalls = nativeDelta.toolCalls.length > 0
-        ? mergeToolCalls(buildOpenAIStreamToolCalls(streamedToolCalls), nativeDelta.toolCalls)
-        : undefined;
+      // Surface the accumulated tool-call snapshot on every chunk that carries a
+      // tool-call delta, so consumers can stream partial arguments as they build
+      // up (matching the text/reasoning deltas) instead of only seeing the full
+      // call once the round completes. Standard OpenAI `tool_calls` deltas are
+      // accumulated in `streamedToolCalls`; native `<tool_call>` markup deltas are
+      // merged on top. Downstream dedups identical snapshots via the stream
+      // fingerprint, so re-emitting the same snapshot is harmless.
+      const streamedSnapshot = buildOpenAIStreamToolCalls(streamedToolCalls);
+      const chunkToolCalls =
+        nativeDelta.toolCalls.length > 0
+          ? mergeToolCalls(streamedSnapshot, nativeDelta.toolCalls)
+          : streamedSnapshot.length > 0
+            ? streamedSnapshot
+            : undefined;
       emitOpenAIStreamChunk(callbacks, round, json, delta, reasoningDelta, chunkUsage, chunkFinishReason, chunkToolCalls);
     });
 
@@ -998,7 +1009,19 @@ async function streamWithResponsesAPIWithMCP(
         roundReasoning += reasoningDelta;
       }
 
-      emitOpenAIStreamChunk(callbacks, round, json, delta, reasoningDelta, chunkUsage, chunkFinishReason);
+      // Stream the accumulated tool-call snapshot per chunk (see the chat
+      // completions variant), so partial arguments surface as they build up.
+      const chunkToolCalls = buildResponsesStreamToolCalls(streamedToolCalls);
+      emitOpenAIStreamChunk(
+        callbacks,
+        round,
+        json,
+        delta,
+        reasoningDelta,
+        chunkUsage,
+        chunkFinishReason,
+        chunkToolCalls.length > 0 ? chunkToolCalls : undefined,
+      );
     });
 
     const resolvedRoundUsage = preferLatestUsage(roundUsage, roundPayload ? pickUsage(roundPayload) : undefined);

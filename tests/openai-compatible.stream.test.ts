@@ -621,6 +621,57 @@ describe("openai-compatible streaming", () => {
     expect(chunks.some((chunk) => chunk.finishReason === "tool_calls")).toBe(true);
   });
 
+  test("streams partial tool-call arguments incrementally in MCP mode", async () => {
+    let round = 0;
+    const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
+      round += 1;
+      if (round === 1) {
+        return sseResponse([
+          JSON.stringify({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, id: "call_add", type: "function", function: { name: "add", arguments: "{\"a\":2" } },
+                  ],
+                },
+              },
+            ],
+          }),
+          JSON.stringify({
+            choices: [
+              { delta: { tool_calls: [{ index: 0, function: { arguments: ",\"b\":3}" } }] }, finish_reason: "tool_calls" },
+            ],
+          }),
+          "[DONE]",
+        ]);
+      }
+      return sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "5" } }] }),
+        JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }),
+        "[DONE]",
+      ]);
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({ baseURL: "https://example.com", model: "gpt-test", fetcher });
+
+    const chunks: LLMStreamChunk[] = [];
+    await adapter.stream!(
+      { prompt: "test", mcpClients: [createSimpleMCP()] },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    // The accumulated argument string must surface progressively, not only once
+    // the full call is assembled at round end.
+    const argSnapshots = chunks
+      .map((chunk) => chunk.toolCalls?.[0]?.arguments)
+      .filter((value): value is string => typeof value === "string");
+    expect(argSnapshots).toContain("{\"a\":2");
+    expect(argSnapshots).toContain("{\"a\":2,\"b\":3}");
+    // Partial snapshot must appear before the complete one.
+    expect(argSnapshots.indexOf("{\"a\":2")).toBeLessThan(argSnapshots.indexOf("{\"a\":2,\"b\":3}"));
+  });
+
   test("streams reasoning in MCP mode before tool calls", async () => {
     const chunks: LLMStreamChunk[] = [];
     const transitions: string[] = [];
