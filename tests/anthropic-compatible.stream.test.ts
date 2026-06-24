@@ -283,6 +283,73 @@ describe("anthropic-compatible streaming", () => {
     expect(requests[1]?.thinking).toEqual({ type: "adaptive" });
   });
 
+  test("streams partial tool-call arguments incrementally in MCP mode", async () => {
+    let round = 0;
+    const fetcher = (async () => {
+      round += 1;
+      if (round === 1) {
+        return sseResponse([
+          JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_add", name: "add", input: {} } }),
+          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"a\":2" } }),
+          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: ",\"b\":3}" } }),
+          JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use" } }),
+          "[DONE]",
+        ]);
+      }
+      return sseResponse([
+        JSON.stringify({ type: "content_block_delta", delta: { text: "5" } }),
+        JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" } }),
+        "[DONE]",
+      ]);
+    }) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "claude-test", fetcher });
+
+    const chunks: LLMStreamChunk[] = [];
+    await adapter.stream!(
+      { prompt: "test", mcpClients: [createSimpleMCP()] },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    // Arguments (built from `input_json_delta` fragments) surface progressively.
+    const argSnapshots = chunks
+      .map((chunk) => chunk.toolCalls?.[0]?.arguments)
+      .filter((value): value is string => typeof value === "string");
+    expect(argSnapshots).toContain("{\"a\":2");
+    expect(argSnapshots).toContain("{\"a\":2,\"b\":3}");
+    expect(argSnapshots.indexOf("{\"a\":2")).toBeLessThan(argSnapshots.indexOf("{\"a\":2,\"b\":3}"));
+  });
+
+  test("streams and returns tool calls in pass-through mode", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_lookup", name: "lookup", input: {} } }),
+        JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"q\":" } }),
+        JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "\"x\"}" } }),
+        JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use" } }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "claude-test", fetcher });
+
+    const chunks: LLMStreamChunk[] = [];
+    const result = await adapter.stream!(
+      { prompt: "test", body: { tools: [{ name: "lookup", input_schema: { type: "object" } }] } },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    // The tool call is surfaced in the final result (previously dropped entirely).
+    expect(result.toolCalls?.[0]).toMatchObject({ id: "toolu_lookup", name: "lookup", arguments: "{\"q\":\"x\"}" });
+    expect(result.finishReason).toBe("tool_use");
+    // ...and its arguments streamed incrementally across chunks.
+    const argSnapshots = chunks
+      .map((chunk) => chunk.toolCalls?.[0]?.arguments)
+      .filter((value): value is string => typeof value === "string");
+    expect(argSnapshots).toContain("{\"q\":");
+    expect(argSnapshots).toContain("{\"q\":\"x\"}");
+    expect(argSnapshots.indexOf("{\"q\":")).toBeLessThan(argSnapshots.indexOf("{\"q\":\"x\"}"));
+  });
+
   test("extracts delta from content_block.text", async () => {
     const tokens: string[] = [];
 

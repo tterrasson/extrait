@@ -106,6 +106,7 @@ async function streamPassThrough(
   let text = "";
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
+  const streamedToolCalls = new Map<number, AnthropicStreamToolCallState>();
 
   await consumeSSE(response, (data) => {
     if (data === "[DONE]") {
@@ -121,6 +122,7 @@ async function streamPassThrough(
     const chunkUsage = pickUsage(json);
     const chunkFinishReason = pickFinishReason(json);
 
+    collectAnthropicStreamToolCalls(json, streamedToolCalls);
     usage = preferLatestUsage(usage, chunkUsage);
     if (chunkFinishReason) {
       finishReason = chunkFinishReason;
@@ -131,17 +133,31 @@ async function streamPassThrough(
       callbacks.onToken?.(delta);
     }
 
-    if (delta || chunkUsage || chunkFinishReason) {
+    // Surface the accumulated tool-call snapshot (id/name from `tool_use` blocks,
+    // arguments from `input_json_delta` fragments) on every chunk once a tool
+    // call is in flight, so callers stream partial arguments instead of only
+    // seeing the completed call. Downstream dedups identical snapshots.
+    const streamedSnapshot = buildAnthropicStreamToolCalls(streamedToolCalls);
+    const chunkToolCalls = streamedSnapshot.length > 0 ? streamedSnapshot : undefined;
+
+    if (delta || chunkUsage || chunkFinishReason || chunkToolCalls) {
       callbacks.onChunk?.({
         textDelta: delta,
         raw: json,
         usage: chunkUsage,
         finishReason: chunkFinishReason,
+        toolCalls: chunkToolCalls,
       });
     }
   });
 
-  const out = { text, usage, finishReason };
+  const toolCalls = buildAnthropicStreamToolCalls(streamedToolCalls);
+  const out: LLMResponse = {
+    text,
+    usage,
+    finishReason: finishReason ?? (toolCalls.length > 0 ? "tool_use" : undefined),
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+  };
   callbacks.onComplete?.(out);
   return out;
 }
@@ -377,7 +393,13 @@ async function streamWithMCPToolLoop(
         roundReasoning += reasoningDelta;
       }
 
-      if (delta || reasoningDelta || chunkUsage || chunkFinishReason) {
+      // Stream the accumulated tool-call snapshot per chunk (see streamPassThrough)
+      // so partial arguments surface as they build up, rather than only via the
+      // single round-end emit below.
+      const streamedSnapshot = buildAnthropicStreamToolCalls(streamedToolCalls);
+      const chunkToolCalls = streamedSnapshot.length > 0 ? streamedSnapshot : undefined;
+
+      if (delta || reasoningDelta || chunkUsage || chunkFinishReason || chunkToolCalls) {
         const chunk: LLMStreamChunk = {
           textDelta: delta,
           reasoningDelta: reasoningDelta || undefined,
@@ -385,6 +407,7 @@ async function streamWithMCPToolLoop(
           raw: json,
           usage: chunkUsage,
           finishReason: chunkFinishReason,
+          toolCalls: chunkToolCalls,
         };
         callbacks.onChunk?.(chunk);
       }
