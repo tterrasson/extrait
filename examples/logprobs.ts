@@ -2,15 +2,22 @@
  * Logprobs + Debug Example
  *
  * Demonstrates:
- * - Requesting token log probabilities from an OpenAI-compatible chat endpoint
+ * - Requesting token log probabilities from an OpenAI-compatible Responses endpoint
  * - Enabling verbose request/response debug output
  * - Inspecting chosen tokens and their most likely alternatives
  *
- * Usage: bun run dev logprobs [prompt]
+ * Usage: bun run dev logprobs [--legacy-logprobs] [prompt]
+ *
+ * Pass --legacy-logprobs for Responses servers (e.g. llama.cpp) that reject a
+ * bare `top_logprobs` and require the Chat Completions-style `logprobs: true`
+ * flag; it is forwarded through `transport.defaultBody`.
  */
 
 import { createLLM, type LLMTokenLogprob } from "@/index";
 
+const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
+  | "openai-compatible"
+  | "openai-compatible-legacy";
 const model = process.env.LLM_MODEL ?? "gpt-4.1-nano";
 const baseURL = process.env.LLM_BASE_URL;
 const apiKey = process.env.LLM_API_KEY;
@@ -21,11 +28,18 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const input = process.argv.slice(3).join(" ").trim() || "Answer with one word: yes or no?";
+const args = process.argv.slice(3);
+const legacyLogprobs = args.includes("--legacy-logprobs");
+const input = args.filter((arg) => arg !== "--legacy-logprobs").join(" ").trim()
+  || "Answer with one word: yes or no?";
 const llm = createLLM({
-  provider: "openai-compatible",
+  provider,
   model,
-  transport: { baseURL, apiKey },
+  transport: {
+    baseURL,
+    apiKey,
+    ...(legacyLogprobs ? { defaultBody: { logprobs: true } } : {}),
+  },
 });
 
 const result = await llm.generate(input, {
@@ -34,10 +48,7 @@ const result = await llm.generate(input, {
     verbose: true,
   },
   request: {
-    body: {
-      logprobs: true,
-      top_logprobs: 3,
-    },
+    topLogprobs: 3,
   },
 });
 

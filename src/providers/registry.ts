@@ -4,11 +4,18 @@ import {
   type OpenAICompatibleAdapterOptions,
 } from "./openai-compatible";
 import {
+  createOpenAICompatibleLegacyAdapter,
+  type OpenAICompatibleLegacyAdapterOptions,
+} from "./openai-compatible-legacy";
+import {
   createAnthropicCompatibleAdapter,
   type AnthropicCompatibleAdapterOptions,
 } from "./anthropic-compatible";
 
-export type BuiltinProviderKind = "openai-compatible" | "anthropic-compatible";
+export type BuiltinProviderKind =
+  | "openai-compatible"
+  | "openai-compatible-legacy"
+  | "anthropic-compatible";
 
 export interface ProviderFactory<TOptions = unknown> {
   (options: TOptions): LLMAdapter;
@@ -71,6 +78,7 @@ export function createProviderRegistry(): ProviderRegistry {
 
 export function registerBuiltinProviders(registry: ProviderRegistry): ProviderRegistry {
   registry.register("openai-compatible", createOpenAICompatibleAdapter);
+  registry.register("openai-compatible-legacy", createOpenAICompatibleLegacyAdapter);
   registry.register("anthropic-compatible", createAnthropicCompatibleAdapter);
   return registry;
 }
@@ -96,6 +104,20 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
 
   if (config.provider === "openai-compatible") {
     const options: OpenAICompatibleAdapterOptions = {
+      model: config.model,
+      baseURL: transport.baseURL ?? "https://api.openai.com",
+      apiKey: transport.apiKey,
+      path: transport.path,
+      headers: transport.headers,
+      defaultBody: transport.defaultBody,
+      fetcher: transport.fetcher,
+    };
+
+    return options;
+  }
+
+  if (config.provider === "openai-compatible-legacy") {
+    const options: OpenAICompatibleLegacyAdapterOptions = {
       model: config.model,
       baseURL: transport.baseURL ?? "https://api.openai.com",
       apiKey: transport.apiKey,

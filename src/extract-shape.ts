@@ -2,7 +2,7 @@ import type { ExtractionCandidate, ExtractionHeuristicsOptions } from "./types";
 
 const RE_EMPTY_OBJECT = /^\{\s*\}$/;
 const RE_EMPTY_ARRAY = /^\[\s*\]$/;
-const RE_BOUNDARY_CHAR = /[\s,.;:!?`"'()[\]{}<>]/;
+const RE_BOUNDARY_CHAR = /[\s,.;:!?`"'()\[\]{}<>]/;
 
 export interface RankedCandidate extends ExtractionCandidate {
   shapeScore: number;

@@ -82,6 +82,8 @@ export interface LLMRequest {
   temperature?: number;
   reasoningEffort?: LLMReasoningEffort;
   maxTokens?: number;
+  /** Number of most likely tokens to return with each generated token (0-20). */
+  topLogprobs?: number;
   mcpClients?: MCPToolClient[];
   toolChoice?: LLMToolChoice;
   parallelToolCalls?: boolean;
@@ -117,9 +119,8 @@ export interface LLMTokenLogprob extends LLMTopLogprob {
 }
 
 /**
- * Token log probabilities, mirroring the OpenAI chat-completions `logprobs`
- * shape (`choices[].logprobs`). Populated only when the request opts in (via
- * `body.logprobs`); otherwise left undefined so callers see identical behavior.
+ * Provider-independent token log probabilities. Populated only when requested
+ * through `topLogprobs` (or a provider-specific body option).
  */
 export interface LLMLogprobs {
   content?: LLMTokenLogprob[] | null;

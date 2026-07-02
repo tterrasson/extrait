@@ -58,6 +58,23 @@ describe("generate", () => {
     });
   });
 
+  test("forwards request.topLogprobs to the adapter request", async () => {
+    const model = new MockAdapter({
+      text: "yes",
+      logprobs: { content: [{ token: "yes", logprob: -0.1 }] },
+    });
+
+    const result = await generate(model, "Say yes", {
+      request: { topLogprobs: 3 },
+    });
+
+    expect(model.requests[0]).toMatchObject({
+      prompt: "Say yes",
+      topLogprobs: 3,
+    });
+    expect(result.logprobs).toEqual({ content: [{ token: "yes", logprob: -0.1 }] });
+  });
+
   test("forwards request.reasoningEffort to the adapter request", async () => {
     const model = new MockAdapter({
       text: "Hello world",

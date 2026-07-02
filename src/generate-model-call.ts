@@ -32,6 +32,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
     temperature: options.request?.temperature,
     reasoningEffort: options.request?.reasoningEffort,
     maxTokens: options.request?.maxTokens,
+    topLogprobs: options.request?.topLogprobs,
     mcpClients: options.request?.mcpClients,
     toolChoice: options.request?.toolChoice,
     parallelToolCalls: options.request?.parallelToolCalls,

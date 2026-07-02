@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createOpenAICompatibleAdapter } from "@/providers/openai-compatible";
+import { createOpenAICompatibleAdapter as createResponsesAdapter } from "@/providers/openai-compatible";
+import {
+  createOpenAICompatibleLegacyAdapter as createOpenAICompatibleAdapter,
+} from "@/providers/openai-compatible-legacy";
 import type { MCPToolClient, LLMStreamChunk } from "@/types";
 
 function sseResponse(events: string[]): Response {
@@ -832,7 +835,7 @@ describe("openai-compatible streaming", () => {
         "[DONE]",
       ])) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -863,7 +866,7 @@ describe("openai-compatible streaming", () => {
         "[DONE]",
       ])) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -923,7 +926,7 @@ describe("openai-compatible streaming", () => {
         "[DONE]",
       ])) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -970,7 +973,7 @@ describe("openai-compatible streaming", () => {
         "[DONE]",
       ])) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -1023,9 +1026,10 @@ describe("openai-compatible streaming", () => {
         ]);
       }
 
-      expect(bodyParsed.previous_response_id).toBe("resp_1");
+      expect(bodyParsed.previous_response_id).toBeUndefined();
       const inputItems = Array.isArray(bodyParsed.input) ? bodyParsed.input : [];
-      expect((inputItems[0] as { type?: string }).type).toBe("function_call_output");
+      expect(inputItems.at(-2)).toMatchObject({ type: "function_call", call_id: "call_sum" });
+      expect(inputItems.at(-1)).toMatchObject({ type: "function_call_output", call_id: "call_sum" });
 
       return sseResponse([
         JSON.stringify({ type: "response.output_text.delta", delta: "16" }),
@@ -1042,7 +1046,7 @@ describe("openai-compatible streaming", () => {
       ]);
     }) as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -1119,7 +1123,7 @@ describe("openai-compatible text extraction", () => {
         status: "completed",
       })) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -1197,7 +1201,7 @@ describe("openai-compatible text extraction", () => {
         status: "completed",
       })) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -1217,7 +1221,7 @@ describe("openai-compatible text extraction", () => {
         status: "completed",
       })) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -1242,7 +1246,7 @@ describe("openai-compatible text extraction", () => {
         status: "completed",
       })) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -1310,7 +1314,7 @@ describe("openai-compatible text extraction", () => {
         status: "completed",
       })) as unknown as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",

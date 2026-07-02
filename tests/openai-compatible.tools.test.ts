@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createOpenAICompatibleAdapter } from "@/providers/openai-compatible";
+import { createOpenAICompatibleAdapter as createResponsesAdapter } from "@/providers/openai-compatible";
+import {
+  createOpenAICompatibleLegacyAdapter as createOpenAICompatibleAdapter,
+} from "@/providers/openai-compatible-legacy";
 import type { MCPToolClient } from "@/types";
 
 function jsonResponse(payload: Record<string, unknown>): Response {
@@ -507,7 +510,7 @@ describe("openai-compatible MCP tools", () => {
     expect(requests[1]?.reasoning_effort).toBe("medium");
   });
 
-  test("serializes reasoning_effort for responses API requests", async () => {
+  test("serializes reasoning effort for responses API requests", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
@@ -518,7 +521,7 @@ describe("openai-compatible MCP tools", () => {
       });
     }) as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -530,7 +533,7 @@ describe("openai-compatible MCP tools", () => {
       reasoningEffort: "max",
     });
 
-    expect(requests[0]?.reasoning_effort).toBe("xhigh");
+    expect(requests[0]?.reasoning).toEqual({ effort: "xhigh" });
   });
 
   test("surfaces unknown MCP tool as tool error and continues", async () => {
@@ -641,7 +644,7 @@ describe("openai-compatible MCP tools", () => {
       });
     }) as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({
+    const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
       model: "gpt-test",
@@ -655,6 +658,8 @@ describe("openai-compatible MCP tools", () => {
         { role: "assistant", content: "Seen" },
         { role: "user", content: "Add 7 and 9" },
       ],
+      body: { previous_response_id: "resp_external", store: false },
+      toolChoice: { type: "function", function: { name: "add" } },
       mcpClients: [createCalculatorMCP((args) => (argsSeen = args))],
     });
 
@@ -665,9 +670,13 @@ describe("openai-compatible MCP tools", () => {
     );
 
     const second = requests[1];
-    expect(second?.previous_response_id).toBe("resp_1");
+    expect(requests[0]?.previous_response_id).toBe("resp_external");
+    expect(requests[0]?.tool_choice).toEqual({ type: "function", name: "add" });
+    expect(second?.previous_response_id).toBe("resp_external");
+    expect(second?.store).toBe(false);
     const inputItems = Array.isArray(second?.input) ? second.input : [];
-    expect((inputItems[0] as { type?: string }).type).toBe("function_call_output");
+    expect(inputItems.at(-2)).toMatchObject({ type: "function_call", call_id: "call_sum" });
+    expect(inputItems.at(-1)).toMatchObject({ type: "function_call_output", call_id: "call_sum" });
 
     const firstInput = Array.isArray(requests[0]?.input) ? requests[0]?.input : [];
     expect(firstInput).toEqual([

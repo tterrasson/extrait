@@ -55,6 +55,10 @@ export {
   type OpenAICompatibleAdapterOptions,
 } from "./providers/openai-compatible";
 export {
+  createOpenAICompatibleLegacyAdapter,
+  type OpenAICompatibleLegacyAdapterOptions,
+} from "./providers/openai-compatible-legacy";
+export {
   createAnthropicCompatibleAdapter,
   DEFAULT_ANTHROPIC_MAX_TOKENS,
   DEFAULT_ANTHROPIC_VERSION,

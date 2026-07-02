@@ -32,7 +32,8 @@ deno add npm:extrait
 
 ## Quick Start
 
-Use a custom OpenAI-compatible transport to point `extrait` at a local endpoint.
+`openai-compatible` targets the Responses API. Use `openai-compatible-legacy`
+for servers that only expose Chat Completions.
 
 ```typescript
 import { createLLM, prompt, s } from "extrait";
@@ -93,14 +94,14 @@ Use `createLLM()` to configure the provider, model, transport, and client defaul
 
 ```typescript
 const llm = createLLM({
-  provider: "openai-compatible" | "anthropic-compatible",
+  provider: "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible",
   model: "gpt-5-nano",
   baseURL: "https://api.openai.com",       // optional alias for transport.baseURL
   apiKey: process.env.LLM_API_KEY,         // optional alias for transport.apiKey
   transport: {
     baseURL: "https://api.openai.com",     // optional
     apiKey: process.env.LLM_API_KEY,       // optional
-    path: "/v1/chat/completions",          // optional; anthropic-compatible usually uses /v1/messages
+    path: "/v1/responses",                 // optional provider endpoint override
     headers: { "x-trace-id": "docs-demo" }, // optional extra headers
     defaultBody: { user: "docs-demo" },    // optional provider body defaults
     version: "2023-06-01",                 // anthropic-compatible only
@@ -132,6 +133,16 @@ const llm = createLLM({
   model: "gpt-4o-mini",
   baseURL: process.env.LLM_BASE_URL ?? "http://localhost:1234/v1",
   apiKey: process.env.LLM_API_KEY ?? "local-demo-key",
+});
+
+// Chat Completions-only gateway
+const legacy = createLLM({
+  provider: "openai-compatible-legacy",
+  model: "local-model",
+  transport: {
+    baseURL: "http://localhost:1234",
+    apiKey: "local-demo-key",
+  },
 });
 
 // Anthropic-compatible endpoint with explicit API version
@@ -352,7 +363,7 @@ const result = await llm.generate(
 );
 ```
 
-On `openai-compatible`, this is sent as `reasoning_effort`, with `max` mapped to `xhigh`. On `anthropic-compatible`, this is sent as `output_config.effort` and auto-enables `thinking: { type: "adaptive" }`.
+On `openai-compatible`, this is sent as `reasoning: { effort }`; on `openai-compatible-legacy`, as `reasoning_effort`. In both cases `max` is mapped to `xhigh`. On `anthropic-compatible`, this is sent as `output_config.effort` and auto-enables `thinking: { type: "adaptive" }`.
 
 For existing history or multi-turn conversations, pass `messages` directly:
 
@@ -490,7 +501,7 @@ Successful `structured()` calls return validated data plus normalized text/reaso
     totalTokens?: number,
     cost?: number,
   },
-  finishReason?: string,        // e.g., "stop"
+  finishReason?: string,        // provider vocabulary: "completed" (Responses), "stop" (Chat Completions / Anthropic)
 }
 ```
 
@@ -728,7 +739,7 @@ bun run dev embeddings "the cat sat on the mat" "a feline rested on the rug"
 
 These environment variables are used across the examples and common client setups.
 
-- `LLM_PROVIDER` - `openai-compatible` or `anthropic-compatible`
+- `LLM_PROVIDER` - `openai-compatible`, `openai-compatible-legacy`, or `anthropic-compatible`
 - `LLM_BASE_URL` - API endpoint (optional)
 - `LLM_MODEL` - Model name (default: `gpt-5-nano`)
 - `LLM_API_KEY` - API key for the provider
