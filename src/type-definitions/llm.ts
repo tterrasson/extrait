@@ -104,6 +104,28 @@ export interface LLMUsage {
   cost?: number;
 }
 
+/** One alternative token considered at a position, with its log probability. */
+export interface LLMTopLogprob {
+  token: string;
+  logprob: number;
+  bytes?: number[] | null;
+}
+
+/** The chosen token at a position, plus (optionally) the top alternatives. */
+export interface LLMTokenLogprob extends LLMTopLogprob {
+  top_logprobs?: LLMTopLogprob[];
+}
+
+/**
+ * Token log probabilities, mirroring the OpenAI chat-completions `logprobs`
+ * shape (`choices[].logprobs`). Populated only when the request opts in (via
+ * `body.logprobs`); otherwise left undefined so callers see identical behavior.
+ */
+export interface LLMLogprobs {
+  content?: LLMTokenLogprob[] | null;
+  refusal?: LLMTokenLogprob[] | null;
+}
+
 export interface LLMResponse {
   text: string;
   reasoning?: string;
@@ -111,6 +133,7 @@ export interface LLMResponse {
   raw?: unknown;
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
   toolCalls?: LLMToolCall[];
   toolExecutions?: LLMToolExecution[];
 }
@@ -124,6 +147,7 @@ export interface LLMStreamChunk {
   done?: boolean;
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
 }
 
 export interface LLMStreamCallbacks {
@@ -275,6 +299,7 @@ export interface GenerateAttempt {
   reasoning: string;
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
   reasoningBlocks?: ReasoningBlock[];
 }
 
@@ -284,5 +309,6 @@ export interface GenerateResult {
   attempts: GenerateAttempt[];
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
   reasoningBlocks?: ReasoningBlock[];
 }

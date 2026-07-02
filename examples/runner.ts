@@ -7,6 +7,7 @@
 
 const availableExamples = [
   "generate",
+  "logprobs",
   "streaming",
   "streaming-with-tools",
   "streaming-turns-with-tools",

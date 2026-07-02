@@ -812,6 +812,7 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
     success: parsed.success,
     usage: response.usage,
     finishReason: response.finishReason,
+    ...(response.logprobs ? { logprobs: response.logprobs } : {}),
     ...(response.reasoningBlocks ? { reasoningBlocks: response.reasoningBlocks } : {}),
     parsed,
   };
@@ -899,6 +900,7 @@ function buildSuccessResult<T>(data: T, attempts: StructuredAttempt<T>[]): Struc
     attempts,
     usage: aggregateUsage(attempts),
     finishReason: final?.finishReason,
+    ...(final?.logprobs ? { logprobs: final.logprobs } : {}),
     ...(final?.reasoningBlocks ? { reasoningBlocks: final.reasoningBlocks } : {}),
   };
 }

@@ -84,6 +84,71 @@ describe("openai-compatible streaming", () => {
     expect(requests[0]?.stream_options).toEqual({ include_usage: true });
   });
 
+  test("normalizes and accumulates streamed content and refusal logprobs", async () => {
+    const chunks: LLMStreamChunk[] = [];
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          choices: [{
+            delta: { content: "yes" },
+            logprobs: {
+              content: [{
+                token: "yes",
+                logprob: -0.1,
+                bytes: [121, 101, 115],
+                top_logprobs: [
+                  { token: "yes", logprob: -0.1, bytes: [121, 101, 115] },
+                  { token: "no", logprob: -2.4, bytes: null },
+                ],
+              }],
+            },
+          }],
+        }),
+        JSON.stringify({
+          choices: [{
+            delta: {},
+            finish_reason: "content_filter",
+            logprobs: {
+              refusal: [{ token: " refusal", logprob: -0.3, bytes: [999] }],
+            },
+          }],
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+    const result = await adapter.stream!(
+      { prompt: "test", body: { logprobs: true, top_logprobs: 2 } },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(chunks[0]?.logprobs?.content?.[0]).toEqual({
+      token: "yes",
+      logprob: -0.1,
+      bytes: [121, 101, 115],
+      top_logprobs: [
+        { token: "yes", logprob: -0.1, bytes: [121, 101, 115] },
+        { token: "no", logprob: -2.4, bytes: null },
+      ],
+    });
+    expect(result.logprobs).toEqual({
+      content: [{
+        token: "yes",
+        logprob: -0.1,
+        bytes: [121, 101, 115],
+        top_logprobs: [
+          { token: "yes", logprob: -0.1, bytes: [121, 101, 115] },
+          { token: "no", logprob: -2.4, bytes: null },
+        ],
+      }],
+      refusal: [{ token: " refusal", logprob: -0.3 }],
+    });
+  });
+
   test("requests usage reporting on streamed chat completions and respects caller overrides", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input: Request | string | URL, init?: RequestInit) => {
@@ -1015,6 +1080,38 @@ describe("openai-compatible streaming", () => {
 });
 
 describe("openai-compatible text extraction", () => {
+  test("normalizes chat completion logprobs", async () => {
+    const fetcher = (async () =>
+      jsonResponse({
+        choices: [{
+          finish_reason: "stop",
+          message: { role: "assistant", content: "A" },
+          logprobs: {
+            content: [{
+              token: "A",
+              logprob: -0.25,
+              bytes: [65],
+              top_logprobs: [{ token: "B", logprob: -1.5, bytes: [66] }],
+            }],
+          },
+        }],
+      })) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+    const result = await adapter.complete({ prompt: "test" });
+
+    expect(result.logprobs?.content).toEqual([{
+      token: "A",
+      logprob: -0.25,
+      bytes: [65],
+      top_logprobs: [{ token: "B", logprob: -1.5, bytes: [66] }],
+    }]);
+  });
+
   test("pickResponsesText from output_text", async () => {
     const fetcher = (async () =>
       jsonResponse({

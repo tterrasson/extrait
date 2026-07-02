@@ -1,5 +1,5 @@
 import { color, dim, title } from "./utils/debug-colors";
-import type { LLMRequest, LLMUsage } from "./types";
+import type { LLMLogprobs, LLMRequest, LLMUsage } from "./types";
 import type { NormalizedDebugConfig } from "./generate-shared";
 
 export interface DebugRequestInput {
@@ -24,6 +24,7 @@ export interface DebugResponseInput {
   parseSource: string;
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
 }
 
 export function emitDebugRequest(
@@ -114,6 +115,10 @@ export function emitDebugResponse(
   ];
   if (config.verbose) {
     lines.push(color(config, "parseSource:", "yellow"), input.parseSource);
+    lines.push(
+      color(config, "logprobs:", "yellow"),
+      input.logprobs ? JSON.stringify(input.logprobs, null, 2) : "(none)",
+    );
   }
 
   emitDebug(config, lines.join("\n"));

@@ -1,4 +1,5 @@
 import type {
+  LLMLogprobs,
   LLMMessage,
   LLMRequest,
   LLMToolCall,
@@ -89,6 +90,7 @@ export interface ModelCallResult {
   via: "complete" | "stream";
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
   reasoningBlocks?: ReasoningBlock[];
 }
 

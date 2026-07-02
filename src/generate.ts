@@ -82,6 +82,7 @@ export async function generate(
     reasoning: response.reasoning,
     usage: response.usage,
     finishReason: response.finishReason,
+    ...(response.logprobs ? { logprobs: response.logprobs } : {}),
     ...(response.reasoningBlocks ? { reasoningBlocks: response.reasoningBlocks } : {}),
   };
   const attempts = [attempt];
@@ -102,6 +103,7 @@ export async function generate(
     attempts,
     usage: aggregateUsage(attempts),
     finishReason: attempt.finishReason,
+    ...(attempt.logprobs ? { logprobs: attempt.logprobs } : {}),
     ...(attempt.reasoningBlocks ? { reasoningBlocks: attempt.reasoningBlocks } : {}),
   };
 }

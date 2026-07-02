@@ -3,10 +3,13 @@ import type {
   EmbeddingResult,
   HTTPHeaders,
   LLMAdapter,
+  LLMLogprobs,
   LLMMessage,
   LLMRequest,
   LLMResponse,
   LLMStreamCallbacks,
+  LLMTokenLogprob,
+  LLMTopLogprob,
   LLMToolCall,
   LLMUsage,
   ReasoningBlock,
@@ -122,6 +125,8 @@ async function streamWithChatCompletionsPassThrough(
   let reasoning = "";
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
+  const logprobsContent: LLMTokenLogprob[] = [];
+  const logprobsRefusal: LLMTokenLogprob[] = [];
   const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
   const nativeToolCalls = new NativeToolCallStreamState(requestDeclaresTools(options, request));
 
@@ -139,6 +144,8 @@ async function streamWithChatCompletionsPassThrough(
     const reasoningDelta = pickAssistantReasoningDelta(json);
     const chunkUsage = pickUsage(json);
     const chunkFinishReason = pickFinishReason(json);
+    const chunkLogprobs = pickChatLogprobs(json);
+    appendChatLogprobs(chunkLogprobs, logprobsContent, logprobsRefusal);
     collectOpenAIStreamToolCalls(json, streamedToolCalls);
     const nativeDelta = nativeToolCalls.push(rawDelta);
     const delta = nativeDelta.textDelta;
@@ -167,6 +174,7 @@ async function streamWithChatCompletionsPassThrough(
       chunkUsage,
       chunkFinishReason,
       chunkToolCalls.length > 0 ? chunkToolCalls : undefined,
+      chunkLogprobs,
     );
   });
 
@@ -183,6 +191,7 @@ async function streamWithChatCompletionsPassThrough(
     reasoning: reasoning.length > 0 ? reasoning : undefined,
     usage,
     finishReason: finishReason ?? (toolCalls.length > 0 ? "tool_calls" : undefined),
+    ...withChatLogprobs(logprobsContent, logprobsRefusal),
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
   };
   callbacks.onComplete?.(out);
@@ -372,8 +381,9 @@ function emitOpenAIStreamChunk(
   usage: LLMUsage | undefined,
   finishReason: string | undefined,
   toolCalls?: LLMToolCall[],
+  logprobs?: LLMLogprobs,
 ): void {
-  if (delta || reasoningDelta || usage || finishReason || toolCalls) {
+  if (delta || reasoningDelta || usage || finishReason || toolCalls || logprobs) {
     callbacks.onChunk?.({
       textDelta: delta,
       reasoningDelta: reasoningDelta || undefined,
@@ -382,6 +392,7 @@ function emitOpenAIStreamChunk(
       usage,
       finishReason,
       toolCalls,
+      logprobs,
     });
   }
 }
@@ -419,12 +430,14 @@ async function completeWithChatCompletionsPassThrough(
 
   const toolCalls = pickChatToolCalls(payload);
   const reasoning = pickAssistantReasoning(payload);
+  const logprobs = pickChatLogprobs(payload);
   return {
     text: pickAssistantText(payload),
     reasoning: reasoning.length > 0 ? reasoning : undefined,
     raw: payload,
     usage: pickUsage(payload),
     finishReason: pickFinishReason(payload),
+    ...(logprobs ? { logprobs } : {}),
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
   };
 }
@@ -512,6 +525,7 @@ async function completeWithChatCompletionsWithMCP(
         raw: payload,
         usage: aggregatedUsage,
         finishReason,
+        ...withPickedChatLogprobs(payload),
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
       };
@@ -545,6 +559,7 @@ async function completeWithChatCompletionsWithMCP(
     raw: lastPayload,
     usage: aggregatedUsage,
     finishReason,
+    ...(lastPayload ? withPickedChatLogprobs(lastPayload) : {}),
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
   };
@@ -695,6 +710,8 @@ async function streamWithChatCompletionsWithMCP(
     let roundReasoning = "";
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
+    const roundLogprobsContent: LLMTokenLogprob[] = [];
+    const roundLogprobsRefusal: LLMTokenLogprob[] = [];
     const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
     const nativeToolCalls = new NativeToolCallStreamState();
     let reasoningFieldName: OpenAIReasoningFieldName | undefined;
@@ -715,6 +732,8 @@ async function streamWithChatCompletionsWithMCP(
       const reasoningDelta = pickAssistantReasoningDelta(json);
       const chunkUsage = pickUsage(json);
       const chunkFinishReason = pickFinishReason(json);
+      const chunkLogprobs = pickChatLogprobs(json);
+      appendChatLogprobs(chunkLogprobs, roundLogprobsContent, roundLogprobsRefusal);
       const nativeDelta = nativeToolCalls.push(rawDelta);
       const delta = nativeDelta.textDelta;
 
@@ -748,7 +767,17 @@ async function streamWithChatCompletionsWithMCP(
           : streamedSnapshot.length > 0
             ? streamedSnapshot
             : undefined;
-      emitOpenAIStreamChunk(callbacks, round, json, delta, reasoningDelta, chunkUsage, chunkFinishReason, chunkToolCalls);
+      emitOpenAIStreamChunk(
+        callbacks,
+        round,
+        json,
+        delta,
+        reasoningDelta,
+        chunkUsage,
+        chunkFinishReason,
+        chunkToolCalls,
+        chunkLogprobs,
+      );
     });
 
     const tail = nativeToolCalls.flush();
@@ -778,6 +807,7 @@ async function streamWithChatCompletionsWithMCP(
         raw: lastPayload,
         usage: aggregatedUsage,
         finishReason,
+        ...withChatLogprobs(roundLogprobsContent, roundLogprobsRefusal),
         toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
       };
@@ -1210,6 +1240,125 @@ function pickChatToolCalls(payload: Record<string, unknown>): LLMToolCall[] {
       arguments: fn?.arguments,
     };
   });
+}
+
+/**
+ * Reads `choices[0].logprobs` from a non-streaming chat-completion payload,
+ * normalizing it to {@link LLMLogprobs}. Returns undefined when the response
+ * carries no logprobs (the model was not asked for them), so callers can leave
+ * the field off entirely.
+ */
+function pickChatLogprobs(payload: Record<string, unknown>): LLMLogprobs | undefined {
+  const first = firstChoice(payload);
+  if (!first || !isRecord(first.logprobs)) {
+    return undefined;
+  }
+  const content = normalizeLogprobEntries(first.logprobs.content);
+  const refusal = normalizeLogprobEntries(first.logprobs.refusal);
+  if (!content && !refusal) {
+    return undefined;
+  }
+  return {
+    ...(content ? { content } : {}),
+    ...(refusal ? { refusal } : {}),
+  };
+}
+
+function withPickedChatLogprobs(payload: Record<string, unknown>): { logprobs?: LLMLogprobs } {
+  const logprobs = pickChatLogprobs(payload);
+  return logprobs ? { logprobs } : {};
+}
+
+/**
+ * Appends a streaming chunk's content/refusal logprobs to the running
+ * accumulators. Concatenating chunks reconstructs the full token sequences.
+ */
+function appendChatLogprobs(
+  logprobs: LLMLogprobs | undefined,
+  contentTarget: LLMTokenLogprob[],
+  refusalTarget: LLMTokenLogprob[],
+): void {
+  if (!logprobs) {
+    return;
+  }
+  if (logprobs.content) {
+    contentTarget.push(...logprobs.content);
+  }
+  if (logprobs.refusal) {
+    refusalTarget.push(...logprobs.refusal);
+  }
+}
+
+function withChatLogprobs(
+  content: LLMTokenLogprob[],
+  refusal: LLMTokenLogprob[],
+): { logprobs?: LLMLogprobs } {
+  if (content.length === 0 && refusal.length === 0) {
+    return {};
+  }
+  return {
+    logprobs: {
+      ...(content.length > 0 ? { content } : {}),
+      ...(refusal.length > 0 ? { refusal } : {}),
+    },
+  };
+}
+
+function firstChoice(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return undefined;
+  }
+  return isRecord(choices[0]) ? choices[0] : undefined;
+}
+
+function normalizeLogprobEntries(value: unknown): LLMTokenLogprob[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const entries: LLMTokenLogprob[] = [];
+  for (const item of value) {
+    const base = normalizeLogprobBase(item);
+    if (!base || !isRecord(item)) {
+      continue;
+    }
+    const top = Array.isArray(item.top_logprobs)
+      ? item.top_logprobs
+          .map((alt) => normalizeLogprobBase(alt))
+          .filter((alt): alt is LLMTopLogprob => alt !== undefined)
+      : undefined;
+    entries.push({ ...base, ...(top && top.length > 0 ? { top_logprobs: top } : {}) });
+  }
+  return entries.length > 0 ? entries : undefined;
+}
+
+function normalizeLogprobBase(value: unknown): LLMTopLogprob | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const token = pickString(value.token);
+  const logprob = toFiniteNumber(value.logprob);
+  if (token === undefined || logprob === undefined) {
+    return undefined;
+  }
+  return {
+    token,
+    logprob,
+    ...normalizeLogprobBytes(value.bytes),
+  };
+}
+
+function normalizeLogprobBytes(value: unknown): { bytes?: number[] | null } {
+  if (value === null) {
+    return { bytes: null };
+  }
+  if (
+    Array.isArray(value) &&
+    value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
+  ) {
+    return { bytes: value as number[] };
+  }
+  return {};
 }
 
 function pickResponsesToolCalls(payload: Record<string, unknown>): LLMToolCall[] {

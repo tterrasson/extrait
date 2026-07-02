@@ -75,6 +75,18 @@ describe("generate", () => {
     });
   });
 
+  test("exposes logprobs on the result and attempt", async () => {
+    const logprobs = {
+      content: [{ token: "Hello", logprob: -0.1, bytes: [72] }],
+    };
+    const model = new MockAdapter({ text: "Hello", logprobs });
+
+    const result = await generate(model, "Say hello");
+
+    expect(result.logprobs).toEqual(logprobs);
+    expect(result.attempts[0]?.logprobs).toEqual(logprobs);
+  });
+
   test("supports generate(adapter, { prompt, ...options }) with messages and merged system prompt", async () => {
     const model = new MockAdapter({
       text: "Answer",

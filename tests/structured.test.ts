@@ -119,6 +119,22 @@ class ReasoningMockAdapter implements LLMAdapter {
 }
 
 describe("structured", () => {
+  test("exposes logprobs on the result and attempt", async () => {
+    const logprobs = {
+      content: [{ token: "{", logprob: -0.01, bytes: [123] }],
+    };
+    const model: LLMAdapter = {
+      async complete(): Promise<LLMResponse> {
+        return { text: '{"value": 7}', logprobs };
+      },
+    };
+
+    const result = await structured(model, z.object({ value: z.number() }), "Return JSON");
+
+    expect(result.logprobs).toEqual(logprobs);
+    expect(result.attempts[0]?.logprobs).toEqual(logprobs);
+  });
+
   test("supports overload structured(adapter, schema, prompt, options) + selfHeal sugar", async () => {
     const schema = z.object({ value: z.number() });
     const model = new MockAdapter(["{ value: 'oops' }", '{"value": 12}']);

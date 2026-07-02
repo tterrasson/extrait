@@ -253,6 +253,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
       parseSource: finalNormalized.parseSource,
       usage,
       finishReason,
+      logprobs: response.logprobs,
     });
 
     return {
@@ -263,6 +264,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
       via: "stream",
       usage,
       finishReason,
+      ...(response.logprobs ? { logprobs: response.logprobs } : {}),
       reasoningBlocks: finalNormalized.reasoningBlocks,
     };
   }
@@ -293,6 +295,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
     parseSource: normalized.parseSource,
     usage: response.usage,
     finishReason: response.finishReason,
+    logprobs: response.logprobs,
   });
 
   return {
@@ -303,6 +306,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
     via: "complete",
     usage: response.usage,
     finishReason: response.finishReason,
+    ...(response.logprobs ? { logprobs: response.logprobs } : {}),
     reasoningBlocks: normalized.reasoningBlocks,
   };
 }

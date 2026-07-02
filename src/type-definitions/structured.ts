@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { ParseLLMOutputOptions, ParseLLMOutputResult, StructuredMode } from "./parse";
 import type {
+  LLMLogprobs,
   LLMMessage,
   LLMRequest,
   LLMToolCall,
@@ -137,6 +138,7 @@ export interface StructuredAttempt<T> {
   success: boolean;
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
   reasoningBlocks?: ReasoningBlock[];
   parsed: ParseLLMOutputResult<T>;
 }
@@ -149,6 +151,7 @@ export interface StructuredResult<T> {
   attempts: StructuredAttempt<T>[];
   usage?: LLMUsage;
   finishReason?: string;
+  logprobs?: LLMLogprobs;
   reasoningBlocks?: ReasoningBlock[];
 }
 
