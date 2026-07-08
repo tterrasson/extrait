@@ -3,6 +3,7 @@ import { createLLM, createMCPClient, prompt, s, StructuredParseError } from "@/i
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"
+  | "openai-compatible-legacy"
   | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "gpt-5-nano";
