@@ -13,12 +13,14 @@
 - `llm.ts` — `createLLM()` factory
 - `structured.ts` — `llm.structured()` pipeline (parse → repair → Zod validate → self-heal)
 - `generate.ts` — `llm.generate()` text generation
+- `generate-shared.ts` / `generate-model-call.ts` / `generate-output.ts` — model-call pipeline shared by `structured()` and `generate()` (streaming snapshots, think-tag normalization, debug/observe)
 - `prompt.ts` — `` prompt`...` `` tag + `prompt()` fluent builder
+- `conversation.ts` / `image.ts` — multi-turn history and multimodal content helpers
 - `schema-builder.ts` — `s.*` Zod helpers
 - `parse.ts` / `extract.ts` — JSON extraction heuristics + validation
 - `mcp.ts` — `createMCPClient()`
-- `providers/` — `openai-compatible` and `anthropic-compatible` adapters, MCP runtime, stream parsing
-- `types.ts` — shared types
+- `providers/` — `openai-compatible` (Responses API), `openai-compatible-legacy` (Chat Completions), and `anthropic-compatible` adapters; MCP runtime; SSE parsing; `registry.ts` for `createLLM` wiring
+- `types.ts` — re-exports the shared types defined in `type-definitions/`
 
 Tests in `tests/` (Bun native), examples in `examples/` (run via `bun run dev <name>`), output in `dist/`.
 

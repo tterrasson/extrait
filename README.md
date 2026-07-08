@@ -48,6 +48,8 @@ const llm = createLLM({
   },
 });
 
+const text = "Beat two eggs, add flour and milk, then cook thin pancakes in a hot pan.";
+
 const RecipeSchema = s.schema(
   "Recipe",
   z.object({
@@ -70,6 +72,7 @@ These examples cover the most common usage patterns in the repository.
 
 - [`examples/simple.ts`](examples/simple.ts) - Basic structured output with streaming
 - [`examples/generate.ts`](examples/generate.ts) - High-level text generation
+- [`examples/logprobs.ts`](examples/logprobs.ts) - Token log probabilities and alternatives
 - [`examples/streaming.ts`](examples/streaming.ts) - Real-time partial output and snapshot updates
 - [`examples/calculator-tool.ts`](examples/calculator-tool.ts) - Structured extraction with MCP tools
 - [`examples/streaming-turns-with-tools.ts`](examples/streaming-turns-with-tools.ts) - Streaming MCP turns, transitions, and reasoning blocks
@@ -102,9 +105,12 @@ const llm = createLLM({
     baseURL: "https://api.openai.com",     // optional
     apiKey: process.env.LLM_API_KEY,       // optional
     path: "/v1/responses",                 // optional provider endpoint override
+    embeddingPath: "/v1/embeddings",       // optional embedding endpoint (openai-compatible only)
     headers: { "x-trace-id": "docs-demo" }, // optional extra headers
     defaultBody: { user: "docs-demo" },    // optional provider body defaults
     version: "2023-06-01",                 // anthropic-compatible only
+    defaultMaxTokens: 4096,                // anthropic-compatible only (default: 1024)
+    defaultMaxToolRounds: 10,              // optional cap on MCP tool rounds (default: 100)
     fetcher: fetch,                        // optional custom fetch implementation
   },
   defaults: {
@@ -363,7 +369,7 @@ const result = await llm.generate(
 );
 ```
 
-On `openai-compatible`, this is sent as `reasoning: { effort }`; on `openai-compatible-legacy`, as `reasoning_effort`. In both cases `max` is mapped to `xhigh`. On `anthropic-compatible`, this is sent as `output_config.effort` and auto-enables `thinking: { type: "adaptive" }`.
+On `openai-compatible`, this is sent as `reasoning: { effort }`; on `openai-compatible-legacy`, as `reasoning_effort`. In both cases `max` is mapped to `xhigh`. On `anthropic-compatible`, this is sent as `output_config.effort` and auto-enables `thinking: { type: "adaptive" }`; the thinking content comes back in `result.reasoning`.
 
 For existing history or multi-turn conversations, pass `messages` directly:
 
@@ -378,6 +384,25 @@ const result = await llm.generate({ prompt: { messages } });
 ```
 
 Use `llm.adapter.complete(...)` or `llm.adapter.stream(...)` only when you need the raw low-level provider interface.
+
+### Token Logprobs
+
+Set `request.topLogprobs` (0-20) to get token-level probabilities on `openai-compatible` and `openai-compatible-legacy`. The result exposes `logprobs.content` — one entry per generated token, each with its chosen token, logprob, and the requested number of alternatives.
+
+```typescript
+const result = await llm.generate(prompt`Answer with one word: yes or no?`, {
+  request: { topLogprobs: 3 },
+});
+
+for (const token of result.logprobs?.content ?? []) {
+  const probability = Math.exp(token.logprob);
+  console.log(token.token, probability, token.top_logprobs);
+}
+```
+
+On `openai-compatible` (Responses API) this sends `top_logprobs` and automatically adds the `message.output_text.logprobs` include; on `openai-compatible-legacy` it sends `logprobs: true` + `top_logprobs`. Streaming accumulates logprobs across chunks. Anthropic has no logprobs API, so `anthropic-compatible` never returns them.
+
+Some Responses-dialect servers (e.g. llama.cpp) also require the Chat Completions-style flag; pass it through `transport.defaultBody: { logprobs: true }`. See [examples/logprobs.ts](examples/logprobs.ts).
 
 ### Images (multimodal)
 
@@ -470,6 +495,8 @@ Successful `generate()` calls return normalized text/reasoning plus request meta
     cost?: number,
   },
   finishReason?: string,
+  logprobs?: LLMLogprobs,          // when request.topLogprobs is set
+  reasoningBlocks?: ReasoningBlock[], // per-turn reasoning for multi-round MCP streams
 }
 ```
 
@@ -502,6 +529,8 @@ Successful `structured()` calls return validated data plus normalized text/reaso
     cost?: number,
   },
   finishReason?: string,        // provider vocabulary: "completed" (Responses), "stop" (Chat Completions / Anthropic)
+  logprobs?: LLMLogprobs,          // when request.topLogprobs is set
+  reasoningBlocks?: ReasoningBlock[], // per-turn reasoning for multi-round MCP streams
 }
 ```
 
@@ -603,6 +632,8 @@ const embedder = createLLM({
 const { embeddings } = await embedder.embed(["query", "document"]);
 ```
 
+Requests default to `encoding_format: "float"`. If your endpoint rejects that value, override it per call via `body`, or drop it entirely with `transport.defaultBody: { encoding_format: undefined }`.
+
 Calling `llm.embed()` on an `anthropic-compatible` adapter throws a descriptive error pointing to Voyage AI.
 
 ### MCP Tools
@@ -627,7 +658,7 @@ const result = await llm.structured(
   {
     request: {
       mcpClients: [mcpClient],
-      maxToolRounds: 5,
+      maxToolRounds: 5,       // default: 100 (also configurable via transport.defaultMaxToolRounds)
       toolDebug: {
         enabled: true,
         includeRequest: true,
@@ -707,6 +738,7 @@ Run repository examples with `bun run dev <example-name>`.
 
 Available examples:
 - `generate` - High-level text generation ([generate.ts](examples/generate.ts))
+- `logprobs` - Token log probabilities and verbose debug output ([logprobs.ts](examples/logprobs.ts))
 - `streaming` - Real LLM streaming + snapshot self-check ([streaming.ts](examples/streaming.ts))
 - `streaming-with-tools` - Real text streaming with MCP tools + self-check ([streaming-with-tools.ts](examples/streaming-with-tools.ts))
 - `streaming-turns-with-tools` - Streaming MCP turns, transitions, and reasoning blocks ([streaming-turns-with-tools.ts](examples/streaming-turns-with-tools.ts))
@@ -725,6 +757,7 @@ Available examples:
 Pass arguments after the example name:
 ```bash
 bun run dev generate "Why Bun is fast"
+bun run dev logprobs "Answer with one word: yes or no?"
 bun run dev streaming
 bun run dev streaming-with-tools
 bun run dev abort-signal 120 "JSON cancellation demo"
