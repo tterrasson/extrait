@@ -55,47 +55,6 @@ export async function consumeSSE(
   }
 }
 
-export async function consumeNDJSON(
-  response: Response,
-  onLine: (line: string) => void,
-): Promise<void> {
-  if (!response.body) {
-    return;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-
-    while (true) {
-      const newLine = buffer.indexOf("\n");
-      if (newLine < 0) {
-        break;
-      }
-
-      const line = buffer.slice(0, newLine).trim();
-      buffer = buffer.slice(newLine + 1);
-
-      if (line.length > 0) {
-        onLine(line);
-      }
-    }
-  }
-
-  const rest = buffer.trim();
-  if (rest.length > 0) {
-    onLine(rest);
-  }
-}
-
 function findSSEBoundary(buffer: string): number {
   const crlfIndex = buffer.indexOf("\r\n\r\n");
   const lfIndex = buffer.indexOf("\n\n");
