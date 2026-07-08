@@ -204,3 +204,42 @@ describe("anthropic-compatible embed()", () => {
     await expect(adapter.embed!({ input: "hello" })).rejects.toThrow("Anthropic");
   });
 });
+
+describe("openai-compatible embed() encoding_format", () => {
+  test("defaults encoding_format to float", async () => {
+    let body: Record<string, unknown> = {};
+    const fetcher = (async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return embeddingResponse([VECTOR_A]);
+    }) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://api.openai.com",
+      model: "text-embedding-3-small",
+      fetcher,
+    });
+
+    await adapter.embed!({ input: "hello" });
+
+    expect(body.encoding_format).toBe("float");
+  });
+
+  test("lets defaultBody and request.body override encoding_format (Voyage AI)", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return embeddingResponse([VECTOR_A], "voyage-3");
+    }) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://api.voyageai.com",
+      model: "voyage-3",
+      defaultBody: { encoding_format: null },
+      fetcher,
+    });
+
+    await adapter.embed!({ input: "hello" });
+    await adapter.embed!({ input: "hello", body: { encoding_format: "base64" } });
+
+    expect(bodies[0]?.encoding_format).toBeNull();
+    expect(bodies[1]?.encoding_format).toBe("base64");
+  });
+});

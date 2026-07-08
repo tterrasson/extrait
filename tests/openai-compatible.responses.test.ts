@@ -492,3 +492,81 @@ describe("openai-compatible-legacy contract", () => {
     });
   });
 });
+
+describe("openai-compatible Responses tool-message conversion", () => {
+  test("converts chat-style tool history to function_call / function_call_output items", async () => {
+    let body: Record<string, unknown> = {};
+    const fetcher = (async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({ output_text: "Bring an umbrella.", status: "completed" });
+    }) as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.complete({
+      messages: [
+        { role: "system", content: "You are a weather assistant." },
+        { role: "user", content: "Weather in Paris?" },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [{
+            id: "call_weather",
+            type: "function",
+            function: { name: "get_weather", arguments: "{\"city\":\"Paris\"}" },
+          }],
+        },
+        { role: "tool", content: "{\"temp\":18}", tool_call_id: "call_weather" },
+        { role: "user", content: "Should I bring an umbrella?" },
+      ],
+    });
+
+    expect(result.text).toBe("Bring an umbrella.");
+    expect(body.input).toEqual([
+      { role: "system", content: "You are a weather assistant." },
+      { role: "user", content: "Weather in Paris?" },
+      { type: "function_call", call_id: "call_weather", name: "get_weather", arguments: "{\"city\":\"Paris\"}" },
+      { type: "function_call_output", call_id: "call_weather", output: "{\"temp\":18}" },
+      { role: "user", content: "Should I bring an umbrella?" },
+    ]);
+  });
+
+  test("keeps assistant text alongside converted tool calls and serializes object arguments", async () => {
+    let body: Record<string, unknown> = {};
+    const fetcher = (async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({ output_text: "ok", status: "completed" });
+    }) as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      messages: [
+        { role: "user", content: "Compute" },
+        {
+          role: "assistant",
+          content: "Let me check.",
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "sum", arguments: { a: 1, b: 2 } },
+          }],
+        },
+        { role: "tool", content: "3", tool_call_id: "call_1" },
+      ],
+    });
+
+    expect(body.input).toEqual([
+      { role: "user", content: "Compute" },
+      { role: "assistant", content: "Let me check." },
+      { type: "function_call", call_id: "call_1", name: "sum", arguments: "{\"a\":1,\"b\":2}" },
+      { type: "function_call_output", call_id: "call_1", output: "3" },
+    ]);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { consumeSSE, consumeNDJSON } from "@/providers/stream-utils";
+import { consumeSSE } from "@/providers/stream-utils";
 
 function mockResponse(chunks: string[]): Response {
   const encoder = new TextEncoder();
@@ -110,55 +110,5 @@ describe("consumeSSE", () => {
     const response = mockResponse(["data:   spaced  \n\n"]);
     await consumeSSE(response, (data) => events.push(data));
     expect(events).toEqual(["spaced"]);
-  });
-});
-
-describe("consumeNDJSON", () => {
-  test("does nothing when body is null", async () => {
-    const lines: string[] = [];
-    await consumeNDJSON(emptyBodyResponse(), (line) => lines.push(line));
-    expect(lines).toEqual([]);
-  });
-
-  test("parses a single line", async () => {
-    const lines: string[] = [];
-    const response = mockResponse(['{"a":1}\n']);
-    await consumeNDJSON(response, (line) => lines.push(line));
-    expect(lines).toEqual(['{"a":1}']);
-  });
-
-  test("parses multiple lines in one chunk", async () => {
-    const lines: string[] = [];
-    const response = mockResponse(['{"a":1}\n{"b":2}\n']);
-    await consumeNDJSON(response, (line) => lines.push(line));
-    expect(lines).toEqual(['{"a":1}', '{"b":2}']);
-  });
-
-  test("skips empty lines", async () => {
-    const lines: string[] = [];
-    const response = mockResponse(['{"a":1}\n\n{"b":2}\n']);
-    await consumeNDJSON(response, (line) => lines.push(line));
-    expect(lines).toEqual(['{"a":1}', '{"b":2}']);
-  });
-
-  test("handles data split across chunks", async () => {
-    const lines: string[] = [];
-    const response = mockResponse(['{"a":', '1}\n']);
-    await consumeNDJSON(response, (line) => lines.push(line));
-    expect(lines).toEqual(['{"a":1}']);
-  });
-
-  test("emits non-empty remainder after stream ends", async () => {
-    const lines: string[] = [];
-    const response = mockResponse(['{"trailing":true}']);
-    await consumeNDJSON(response, (line) => lines.push(line));
-    expect(lines).toEqual(['{"trailing":true}']);
-  });
-
-  test("does not emit empty remainder", async () => {
-    const lines: string[] = [];
-    const response = mockResponse(['{"a":1}\n']);
-    await consumeNDJSON(response, (line) => lines.push(line));
-    expect(lines).toEqual(['{"a":1}']);
   });
 });

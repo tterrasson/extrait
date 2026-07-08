@@ -103,3 +103,89 @@ describe("provider registry", () => {
     expect(out.text).toBe("ok");
   });
 });
+
+describe("provider registry adapter option forwarding", () => {
+  test("forwards transport.defaultMaxTokens to the anthropic-compatible adapter", async () => {
+    let body: Record<string, unknown> = {};
+    const fetcher = (async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      }));
+    }) as typeof fetch;
+
+    const adapter = createModelAdapter({
+      provider: "anthropic-compatible",
+      model: "claude-test",
+      transport: {
+        baseURL: "https://example.com",
+        defaultMaxTokens: 4096,
+        fetcher,
+      },
+    });
+    await adapter.complete({ prompt: "hello" });
+
+    expect(body.max_tokens).toBe(4096);
+  });
+
+  test("forwards transport.embeddingPath to the openai-compatible adapter", async () => {
+    let url = "";
+    const fetcher = (async (input) => {
+      url = String(input);
+      return new Response(JSON.stringify({
+        data: [{ embedding: [0.1, 0.2] }],
+        model: "embed-test",
+      }));
+    }) as typeof fetch;
+
+    const adapter = createModelAdapter({
+      provider: "openai-compatible",
+      model: "embed-test",
+      transport: {
+        baseURL: "https://example.com",
+        embeddingPath: "/custom/embeddings",
+        fetcher,
+      },
+    });
+    await adapter.embed!({ input: "hello" });
+
+    expect(url).toBe("https://example.com/custom/embeddings");
+  });
+
+  test("forwards transport.defaultMaxToolRounds to the legacy adapter", async () => {
+    const fetcher = (async () => new Response(JSON.stringify({
+      choices: [{
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "add", arguments: "{}" },
+          }],
+        },
+        finish_reason: "tool_calls",
+      }],
+    }))) as unknown as typeof fetch;
+
+    const adapter = createModelAdapter({
+      provider: "openai-compatible-legacy",
+      model: "gpt-test",
+      transport: {
+        baseURL: "https://example.com",
+        defaultMaxToolRounds: 0,
+        fetcher,
+      },
+    });
+    const mcpClient = {
+      id: "calc",
+      listTools: async () => ({ tools: [{ name: "add", inputSchema: { type: "object" } }] }),
+      callTool: async () => "3",
+    };
+
+    await expect(adapter.complete({ prompt: "Add", mcpClients: [mcpClient] })).rejects.toThrow(
+      "Tool call loop exceeded maxToolRounds (0)",
+    );
+  });
+});

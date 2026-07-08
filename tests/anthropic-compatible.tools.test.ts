@@ -584,3 +584,138 @@ describe("anthropic-compatible MCP tools", () => {
     });
   });
 });
+
+describe("anthropic-compatible pass-through reasoning", () => {
+  test("extracts thinking blocks as reasoning in complete pass-through", async () => {
+    const fetcher = (async () => jsonResponse({
+      content: [
+        { type: "thinking", thinking: "Consider the sum carefully." },
+        { type: "text", text: "42" },
+      ],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 5, output_tokens: 2 },
+    })) as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({ prompt: "What is 40 + 2?", reasoningEffort: "medium" });
+
+    expect(out.text).toBe("42");
+    expect(out.reasoning).toBe("Consider the sum carefully.");
+    expect(out.raw).toBeDefined();
+  });
+
+  test("accepts a thinking-only response without throwing", async () => {
+    const fetcher = (async () => jsonResponse({
+      content: [{ type: "thinking", thinking: "Only thoughts, no text." }],
+      stop_reason: "max_tokens",
+    })) as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({ prompt: "hello", reasoningEffort: "high" });
+
+    expect(out.text).toBe("");
+    expect(out.reasoning).toBe("Only thoughts, no text.");
+    expect(out.finishReason).toBe("max_tokens");
+  });
+
+  test("still throws when the response has no text, reasoning, or tool calls", async () => {
+    const fetcher = (async () => jsonResponse({ content: [], stop_reason: "end_turn" })) as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await expect(adapter.complete({ prompt: "hello" })).rejects.toThrow(
+      "No assistant text in Anthropic-compatible response.",
+    );
+  });
+});
+
+describe("anthropic-compatible max_tokens resolution", () => {
+  test("keeps defaultBody.max_tokens instead of overriding it with the fallback", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" });
+    }) as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      defaultBody: { max_tokens: 4096 },
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "hello" });
+
+    expect(requests[0]?.max_tokens).toBe(4096);
+  });
+
+  test("prefers request.maxTokens over defaultBody.max_tokens", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" });
+    }) as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      defaultBody: { max_tokens: 4096 },
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "hello", maxTokens: 128 });
+
+    expect(requests[0]?.max_tokens).toBe(128);
+  });
+});
+
+describe("anthropic-compatible conversation history normalization", () => {
+  test("tolerates malformed assistant tool_call arguments without throwing", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse({ content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" });
+    }) as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      messages: [
+        { role: "user", content: "Weather in Paris?" },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "get_weather", arguments: "{not valid json" },
+          }],
+        },
+        { role: "tool", content: "{\"temp\":18}", tool_call_id: "call_1" },
+        { role: "user", content: "And tomorrow?" },
+      ],
+    });
+
+    expect(out.text).toBe("ok");
+    const messages = requests[0]?.messages as Array<Record<string, unknown>>;
+    const assistantTurn = messages[1] as { content: Array<Record<string, unknown>> };
+    expect(assistantTurn.content[0]).toEqual({
+      type: "tool_use",
+      id: "call_1",
+      name: "get_weather",
+      input: {},
+    });
+  });
+});

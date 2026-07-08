@@ -709,3 +709,36 @@ describe("anthropic-compatible error paths", () => {
     ).rejects.toThrow("exceeded maxToolRounds");
   });
 });
+
+describe("anthropic-compatible pass-through reasoning streaming", () => {
+  test("accumulates thinking deltas and exposes reasoning and raw", async () => {
+    const events = [
+      JSON.stringify({ type: "message_start", message: { usage: { input_tokens: 7 } } }),
+      JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } }),
+      JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Let me think. " } }),
+      JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Done." } }),
+      JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "text", text: "" } }),
+      JSON.stringify({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Hello" } }),
+      JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 3 } }),
+    ];
+    const fetcher = (async () => sseResponse(events)) as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    const chunks: LLMStreamChunk[] = [];
+    const result = await adapter.stream(
+      { prompt: "hello", reasoningEffort: "medium" },
+      { onChunk: (chunk) => chunks.push(chunk) },
+    );
+
+    expect(result.text).toBe("Hello");
+    expect(result.reasoning).toBe("Let me think. Done.");
+    expect(result.raw).toBeDefined();
+    expect(result.finishReason).toBe("end_turn");
+    expect(chunks.some((chunk) => chunk.reasoningDelta === "Let me think. ")).toBe(true);
+    expect(chunks.some((chunk) => chunk.textDelta === "Hello")).toBe(true);
+  });
+});

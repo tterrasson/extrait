@@ -915,3 +915,99 @@ describe("openai-compatible MCP tools", () => {
     ).rejects.toThrow("Tool call loop exceeded maxToolRounds (0).");
   });
 });
+
+describe("openai-compatible MCP logprobs", () => {
+  test("legacy MCP loop surfaces logprobs from the final round", async () => {
+    let callCount = 0;
+    const fetcher = (async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return jsonResponse({
+          choices: [{
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [{
+                id: "call_1",
+                type: "function",
+                function: { name: "add", arguments: "{\"a\":1,\"b\":2}" },
+              }],
+            },
+            finish_reason: "tool_calls",
+          }],
+        });
+      }
+      return jsonResponse({
+        choices: [{
+          message: { role: "assistant", content: "3" },
+          finish_reason: "stop",
+          logprobs: {
+            content: [{ token: "3", logprob: -0.05 }],
+          },
+        }],
+      });
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const out = await adapter.complete({
+      prompt: "1 + 2?",
+      topLogprobs: 1,
+      mcpClients: [createCalculatorMCP()],
+    });
+
+    expect(out.text).toBe("3");
+    expect(out.logprobs?.content).toEqual([{ token: "3", logprob: -0.05 }]);
+  });
+
+  test("Responses streaming MCP loop accumulates final-round logprobs", async () => {
+    let callCount = 0;
+    const sse = (events: Record<string, unknown>[]): Response =>
+      new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+
+    const fetcher = (async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return sse([
+          {
+            type: "response.completed",
+            response: {
+              status: "completed",
+              output: [{ type: "function_call", call_id: "call_1", name: "add", arguments: "{\"a\":1,\"b\":2}" }],
+            },
+          },
+        ]);
+      }
+      return sse([
+        {
+          type: "response.output_text.delta",
+          delta: "3",
+          logprobs: [{ token: "3", logprob: -0.2 }],
+        },
+        { type: "response.completed", response: { status: "completed", output: [] } },
+      ]);
+    }) as typeof fetch;
+
+    const adapter = createResponsesAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const out = await adapter.stream!({
+      prompt: "1 + 2?",
+      topLogprobs: 1,
+      mcpClients: [createCalculatorMCP()],
+    });
+
+    expect(out.text).toBe("3");
+    expect(out.logprobs?.content).toEqual([{ token: "3", logprob: -0.2 }]);
+  });
+});
