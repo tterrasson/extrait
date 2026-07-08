@@ -1,4 +1,19 @@
-import type { LLMUsage } from "../types";
+import type { LLMUsage, ReasoningBlock } from "../types";
+
+const RE_THINK_TAG = /<\/?think\s*>/gi;
+
+export function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: string | undefined): void {
+  const clean = text?.replace(RE_THINK_TAG, "").trim();
+  if (!clean) {
+    return;
+  }
+
+  blocks.push({ turnIndex, text: clean });
+}
+
+export function joinReasoningBlocks(blocks: ReasoningBlock[]): string {
+  return blocks.map((block) => block.text).filter(Boolean).join("\n\n");
+}
 
 export function normalizeBaseURL(baseURL: string): string {
   return baseURL.endsWith("/") ? baseURL : `${baseURL}/`;

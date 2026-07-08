@@ -1,6 +1,9 @@
 import { sanitizeThink } from "./think";
+import { mergeUsage } from "./providers/utils";
 import type { LLMUsage, ReasoningBlock, StreamTurnTransition, ThinkBlock } from "./types";
 import type { NormalizedModelOutput } from "./generate-shared";
+
+export { mergeUsage } from "./providers/utils";
 
 const RE_THINK_TAGS = /<\/?think\s*>/gi;
 
@@ -74,19 +77,6 @@ export function aggregateUsage<T extends { usage?: LLMUsage }>(attempts: T[]): L
   }
 
   return usage;
-}
-
-export function mergeUsage(base: LLMUsage | undefined, next: LLMUsage | undefined): LLMUsage | undefined {
-  if (!base && !next) {
-    return undefined;
-  }
-
-  return {
-    inputTokens: (base?.inputTokens ?? 0) + (next?.inputTokens ?? 0),
-    outputTokens: (base?.outputTokens ?? 0) + (next?.outputTokens ?? 0),
-    totalTokens: (base?.totalTokens ?? 0) + (next?.totalTokens ?? 0),
-    cost: (base?.cost ?? 0) + (next?.cost ?? 0),
-  };
 }
 
 function joinReasoningSegments(parts: Array<string | undefined>): string {

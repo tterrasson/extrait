@@ -33,7 +33,6 @@ import {
   emitOpenAIStreamChunk,
   joinReasoningBlocks,
   normalizeLogprobEntries,
-  parseOpenAICompatibleJSONResponse,
   pickReasoningText,
   pickTextLike,
   pickUsage,
@@ -214,7 +213,7 @@ async function completeWithChatCompletionsPassThrough(
   path: string,
   request: LLMRequest,
 ): Promise<LLMResponse> {
-  const response = await sendOpenAIRequest(
+  const payload = await sendOpenAIJsonRequest(
     options,
     fetcher,
     path,
@@ -223,15 +222,6 @@ async function completeWithChatCompletionsPassThrough(
       messages: buildMessages(request),
       stream: false,
     }),
-  );
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`HTTP ${response.status}: ${message}`);
-  }
-
-  const payload = await parseOpenAICompatibleJSONResponse(
-    response,
     "Failed to parse OpenAI-compatible chat completion response",
   );
   const assistantMessage = pickAssistantMessage(payload);
@@ -287,7 +277,7 @@ async function completeWithChatCompletionsWithMCP(
     );
     lastPayload = payload;
     aggregatedUsage = mergeUsage(aggregatedUsage, pickUsage(payload));
-    finishReason = pickFinishReason(payload);
+    finishReason = pickFinishReason(payload) ?? finishReason;
 
     const assistantMessage = pickAssistantMessage(payload);
     const calledTools = pickChatToolCalls(payload);

@@ -557,13 +557,52 @@ function buildResponsesInput(request: LLMRequest): unknown {
   }
 
   if (Array.isArray(request.messages) && request.messages.length > 0) {
-    return request.messages.map((message) => toResponsesMessage(message));
+    return request.messages.flatMap((message) => toResponsesItems(message));
   }
 
   if (typeof request.prompt !== "string" || request.prompt.trim().length === 0) {
     throw new Error("LLMRequest must include a prompt or messages.");
   }
   return request.prompt;
+}
+
+/**
+ * Maps one Chat Completions-shaped {@link LLMMessage} to Responses API input
+ * items. `role: "tool"` messages and assistant `tool_calls` have no message
+ * equivalent in the Responses API — they must become `function_call_output`
+ * and `function_call` items, so one message can expand to several items.
+ */
+function toResponsesItems(message: LLMMessage): Array<Record<string, unknown>> {
+  if (message.role === "tool") {
+    return [{
+      type: "function_call_output",
+      call_id: pickString(message.tool_call_id) ?? "",
+      output: typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? null),
+    }];
+  }
+
+  if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
+    const items: Array<Record<string, unknown>> = [];
+    if (typeof message.content === "string" && message.content.length > 0) {
+      items.push({ role: "assistant", content: message.content });
+    }
+    for (const toolCall of message.tool_calls) {
+      if (!isRecord(toolCall) || !isRecord(toolCall.function)) {
+        continue;
+      }
+      items.push({
+        type: "function_call",
+        call_id: pickString(toolCall.id) ?? "",
+        name: pickString(toolCall.function.name),
+        arguments: typeof toolCall.function.arguments === "string"
+          ? toolCall.function.arguments
+          : JSON.stringify(toolCall.function.arguments ?? {}),
+      });
+    }
+    return items;
+  }
+
+  return [toResponsesMessage(message)];
 }
 
 function toResponsesMessage(message: LLMMessage): Record<string, unknown> {

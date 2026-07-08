@@ -26,9 +26,11 @@ import {
   buildURL,
   cleanUndefined,
   isRecord,
+  joinReasoningBlocks,
   mergeUsage,
   pickString,
   preferLatestUsage,
+  pushReasoningBlock,
   safeJSONParse,
   toFiniteNumber,
 } from "./utils";
@@ -104,8 +106,10 @@ async function streamPassThrough(
 
   callbacks.onStart?.();
   let text = "";
+  let reasoning = "";
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
+  let lastPayload: Record<string, unknown> | undefined;
   const streamedToolCalls = new Map<number, AnthropicStreamToolCallState>();
 
   await consumeSSE(response, (data) => {
@@ -118,7 +122,10 @@ async function streamPassThrough(
       return;
     }
 
+    lastPayload = json;
+
     const delta = pickAnthropicDelta(json);
+    const reasoningDelta = pickAnthropicReasoningDelta(json);
     const chunkUsage = pickUsage(json);
     const chunkFinishReason = pickFinishReason(json);
 
@@ -133,6 +140,10 @@ async function streamPassThrough(
       callbacks.onToken?.(delta);
     }
 
+    if (reasoningDelta) {
+      reasoning += reasoningDelta;
+    }
+
     // Surface the accumulated tool-call snapshot (id/name from `tool_use` blocks,
     // arguments from `input_json_delta` fragments) on every chunk once a tool
     // call is in flight, so callers stream partial arguments instead of only
@@ -140,9 +151,10 @@ async function streamPassThrough(
     const streamedSnapshot = buildAnthropicStreamToolCalls(streamedToolCalls);
     const chunkToolCalls = streamedSnapshot.length > 0 ? streamedSnapshot : undefined;
 
-    if (delta || chunkUsage || chunkFinishReason || chunkToolCalls) {
+    if (delta || reasoningDelta || chunkUsage || chunkFinishReason || chunkToolCalls) {
       callbacks.onChunk?.({
         textDelta: delta,
+        reasoningDelta: reasoningDelta || undefined,
         raw: json,
         usage: chunkUsage,
         finishReason: chunkFinishReason,
@@ -154,6 +166,8 @@ async function streamPassThrough(
   const toolCalls = buildAnthropicStreamToolCalls(streamedToolCalls);
   const out: LLMResponse = {
     text,
+    reasoning: reasoning.length > 0 ? reasoning : undefined,
+    raw: lastPayload,
     usage,
     finishReason: finishReason ?? (toolCalls.length > 0 ? "tool_use" : undefined),
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -205,14 +219,16 @@ async function completePassThrough(
 
   const data = (await response.json()) as Record<string, unknown>;
   const text = extractAnthropicText(data);
+  const reasoning = extractAnthropicReasoning(data);
   const toolCalls = pickAnthropicToolCalls(data);
 
-  if (!text && toolCalls.length === 0) {
+  if (!text && !reasoning && toolCalls.length === 0) {
     throw new Error("No assistant text in Anthropic-compatible response.");
   }
 
   return {
     text,
+    reasoning: reasoning.length > 0 ? reasoning : undefined,
     raw: data,
     usage: pickUsage(data),
     finishReason: pickFinishReason(data),
@@ -521,7 +537,9 @@ function buildAnthropicRequestBody(
 
   return cleanUndefined({
     ...body,
-    max_tokens: resolveMaxTokens(request.maxTokens, options.defaultMaxTokens),
+    // Precedence: per-request maxTokens > max_tokens already present in the
+    // body (request.body over defaultBody via spread) > adapter default.
+    max_tokens: resolveMaxTokens(request.maxTokens, toFiniteNumber(body.max_tokens) ?? options.defaultMaxTokens),
     output_config: reasoningEffort
       ? cleanUndefined({
           ...bodyOutputConfig,
@@ -573,7 +591,8 @@ function toAnthropicInput(
       const parts: unknown[] = [];
       if (message.content) parts.push({ type: "text", text: message.content });
       for (const tc of message.tool_calls as LLMToolCallRef[]) {
-        parts.push({ type: "tool_use", id: tc.id, name: tc.function.name, input: JSON.parse(tc.function.arguments) });
+        const input = parseToolArguments(tc.function.arguments);
+        parts.push({ type: "tool_use", id: tc.id, name: tc.function.name, input: isRecord(input) ? input : {} });
       }
       normalizedMessages.push({ role: "assistant", content: parts });
       continue;
@@ -728,19 +747,6 @@ function pickAnthropicReasoningDelta(payload: Record<string, unknown>): string {
   }
 
   return "";
-}
-
-function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: string | undefined): void {
-  const clean = text?.replace(/<\/?think\s*>/gi, "").trim();
-  if (!clean) {
-    return;
-  }
-
-  blocks.push({ turnIndex, text: clean });
-}
-
-function joinReasoningBlocks(blocks: ReasoningBlock[]): string {
-  return blocks.map((block) => block.text).filter(Boolean).join("\n\n");
 }
 
 interface AnthropicStreamToolCallState {

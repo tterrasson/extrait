@@ -9,7 +9,6 @@ import type {
   LLMTopLogprob,
   LLMToolCall,
   LLMUsage,
-  ReasoningBlock,
 } from "../types";
 import {
   buildURL,
@@ -39,13 +38,16 @@ export async function embedOpenAI(
   path: string,
   request: EmbeddingRequest,
 ): Promise<EmbeddingResult> {
+  // `encoding_format` is a default: callers targeting servers that reject it
+  // (e.g. Voyage AI only accepts `base64` or none) can override or null it via
+  // `defaultBody` / `request.body`.
   const body = cleanUndefined({
+    encoding_format: "float",
     ...options.defaultBody,
     ...request.body,
     model: request.model ?? options.model,
     input: request.input,
     dimensions: request.dimensions,
-    encoding_format: "float",
   });
 
   const response = await fetcher(buildURL(options.baseURL, path), {
@@ -106,6 +108,7 @@ export async function sendOpenAIJsonRequest(
   path: string,
   request: LLMRequest,
   body: Record<string, unknown>,
+  parseErrorContext = "Failed to parse OpenAI-compatible JSON response",
 ): Promise<Record<string, unknown>> {
   const response = await sendOpenAIRequest(options, fetcher, path, request, body);
 
@@ -114,7 +117,7 @@ export async function sendOpenAIJsonRequest(
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 
-  return parseOpenAICompatibleJSONResponse(response, "Failed to parse OpenAI-compatible JSON response");
+  return parseOpenAICompatibleJSONResponse(response, parseErrorContext);
 }
 
 export function emitOpenAIStreamChunk(
@@ -240,18 +243,7 @@ export function pickReasoningText(value: Record<string, unknown>): string {
   return pickTextLike(value.reasoning) || pickTextLike(value.reasoning_content);
 }
 
-export function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: string | undefined): void {
-  const clean = text?.replace(/<\/?think\s*>/gi, "").trim();
-  if (!clean) {
-    return;
-  }
-
-  blocks.push({ turnIndex, text: clean });
-}
-
-export function joinReasoningBlocks(blocks: ReasoningBlock[]): string {
-  return blocks.map((block) => block.text).filter(Boolean).join("\n\n");
-}
+export { joinReasoningBlocks, pushReasoningBlock } from "./utils";
 
 export function pickTextLike(value: unknown): string {
   if (typeof value === "string") {

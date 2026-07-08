@@ -32,9 +32,15 @@ export interface ProviderTransportConfig {
   baseURL?: string;
   apiKey?: string;
   path?: string;
+  /** Embedding endpoint override (openai-compatible providers only). */
+  embeddingPath?: string;
   headers?: HTTPHeaders;
   defaultBody?: Record<string, unknown>;
   version?: string;
+  /** Default `max_tokens` (anthropic-compatible only). */
+  defaultMaxTokens?: number;
+  /** Default cap on MCP tool-call rounds per request. */
+  defaultMaxToolRounds?: number;
   fetcher?: typeof fetch;
 }
 
@@ -108,8 +114,10 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
       baseURL: transport.baseURL ?? "https://api.openai.com",
       apiKey: transport.apiKey,
       path: transport.path,
+      embeddingPath: transport.embeddingPath,
       headers: transport.headers,
       defaultBody: transport.defaultBody,
+      defaultMaxToolRounds: transport.defaultMaxToolRounds,
       fetcher: transport.fetcher,
     };
 
@@ -122,8 +130,10 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
       baseURL: transport.baseURL ?? "https://api.openai.com",
       apiKey: transport.apiKey,
       path: transport.path,
+      embeddingPath: transport.embeddingPath,
       headers: transport.headers,
       defaultBody: transport.defaultBody,
+      defaultMaxToolRounds: transport.defaultMaxToolRounds,
       fetcher: transport.fetcher,
     };
 
@@ -139,6 +149,8 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
       headers: transport.headers,
       version: transport.version,
       defaultBody: transport.defaultBody,
+      defaultMaxTokens: transport.defaultMaxTokens,
+      defaultMaxToolRounds: transport.defaultMaxToolRounds,
       fetcher: transport.fetcher,
     };
 
