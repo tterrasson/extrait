@@ -73,7 +73,7 @@ export interface LLMMessage {
   [key: string]: unknown;
 }
 
-export type LLMReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+export type LLMReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface LLMRequest {
   prompt?: string;

@@ -208,7 +208,7 @@ describe("anthropic-compatible embed()", () => {
 describe("openai-compatible embed() encoding_format", () => {
   test("defaults encoding_format to float", async () => {
     let body: Record<string, unknown> = {};
-    const fetcher = (async (_input, init) => {
+    const fetcher = (async (_input: Request | string | URL, init?: RequestInit) => {
       body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       return embeddingResponse([VECTOR_A]);
     }) as unknown as typeof fetch;
@@ -225,7 +225,7 @@ describe("openai-compatible embed() encoding_format", () => {
 
   test("lets defaultBody and request.body override encoding_format (Voyage AI)", async () => {
     const bodies: Record<string, unknown>[] = [];
-    const fetcher = (async (_input, init) => {
+    const fetcher = (async (_input: Request | string | URL, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return embeddingResponse([VECTOR_A], "voyage-3");
     }) as unknown as typeof fetch;

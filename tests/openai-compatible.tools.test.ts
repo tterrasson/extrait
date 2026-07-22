@@ -266,7 +266,7 @@ describe("openai-compatible MCP tools", () => {
       reasoningEffort: "max",
     });
 
-    expect(requests[0]?.reasoning_effort).toBe("xhigh");
+    expect(requests[0]?.reasoning_effort).toBe("max");
   });
 
   test("forwards minimal and none reasoning_effort values as-is", async () => {
@@ -533,7 +533,7 @@ describe("openai-compatible MCP tools", () => {
       reasoningEffort: "max",
     });
 
-    expect(requests[0]?.reasoning).toEqual({ effort: "xhigh" });
+    expect(requests[0]?.reasoning).toEqual({ effort: "max" });
   });
 
   test("surfaces unknown MCP tool as tool error and continues", async () => {
@@ -946,7 +946,7 @@ describe("openai-compatible MCP logprobs", () => {
           },
         }],
       });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
@@ -993,7 +993,7 @@ describe("openai-compatible MCP logprobs", () => {
         },
         { type: "response.completed", response: { status: "completed", output: [] } },
       ]);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",

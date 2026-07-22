@@ -170,11 +170,14 @@ describe("anthropic-compatible streaming", () => {
 
       if (round === 1) {
         return sseResponse([
-          JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "Need math. " } }),
-          JSON.stringify({ type: "content_block_start", content_block: { type: "text", text: "Let me check. " } }),
+          JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } }),
+          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Need math. " } }),
+          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "signed-thinking" } }),
+          JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "redacted_thinking", data: "redacted-data" } }),
+          JSON.stringify({ type: "content_block_start", index: 2, content_block: { type: "text", text: "Let me check. " } }),
           JSON.stringify({
             type: "content_block_start",
-            index: 0,
+            index: 3,
             content_block: {
               type: "tool_use",
               id: "toolu_add",
@@ -184,12 +187,12 @@ describe("anthropic-compatible streaming", () => {
           }),
           JSON.stringify({
             type: "content_block_delta",
-            index: 0,
+            index: 3,
             delta: { type: "input_json_delta", partial_json: "{\"a\":2" },
           }),
           JSON.stringify({
             type: "content_block_delta",
-            index: 0,
+            index: 3,
             delta: { type: "input_json_delta", partial_json: ",\"b\":3}" },
           }),
           JSON.stringify({
@@ -281,6 +284,16 @@ describe("anthropic-compatible streaming", () => {
     expect(requests[0]?.thinking).toEqual({ type: "adaptive" });
     expect(requests[1]?.output_config).toEqual({ effort: "low" });
     expect(requests[1]?.thinking).toEqual({ type: "adaptive" });
+    const secondRoundMessages = requests[1]?.messages as Array<Record<string, unknown>>;
+    expect(secondRoundMessages.at(-2)).toEqual({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Need math. ", signature: "signed-thinking" },
+        { type: "redacted_thinking", data: "redacted-data" },
+        { type: "text", text: "Let me check. " },
+        { type: "tool_use", id: "toolu_add", name: "add", input: { a: 2, b: 3 } },
+      ],
+    });
   });
 
   test("streams partial tool-call arguments incrementally in MCP mode", async () => {
@@ -616,7 +629,7 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
     expect(bodyParsed?.tool_choice).toEqual({ type: "tool", name: "add" });
   });
 
-  test("passes through 'auto' as-is", async () => {
+  test("converts 'auto' to { type: 'auto' }", async () => {
     let bodyParsed: Record<string, unknown> | undefined;
 
     const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
@@ -639,11 +652,105 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
       toolChoice: "auto",
     });
 
-    expect(bodyParsed?.tool_choice).toBe("auto");
+    expect(bodyParsed?.tool_choice).toEqual({ type: "auto" });
+  });
+
+  test("converts 'none' and maps parallelToolCalls to disable_parallel_tool_use", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse({
+        content: [{ type: "text", text: "hi" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "test",
+      mcpClients: [createSimpleMCP()],
+      toolChoice: "none",
+      parallelToolCalls: false,
+    });
+    await adapter.complete({
+      prompt: "test",
+      mcpClients: [createSimpleMCP()],
+      parallelToolCalls: true,
+    });
+
+    expect(requests[0]?.tool_choice).toEqual({
+      type: "none",
+    });
+    expect(requests[1]?.tool_choice).toEqual({
+      type: "auto",
+      disable_parallel_tool_use: false,
+    });
+  });
+
+  test("rejects forced tool choice while Anthropic thinking is enabled", async () => {
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher: (async () => jsonResponse({})) as unknown as typeof fetch,
+    });
+
+    await expect(adapter.complete({
+      prompt: "test",
+      reasoningEffort: "high",
+      mcpClients: [createSimpleMCP()],
+      toolChoice: "required",
+    })).rejects.toThrow('only supports toolChoice "auto" or "none"');
   });
 });
 
 describe("anthropic-compatible error paths", () => {
+  test("throws for a malformed JSON stream event", async () => {
+    const fetcher = (async () => sseResponse(["not-json", "[DONE]"])) as unknown as typeof fetch;
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("Invalid JSON event");
+  });
+
+  test("throws for an in-band stream error", async () => {
+    const fetcher = (async () => sseResponse([
+      JSON.stringify({
+        type: "error",
+        error: { type: "overloaded_error", message: "Service overloaded" },
+      }),
+    ])) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("Service overloaded");
+  });
+
+  test("throws when the stream ends without a terminal event or stop reason", async () => {
+    const fetcher = (async () => sseResponse([
+      JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "partial" } }),
+    ])) as unknown as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("before a terminal event");
+  });
+
   test("HTTP error in passthrough mode", async () => {
     const fetcher = (async () =>
       new Response("Bad Request", { status: 400 })) as unknown as typeof fetch;
@@ -721,7 +828,7 @@ describe("anthropic-compatible pass-through reasoning streaming", () => {
       JSON.stringify({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Hello" } }),
       JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 3 } }),
     ];
-    const fetcher = (async () => sseResponse(events)) as typeof fetch;
+    const fetcher = (async () => sseResponse(events)) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "claude-test",
@@ -729,7 +836,7 @@ describe("anthropic-compatible pass-through reasoning streaming", () => {
     });
 
     const chunks: LLMStreamChunk[] = [];
-    const result = await adapter.stream(
+    const result = await adapter.stream!(
       { prompt: "hello", reasoningEffort: "medium" },
       { onChunk: (chunk) => chunks.push(chunk) },
     );

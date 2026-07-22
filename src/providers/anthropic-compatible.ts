@@ -110,18 +110,22 @@ async function streamPassThrough(
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
   let lastPayload: Record<string, unknown> | undefined;
+  let streamTerminated = false;
   const streamedToolCalls = new Map<number, AnthropicStreamToolCallState>();
 
   await consumeSSE(response, (data) => {
     if (data === "[DONE]") {
+      streamTerminated = true;
       return;
     }
 
     const json = safeJSONParse(data);
     if (!isRecord(json)) {
-      return;
+      throw new Error("Invalid JSON event in Anthropic-compatible stream.");
     }
 
+    throwForAnthropicStreamError(json);
+    streamTerminated ||= isAnthropicTerminalEvent(json);
     lastPayload = json;
 
     const delta = pickAnthropicDelta(json);
@@ -162,6 +166,8 @@ async function streamPassThrough(
       });
     }
   });
+
+  assertAnthropicStreamTerminated(streamTerminated || finishReason !== undefined);
 
   const toolCalls = buildAnthropicStreamToolCalls(streamedToolCalls);
   const out: LLMResponse = {
@@ -261,7 +267,7 @@ async function completeWithMCPToolLoop(
       system: input.systemPrompt,
       messages,
       tools,
-      tool_choice: toAnthropicToolChoice(request.toolChoice),
+      tool_choice: toAnthropicToolChoice(request.toolChoice, request.parallelToolCalls),
       stream: false,
     });
 
@@ -362,7 +368,7 @@ async function streamWithMCPToolLoop(
       system: input.systemPrompt,
       messages,
       tools,
-      tool_choice: toAnthropicToolChoice(request.toolChoice),
+      tool_choice: toAnthropicToolChoice(request.toolChoice, request.parallelToolCalls),
       stream: true,
     });
 
@@ -375,18 +381,23 @@ async function streamWithMCPToolLoop(
     let roundReasoning = "";
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
+    let streamTerminated = false;
     const streamedToolCalls = new Map<number, AnthropicStreamToolCallState>();
+    const streamedThinkingBlocks = new Map<number, AnthropicStreamThinkingBlockState>();
 
     await consumeSSE(response, (data) => {
       if (data === "[DONE]") {
+        streamTerminated = true;
         return;
       }
 
       const json = safeJSONParse(data);
       if (!isRecord(json)) {
-        return;
+        throw new Error("Invalid JSON event in Anthropic-compatible stream.");
       }
 
+      throwForAnthropicStreamError(json);
+      streamTerminated ||= isAnthropicTerminalEvent(json);
       lastPayload = json;
 
       const delta = pickAnthropicDelta(json);
@@ -395,6 +406,7 @@ async function streamWithMCPToolLoop(
       const chunkFinishReason = pickFinishReason(json);
 
       collectAnthropicStreamToolCalls(json, streamedToolCalls);
+      collectAnthropicStreamThinkingBlocks(json, streamedThinkingBlocks);
       roundUsage = preferLatestUsage(roundUsage, chunkUsage);
       if (chunkFinishReason) {
         roundFinishReason = chunkFinishReason;
@@ -428,6 +440,8 @@ async function streamWithMCPToolLoop(
         callbacks.onChunk?.(chunk);
       }
     });
+
+    assertAnthropicStreamTerminated(streamTerminated || roundFinishReason !== undefined);
 
     aggregatedUsage = mergeUsage(aggregatedUsage, roundUsage);
     if (roundFinishReason) {
@@ -496,7 +510,10 @@ async function streamWithMCPToolLoop(
 
     messages = [
       ...messages,
-      { role: "assistant", content: buildAnthropicAssistantToolContent(roundText, calledTools) },
+      {
+        role: "assistant",
+        content: buildAnthropicAssistantToolContent(roundText, calledTools, streamedThinkingBlocks),
+      },
       { role: "user", content: toolResultContent },
     ];
   }
@@ -534,22 +551,66 @@ function buildAnthropicRequestBody(
   const bodyThinking = body.thinking;
   const hasExplicitThinking = Object.prototype.hasOwnProperty.call(body, "thinking");
   const reasoningEffort = request.reasoningEffort;
+  const anthropicEffort = toAnthropicReasoningEffort(reasoningEffort);
+  const outputConfigWithoutEffort = omitRecordKey(bodyOutputConfig, "effort");
+  const thinking = reasoningEffort === "none"
+    ? { type: "disabled" }
+    : anthropicEffort
+      ? (hasExplicitThinking ? bodyThinking : { type: "adaptive" })
+      : bodyThinking;
+
+  assertAnthropicThinkingToolChoiceCompatibility(thinking, body.tool_choice);
 
   return cleanUndefined({
     ...body,
     // Precedence: per-request maxTokens > max_tokens already present in the
     // body (request.body over defaultBody via spread) > adapter default.
     max_tokens: resolveMaxTokens(request.maxTokens, toFiniteNumber(body.max_tokens) ?? options.defaultMaxTokens),
-    output_config: reasoningEffort
+    output_config: anthropicEffort
       ? cleanUndefined({
           ...bodyOutputConfig,
-          effort: reasoningEffort,
+          effort: anthropicEffort,
         })
-      : bodyOutputConfig,
-    thinking: reasoningEffort
-      ? (hasExplicitThinking ? bodyThinking : { type: "adaptive" })
-      : bodyThinking,
+      : reasoningEffort === "none"
+        ? outputConfigWithoutEffort
+        : bodyOutputConfig,
+    thinking,
   });
+}
+
+function assertAnthropicThinkingToolChoiceCompatibility(
+  thinking: unknown,
+  toolChoice: unknown,
+): void {
+  if (!isRecord(thinking) || pickString(thinking.type) === "disabled" || !isRecord(toolChoice)) {
+    return;
+  }
+
+  const type = pickString(toolChoice.type);
+  if (type === "any" || type === "tool") {
+    throw new Error('Anthropic thinking only supports toolChoice "auto" or "none".');
+  }
+}
+
+function toAnthropicReasoningEffort(
+  effort: LLMRequest["reasoningEffort"],
+): Exclude<LLMRequest["reasoningEffort"], "none" | "minimal"> | "low" | undefined {
+  if (effort === "none" || effort === undefined) {
+    return undefined;
+  }
+  return effort === "minimal" ? "low" : effort;
+}
+
+function omitRecordKey(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const result = Object.fromEntries(Object.entries(value).filter(([entryKey]) => entryKey !== key));
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function resolveAnthropicInput(
@@ -589,7 +650,7 @@ function toAnthropicInput(
 
     if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
       const parts: unknown[] = [];
-      if (message.content) parts.push({ type: "text", text: message.content });
+      parts.push(...toAnthropicMessageContent(message.content));
       for (const tc of message.tool_calls as LLMToolCallRef[]) {
         const input = parseToolArguments(tc.function.arguments);
         parts.push({ type: "tool_use", id: tc.id, name: tc.function.name, input: isRecord(input) ? input : {} });
@@ -601,14 +662,22 @@ function toAnthropicInput(
     if (message.role === "tool") {
       normalizedMessages.push({
         role: "user",
-        content: [{ type: "tool_result", tool_use_id: message.tool_call_id, content: message.content }],
+        content: [{
+          type: "tool_result",
+          tool_use_id: message.tool_call_id,
+          content: Array.isArray(message.content)
+            ? toAnthropicMessageContent(message.content)
+            : message.content,
+        }],
       });
       continue;
     }
 
     normalizedMessages.push({
       role: message.role,
-      content: message.content,
+      content: Array.isArray(message.content)
+        ? toAnthropicMessageContent(message.content)
+        : message.content,
     });
   }
 
@@ -620,6 +689,36 @@ function toAnthropicInput(
     systemPrompt: systemParts.length > 0 ? systemParts.join("\n\n") : undefined,
     messages: normalizedMessages,
   };
+}
+
+function toAnthropicMessageContent(content: LLMMessage["content"]): Array<Record<string, unknown>> {
+  if (typeof content === "string") {
+    return content.length > 0 ? [{ type: "text", text: content }] : [];
+  }
+
+  return content.map((part) => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+
+    return {
+      type: "image",
+      source: toAnthropicImageSource(part.image_url.url),
+    };
+  });
+}
+
+function toAnthropicImageSource(url: string): Record<string, unknown> {
+  const dataURL = /^data:([^;,]+);base64,(.*)$/s.exec(url);
+  if (dataURL) {
+    return {
+      type: "base64",
+      media_type: dataURL[1],
+      data: dataURL[2],
+    };
+  }
+
+  return { type: "url", url };
 }
 
 function stringifyAnthropicSystemContent(content: unknown): string {
@@ -757,6 +856,51 @@ interface AnthropicStreamToolCallState {
   argumentsText: string;
 }
 
+interface AnthropicStreamThinkingBlockState {
+  index: number;
+  block: Record<string, unknown>;
+}
+
+function collectAnthropicStreamThinkingBlocks(
+  payload: Record<string, unknown>,
+  state: Map<number, AnthropicStreamThinkingBlockState>,
+): void {
+  const eventType = pickString(payload.type);
+  const index = pickContentBlockIndex(payload.index);
+
+  if (eventType === "content_block_start" && isRecord(payload.content_block)) {
+    const type = pickString(payload.content_block.type);
+    if (type === "thinking" || type === "redacted_thinking") {
+      state.set(index, { index, block: { ...payload.content_block } });
+    }
+    return;
+  }
+
+  if (eventType !== "content_block_delta" || !isRecord(payload.delta)) {
+    return;
+  }
+
+  const deltaType = pickString(payload.delta.type);
+  if (deltaType !== "thinking_delta" && deltaType !== "signature_delta") {
+    return;
+  }
+
+  const existing = state.get(index) ?? {
+    index,
+    block: { type: "thinking", thinking: "" },
+  };
+
+  if (deltaType === "thinking_delta") {
+    const thinking = pickString(payload.delta.thinking) ?? "";
+    existing.block.thinking = `${pickString(existing.block.thinking) ?? ""}${thinking}`;
+  } else {
+    const signature = pickString(payload.delta.signature) ?? "";
+    existing.block.signature = `${pickString(existing.block.signature) ?? ""}${signature}`;
+  }
+
+  state.set(index, existing);
+}
+
 function collectAnthropicStreamToolCalls(
   payload: Record<string, unknown>,
   state: Map<number, AnthropicStreamToolCallState>,
@@ -837,8 +981,14 @@ function buildAnthropicStreamToolCalls(state: Map<number, AnthropicStreamToolCal
     }));
 }
 
-function buildAnthropicAssistantToolContent(text: string, toolCalls: LLMToolCall[]): Array<Record<string, unknown>> {
-  const content: Array<Record<string, unknown>> = [];
+function buildAnthropicAssistantToolContent(
+  text: string,
+  toolCalls: LLMToolCall[],
+  thinkingBlocks: Map<number, AnthropicStreamThinkingBlockState>,
+): Array<Record<string, unknown>> {
+  const content = [...thinkingBlocks.values()]
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => ({ ...entry.block }));
   if (text.length > 0) {
     content.push({ type: "text", text });
   }
@@ -931,13 +1081,16 @@ function toAnthropicTools(tools: Array<Record<string, unknown>> | undefined): Ar
     });
 }
 
-function toAnthropicToolChoice(value: LLMRequest["toolChoice"]): unknown {
-  if (value === undefined) {
-    return undefined;
-  }
+function toAnthropicToolChoice(
+  value: LLMRequest["toolChoice"],
+  parallelToolCalls?: boolean,
+): unknown {
+  let choice: Record<string, unknown> | undefined;
 
   if (value === "required") {
-    return { type: "any" };
+    choice = { type: "any" };
+  } else if (value === "auto" || value === "none") {
+    choice = { type: value };
   }
 
   if (isRecord(value) && value.type === "function") {
@@ -945,10 +1098,40 @@ function toAnthropicToolChoice(value: LLMRequest["toolChoice"]): unknown {
     if (isRecord(maybeFn)) {
       const name = pickString(maybeFn.name);
       if (name) {
-        return { type: "tool", name };
+        choice = { type: "tool", name };
       }
     }
   }
 
-  return value;
+  if (!choice && parallelToolCalls !== undefined) {
+    choice = { type: "auto" };
+  }
+
+  return choice
+    ? {
+        ...choice,
+        ...(parallelToolCalls !== undefined && choice.type !== "none"
+          ? { disable_parallel_tool_use: !parallelToolCalls }
+          : {}),
+      }
+    : undefined;
+}
+
+function throwForAnthropicStreamError(payload: Record<string, unknown>): void {
+  if (pickString(payload.type) !== "error") {
+    return;
+  }
+
+  const error = isRecord(payload.error) ? payload.error : undefined;
+  throw new Error(pickString(error?.message) ?? pickString(payload.message) ?? "Anthropic stream failed.");
+}
+
+function isAnthropicTerminalEvent(payload: Record<string, unknown>): boolean {
+  return pickString(payload.type) === "message_stop";
+}
+
+function assertAnthropicStreamTerminated(terminated: boolean): void {
+  if (!terminated) {
+    throw new Error("Anthropic-compatible stream ended before a terminal event.");
+  }
 }

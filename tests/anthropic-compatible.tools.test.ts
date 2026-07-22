@@ -128,6 +128,97 @@ describe("anthropic-compatible MCP tools", () => {
     ]);
   });
 
+  test("translates data URLs and remote image URLs to Anthropic image sources", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const fetcher = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return jsonResponse({
+        content: [{ type: "text", text: "seen" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "Compare these images" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,YWJj" } },
+          { type: "image_url", image_url: { url: "https://example.com/image.jpg" } },
+        ],
+      }],
+    });
+
+    expect(requestBody.messages).toEqual([{
+      role: "user",
+      content: [
+        { type: "text", text: "Compare these images" },
+        {
+          type: "image",
+          source: { type: "base64", media_type: "image/png", data: "YWJj" },
+        },
+        {
+          type: "image",
+          source: { type: "url", url: "https://example.com/image.jpg" },
+        },
+      ],
+    }]);
+  });
+
+  test("translates array content when an assistant message also contains tool calls", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const fetcher = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "claude-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      messages: [
+        { role: "user", content: "Run it" },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Calling the tool" }],
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "sum", arguments: "{\"a\":1,\"b\":2}" },
+          }],
+        },
+        { role: "tool", tool_call_id: "call_1", content: "3" },
+      ],
+    });
+
+    expect(requestBody.messages).toEqual([
+      { role: "user", content: "Run it" },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Calling the tool" },
+          { type: "tool_use", id: "call_1", name: "sum", input: { a: 1, b: 2 } },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "call_1", content: "3" }],
+      },
+    ]);
+  });
+
   test("rejects system turns after non-system messages", async () => {
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -368,7 +459,7 @@ describe("anthropic-compatible MCP tools", () => {
     expect(requests[0]?.max_tokens).toBe(DEFAULT_ANTHROPIC_MAX_TOKENS);
   });
 
-  test("forwards minimal and none output_config.effort values as-is", async () => {
+  test("maps minimal effort to low and disables thinking for none", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
@@ -395,16 +486,14 @@ describe("anthropic-compatible MCP tools", () => {
     });
 
     expect(requests[0]?.output_config).toEqual({
-      effort: "minimal",
+      effort: "low",
     });
     expect(requests[0]?.thinking).toEqual({
       type: "adaptive",
     });
-    expect(requests[1]?.output_config).toEqual({
-      effort: "none",
-    });
+    expect(requests[1]?.output_config).toBeUndefined();
     expect(requests[1]?.thinking).toEqual({
-      type: "adaptive",
+      type: "disabled",
     });
   });
 
@@ -594,7 +683,7 @@ describe("anthropic-compatible pass-through reasoning", () => {
       ],
       stop_reason: "end_turn",
       usage: { input_tokens: 5, output_tokens: 2 },
-    })) as typeof fetch;
+    })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "claude-test",
@@ -612,7 +701,7 @@ describe("anthropic-compatible pass-through reasoning", () => {
     const fetcher = (async () => jsonResponse({
       content: [{ type: "thinking", thinking: "Only thoughts, no text." }],
       stop_reason: "max_tokens",
-    })) as typeof fetch;
+    })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "claude-test",
@@ -627,7 +716,7 @@ describe("anthropic-compatible pass-through reasoning", () => {
   });
 
   test("still throws when the response has no text, reasoning, or tool calls", async () => {
-    const fetcher = (async () => jsonResponse({ content: [], stop_reason: "end_turn" })) as typeof fetch;
+    const fetcher = (async () => jsonResponse({ content: [], stop_reason: "end_turn" })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "claude-test",

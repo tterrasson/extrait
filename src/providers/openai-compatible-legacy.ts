@@ -100,6 +100,7 @@ async function streamWithChatCompletionsPassThrough(
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
   let lastPayload: Record<string, unknown> | undefined;
+  let streamTerminated = false;
   const logprobsContent: LLMTokenLogprob[] = [];
   const logprobsRefusal: LLMTokenLogprob[] = [];
   const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
@@ -107,14 +108,16 @@ async function streamWithChatCompletionsPassThrough(
 
   await consumeSSE(response, (data) => {
     if (data === "[DONE]") {
+      streamTerminated = true;
       return;
     }
 
     const json = safeJSONParse(data);
     if (!isRecord(json)) {
-      return;
+      throw new Error("Invalid JSON event in OpenAI Chat Completions stream.");
     }
 
+    throwForChatCompletionsStreamError(json);
     lastPayload = json;
 
     const rawDelta = pickAssistantDelta(json);
@@ -131,6 +134,7 @@ async function streamWithChatCompletionsPassThrough(
     usage = preferLatestUsage(usage, chunkUsage);
     if (chunkFinishReason) {
       finishReason = chunkFinishReason;
+      streamTerminated = true;
     }
 
     if (delta) {
@@ -154,6 +158,8 @@ async function streamWithChatCompletionsPassThrough(
       chunkLogprobs,
     );
   });
+
+  assertChatCompletionsStreamTerminated(streamTerminated);
 
   const tail = nativeToolCalls.flush();
   if (tail.textDelta) {
@@ -190,7 +196,9 @@ function buildChatCompletionsBody(
     ...(request.reasoningEffort
       ? { reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort) }
       : {}),
-    ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+    ...(request.maxTokens !== undefined
+      ? { max_tokens: undefined, max_completion_tokens: request.maxTokens }
+      : {}),
     ...(topLogprobs !== undefined ? { logprobs: true, top_logprobs: topLogprobs } : {}),
     ...cleanUndefined(overrides),
   });
@@ -385,22 +393,25 @@ async function streamWithChatCompletionsWithMCP(
     let roundReasoning = "";
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
+    let streamTerminated = false;
     const roundLogprobsContent: LLMTokenLogprob[] = [];
     const roundLogprobsRefusal: LLMTokenLogprob[] = [];
     const streamedToolCalls = new Map<number, OpenAIStreamToolCallState>();
-    const nativeToolCalls = new NativeToolCallStreamState();
+    const nativeToolCalls = new NativeToolCallStreamState(true, `round_${round}`);
     let reasoningFieldName: OpenAIReasoningFieldName | undefined;
 
     await consumeSSE(response, (data) => {
       if (data === "[DONE]") {
+        streamTerminated = true;
         return;
       }
 
       const json = safeJSONParse(data);
       if (!isRecord(json)) {
-        return;
+        throw new Error("Invalid JSON event in OpenAI Chat Completions stream.");
       }
 
+      throwForChatCompletionsStreamError(json);
       lastPayload = json;
 
       const rawDelta = pickAssistantDelta(json);
@@ -416,6 +427,7 @@ async function streamWithChatCompletionsWithMCP(
       roundUsage = preferLatestUsage(roundUsage, chunkUsage);
       if (chunkFinishReason) {
         roundFinishReason = chunkFinishReason;
+        streamTerminated = true;
       }
 
       if (delta) {
@@ -454,6 +466,8 @@ async function streamWithChatCompletionsWithMCP(
         chunkLogprobs,
       );
     });
+
+    assertChatCompletionsStreamTerminated(streamTerminated);
 
     const tail = nativeToolCalls.flush();
     if (tail.textDelta) {
@@ -700,7 +714,23 @@ function pickAssistantDelta(payload: Record<string, unknown>): string {
     return "";
   }
 
-  return pickTextLike(delta.content);
+  const content = pickTextLike(delta.content);
+  return content.length > 0 ? content : pickTextLike(delta.refusal);
+}
+
+function throwForChatCompletionsStreamError(payload: Record<string, unknown>): void {
+  const error = isRecord(payload.error) ? payload.error : undefined;
+  if (!error && pickString(payload.type) !== "error") {
+    return;
+  }
+
+  throw new Error(pickString(error?.message) ?? pickString(payload.message) ?? "Chat Completions stream failed.");
+}
+
+function assertChatCompletionsStreamTerminated(terminated: boolean): void {
+  if (!terminated) {
+    throw new Error("OpenAI Chat Completions stream ended before a terminal event.");
+  }
 }
 
 function pickAssistantReasoning(payload: Record<string, unknown>): string {
@@ -782,7 +812,10 @@ class NativeToolCallStreamState {
   // Native `<tool_call>` markup is only intercepted when the request actually
   // declares tools; otherwise the state is a transparent pass-through so prose
   // that happens to contain the literal markup is never swallowed.
-  constructor(private readonly enabled = true) {}
+  constructor(
+    private readonly enabled = true,
+    private readonly idNamespace?: string,
+  ) {}
 
   push(delta: string): ToolCallStreamDelta {
     if (!delta || !this.enabled) {
@@ -822,13 +855,17 @@ class NativeToolCallStreamState {
       const closeIndex = this.pending.indexOf(NATIVE_TOOL_CALL_CLOSE);
       if (closeIndex < 0) {
         if (flush) {
+          textDelta += this.pending;
           this.pending = "";
         }
         break;
       }
 
       const blockEnd = closeIndex + NATIVE_TOOL_CALL_CLOSE.length;
-      const call = parseNativeToolCallBlock(this.pending.slice(0, blockEnd), this.calls.length);
+      const call = parseNativeToolCallBlock(
+        this.pending.slice(0, blockEnd),
+        this.fallbackId(this.calls.length),
+      );
       if (call) {
         this.calls.push(call);
         toolCalls.push(call);
@@ -837,6 +874,12 @@ class NativeToolCallStreamState {
     }
 
     return { textDelta, toolCalls };
+  }
+
+  private fallbackId(index: number): string {
+    return this.idNamespace
+      ? `call_native_${this.idNamespace}_${index}`
+      : `call_native_${index}`;
   }
 }
 
@@ -850,7 +893,7 @@ const NATIVE_FUNCTION_PATTERN = /<function=([^>\s]+)\s*>([\s\S]*?)<\/function>/;
 
 const NATIVE_PARAMETER_PATTERN = /<parameter=([^>\s]+)\s*>([\s\S]*?)<\/parameter>/g;
 
-function parseNativeToolCallBlock(block: string, index: number): LLMToolCall | undefined {
+function parseNativeToolCallBlock(block: string, fallbackId: string): LLMToolCall | undefined {
   const inner = extractNativeToolCallInner(block);
   if (inner === undefined) {
     return undefined;
@@ -858,7 +901,7 @@ function parseNativeToolCallBlock(block: string, index: number): LLMToolCall | u
 
   // Two shapes appear inside <tool_call>…</tool_call>: a JSON object (Hermes/Qwen
   // style) or a nested <function=…><parameter=…> tree (Llama style).
-  return parseNativeJsonToolCall(inner, index) ?? parseNativeXmlToolCall(inner, index);
+  return parseNativeJsonToolCall(inner, fallbackId) ?? parseNativeXmlToolCall(inner, fallbackId);
 }
 
 function extractNativeToolCallInner(block: string): string | undefined {
@@ -871,7 +914,7 @@ function extractNativeToolCallInner(block: string): string | undefined {
   return block.slice(openEnd + 1, closeStart).trim();
 }
 
-function parseNativeXmlToolCall(inner: string, index: number): LLMToolCall | undefined {
+function parseNativeXmlToolCall(inner: string, fallbackId: string): LLMToolCall | undefined {
   const functionMatch = NATIVE_FUNCTION_PATTERN.exec(inner);
   const functionName = functionMatch?.[1];
   const functionBody = functionMatch?.[2];
@@ -887,7 +930,7 @@ function parseNativeXmlToolCall(inner: string, index: number): LLMToolCall | und
   }
 
   return {
-    id: `call_native_${index}`,
+    id: fallbackId,
     type: "function",
     name: functionName,
     arguments: JSON.stringify(args),
@@ -924,7 +967,7 @@ function nativeToolCallPrefixSuffixLength(value: string): number {
   return 0;
 }
 
-function parseNativeJsonToolCall(inner: string, index: number): LLMToolCall | undefined {
+function parseNativeJsonToolCall(inner: string, fallbackId: string): LLMToolCall | undefined {
   const parsed = safeJSONParse(inner);
   if (!isRecord(parsed)) {
     return undefined;
@@ -938,7 +981,7 @@ function parseNativeJsonToolCall(inner: string, index: number): LLMToolCall | un
   const rawArguments = parsed.arguments ?? parsed.parameters ?? {};
   const args = typeof rawArguments === "string" ? rawArguments : JSON.stringify(rawArguments);
   return {
-    id: pickString(parsed.id) ?? `call_native_${index}`,
+    id: pickString(parsed.id) ?? fallbackId,
     type: "function",
     name,
     arguments: args,
@@ -1075,6 +1118,11 @@ function pickAssistantText(payload: Record<string, unknown>): string {
     const text = pickTextLike(message.content);
     if (text.length > 0) {
       return text;
+    }
+
+    const refusal = pickTextLike(message.refusal);
+    if (refusal.length > 0) {
+      return refusal;
     }
   }
 

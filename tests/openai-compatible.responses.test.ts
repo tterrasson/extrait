@@ -63,7 +63,7 @@ describe("openai-compatible Responses contract", () => {
       instructions: "Be brief",
       temperature: 0.2,
       max_output_tokens: 20,
-      reasoning: { effort: "xhigh" },
+      reasoning: { effort: "max" },
       top_logprobs: 3,
       include: ["message.output_text.logprobs"],
     });
@@ -105,6 +105,64 @@ describe("openai-compatible Responses contract", () => {
     }]);
   });
 
+  test("uses input content parts for assistant history and preserves text beside tool calls", async () => {
+    let body: Record<string, unknown> = {};
+    const fetcher = (async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({ output_text: "done", status: "completed" });
+    }) as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.complete({
+      messages: [
+        { role: "user", content: "Compute" },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "I will calculate it." }],
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "sum", arguments: "{\"a\":1,\"b\":2}" },
+          }],
+        },
+        { role: "tool", content: "3", tool_call_id: "call_1" },
+      ],
+    });
+
+    expect(body.input).toEqual([
+      { role: "user", content: "Compute" },
+      {
+        role: "assistant",
+        content: [{ type: "input_text", text: "I will calculate it." }],
+      },
+      { type: "function_call", call_id: "call_1", name: "sum", arguments: "{\"a\":1,\"b\":2}" },
+      { type: "function_call_output", call_id: "call_1", output: "3" },
+    ]);
+  });
+
+  test("returns non-streaming refusal output as text", async () => {
+    const fetcher = (async () => jsonResponse({
+      status: "completed",
+      output: [{
+        type: "message",
+        content: [{ type: "refusal", refusal: "I cannot help with that." }],
+      }],
+    })) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.complete({ prompt: "test" });
+
+    expect(result.text).toBe("I cannot help with that.");
+  });
+
   test("streams and accumulates Responses logprobs", async () => {
     const chunks: unknown[] = [];
     const fetcher = (async () => sseResponse([
@@ -135,6 +193,63 @@ describe("openai-compatible Responses contract", () => {
       textDelta: "A",
       logprobs: { content: [{ token: "A", logprob: -0.2, bytes: [65] }] },
     }));
+  });
+
+  test("streams refusal deltas as response text", async () => {
+    const tokens: string[] = [];
+    const fetcher = (async () => sseResponse([
+      { type: "response.refusal.delta", delta: "I cannot" },
+      { type: "response.refusal.delta", delta: " help." },
+      {
+        type: "response.completed",
+        response: {
+          status: "completed",
+          output: [{
+            type: "message",
+            content: [{ type: "refusal", refusal: "I cannot help." }],
+          }],
+        },
+      },
+    ])) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({ prompt: "test" }, {
+      onToken: (token) => tokens.push(token),
+    });
+
+    expect(tokens).toEqual(["I cannot", " help."]);
+    expect(result.text).toBe("I cannot help.");
+  });
+
+  test("throws when a Responses stream ends before a terminal event", async () => {
+    const fetcher = (async () => sseResponse([
+      { type: "response.output_text.delta", delta: "partial" },
+    ])) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("before a terminal event");
+  });
+
+  test("throws for a malformed Responses stream event", async () => {
+    const fetcher = (async () => new Response("data: not-json\n\ndata: [DONE]\n\n", {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    })) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("Invalid JSON event");
   });
 
   test("serializes Responses request options in streaming mode", async () => {
@@ -456,7 +571,7 @@ describe("openai-compatible Responses contract", () => {
 });
 
 describe("openai-compatible-legacy contract", () => {
-  test("uses Chat Completions and maps topLogprobs", async () => {
+  test("uses Chat Completions and maps current request parameters", async () => {
     let url = "";
     let body: Record<string, unknown> = {};
     const fetcher = (async (input, init) => {
@@ -467,12 +582,61 @@ describe("openai-compatible-legacy contract", () => {
     const adapter = createOpenAICompatibleLegacyAdapter({
       baseURL: "https://example.com",
       model: "gpt-test",
+      defaultBody: { max_tokens: 64 },
       fetcher,
     });
 
-    await adapter.complete({ prompt: "test", topLogprobs: 4 });
+    await adapter.complete({
+      prompt: "test",
+      topLogprobs: 4,
+      maxTokens: 32,
+      reasoningEffort: "max",
+    });
     expect(url).toBe("https://example.com/v1/chat/completions");
-    expect(body).toMatchObject({ logprobs: true, top_logprobs: 4 });
+    expect(body).toMatchObject({
+      logprobs: true,
+      top_logprobs: 4,
+      max_completion_tokens: 32,
+      reasoning_effort: "max",
+    });
+    expect(body).not.toHaveProperty("max_tokens");
+  });
+
+  test("keeps xhigh and max as distinct reasoning effort values", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse({ choices: [{ message: { role: "assistant", content: "ok" } }] });
+    }) as typeof fetch;
+    const adapter = createOpenAICompatibleLegacyAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "test", reasoningEffort: "xhigh" });
+    await adapter.complete({ prompt: "test", reasoningEffort: "max" });
+
+    expect(requests[0]?.reasoning_effort).toBe("xhigh");
+    expect(requests[1]?.reasoning_effort).toBe("max");
+  });
+
+  test("returns Chat Completions refusal content as text", async () => {
+    const fetcher = (async () => jsonResponse({
+      choices: [{
+        finish_reason: "content_filter",
+        message: { role: "assistant", content: null, refusal: "I cannot help with that." },
+      }],
+    })) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleLegacyAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.complete({ prompt: "test" });
+
+    expect(result.text).toBe("I cannot help with that.");
   });
 
   test("retains embeddings support", async () => {

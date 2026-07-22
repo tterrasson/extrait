@@ -304,17 +304,19 @@ async function streamWithResponsesAPIPassThrough(
   let usage: LLMUsage | undefined;
   let finishReason: string | undefined;
   let lastPayload: Record<string, unknown> | undefined;
+  let streamTerminated = false;
   const streamedToolCalls = new Map<string, OpenAIResponsesStreamToolCallState>();
   const logprobsContent: LLMTokenLogprob[] = [];
 
   await consumeSSE(response, (data) => {
     if (data === "[DONE]") {
+      streamTerminated = true;
       return;
     }
 
     const json = safeJSONParse(data);
     if (!isRecord(json)) {
-      return;
+      throw new Error("Invalid JSON event in OpenAI Responses stream.");
     }
 
     const roundPayload = pickResponsesStreamPayload(json);
@@ -329,6 +331,7 @@ async function streamWithResponsesAPIPassThrough(
     const chunkLogprobs = pickResponsesStreamLogprobs(json);
     appendResponsesLogprobs(chunkLogprobs, logprobsContent);
     throwForResponsesStreamError(json);
+    streamTerminated ||= isResponsesTerminalEvent(json);
     collectResponsesStreamToolCalls(json, streamedToolCalls);
     const chunkToolCalls = buildResponsesStreamToolCalls(streamedToolCalls);
 
@@ -357,6 +360,8 @@ async function streamWithResponsesAPIPassThrough(
       chunkLogprobs,
     );
   });
+
+  assertResponsesStreamTerminated(streamTerminated);
 
   const finalPayload = lastPayload ?? {};
   const finalReasoning = reasoning || pickResponsesReasoning(finalPayload);
@@ -410,17 +415,19 @@ async function streamWithResponsesAPIWithMCP(
     let roundUsage: LLMUsage | undefined;
     let roundFinishReason: string | undefined;
     let roundPayload: Record<string, unknown> | undefined;
+    let streamTerminated = false;
     const roundLogprobs: LLMTokenLogprob[] = [];
     const streamedToolCalls = new Map<string, OpenAIResponsesStreamToolCallState>();
 
     await consumeSSE(response, (data) => {
       if (data === "[DONE]") {
+        streamTerminated = true;
         return;
       }
 
       const json = safeJSONParse(data);
       if (!isRecord(json)) {
-        return;
+        throw new Error("Invalid JSON event in OpenAI Responses stream.");
       }
 
       const payload = pickResponsesStreamPayload(json);
@@ -436,6 +443,7 @@ async function streamWithResponsesAPIWithMCP(
       const chunkLogprobs = pickResponsesStreamLogprobs(json);
       appendResponsesLogprobs(chunkLogprobs, roundLogprobs);
       throwForResponsesStreamError(json);
+      streamTerminated ||= isResponsesTerminalEvent(json);
 
       collectResponsesStreamToolCalls(json, streamedToolCalls);
       roundUsage = preferLatestUsage(roundUsage, chunkUsage);
@@ -468,6 +476,8 @@ async function streamWithResponsesAPIWithMCP(
         chunkLogprobs,
       );
     });
+
+    assertResponsesStreamTerminated(streamTerminated);
 
     const resolvedRoundUsage = preferLatestUsage(roundUsage, roundPayload ? pickUsage(roundPayload) : undefined);
     state.aggregatedUsage = mergeUsage(state.aggregatedUsage, resolvedRoundUsage);
@@ -583,8 +593,11 @@ function toResponsesItems(message: LLMMessage): Array<Record<string, unknown>> {
 
   if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
     const items: Array<Record<string, unknown>> = [];
-    if (typeof message.content === "string" && message.content.length > 0) {
-      items.push({ role: "assistant", content: message.content });
+    if (
+      (typeof message.content === "string" && message.content.length > 0)
+      || (Array.isArray(message.content) && message.content.length > 0)
+    ) {
+      items.push(toResponsesMessage({ role: "assistant", content: message.content }));
     }
     for (const toolCall of message.tool_calls) {
       if (!isRecord(toolCall) || !isRecord(toolCall.function)) {
@@ -617,7 +630,7 @@ function toResponsesMessage(message: LLMMessage): Record<string, unknown> {
         return { type: "input_image", image_url: part.image_url.url };
       }
       return {
-        type: message.role === "assistant" ? "output_text" : "input_text",
+        type: "input_text",
         text: part.text,
       };
     }),
@@ -731,6 +744,17 @@ function throwForResponsesStreamError(payload: Record<string, unknown>): void {
   throw new Error(message);
 }
 
+function isResponsesTerminalEvent(payload: Record<string, unknown>): boolean {
+  const eventType = pickString(payload.type);
+  return eventType === "response.completed" || eventType === "response.incomplete";
+}
+
+function assertResponsesStreamTerminated(terminated: boolean): void {
+  if (!terminated) {
+    throw new Error("OpenAI Responses stream ended before a terminal event.");
+  }
+}
+
 function throwForResponsesPayloadError(payload: Record<string, unknown>): void {
   if (pickString(payload.status) !== "failed") return;
   const error = isRecord(payload.error) ? payload.error : undefined;
@@ -796,7 +820,7 @@ function pickResponsesStreamPayload(payload: Record<string, unknown>): Record<st
 
 function pickResponsesStreamTextDelta(payload: Record<string, unknown>): string {
   const eventType = pickString(payload.type) ?? "";
-  if (!eventType.includes("output_text.delta")) {
+  if (!eventType.includes("output_text.delta") && !eventType.includes("refusal.delta")) {
     return "";
   }
 
@@ -994,6 +1018,10 @@ function pickResponsesText(payload: Record<string, unknown>): string {
         return item.text;
       }
 
+      if (typeof item.refusal === "string") {
+        return item.refusal;
+      }
+
       const content = item.content;
       if (!Array.isArray(content)) {
         return "";
@@ -1011,6 +1039,10 @@ function pickResponsesText(payload: Record<string, unknown>): string {
 
           if (typeof part.output_text === "string") {
             return part.output_text;
+          }
+
+          if (typeof part.refusal === "string") {
+            return part.refusal;
           }
 
           return "";

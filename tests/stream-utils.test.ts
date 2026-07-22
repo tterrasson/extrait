@@ -105,10 +105,10 @@ describe("consumeSSE", () => {
     expect(events).toEqual(["a", "b"]);
   });
 
-  test("trims whitespace after data: prefix", async () => {
+  test("removes at most one optional space after the data field separator", async () => {
     const events: string[] = [];
     const response = mockResponse(["data:   spaced  \n\n"]);
     await consumeSSE(response, (data) => events.push(data));
-    expect(events).toEqual(["spaced"]);
+    expect(events).toEqual(["  spaced  "]);
   });
 });

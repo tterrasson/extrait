@@ -369,7 +369,7 @@ const result = await llm.generate(
 );
 ```
 
-On `openai-compatible`, this is sent as `reasoning: { effort }`; on `openai-compatible-legacy`, as `reasoning_effort`. In both cases `max` is mapped to `xhigh`. On `anthropic-compatible`, this is sent as `output_config.effort` and auto-enables `thinking: { type: "adaptive" }`; the thinking content comes back in `result.reasoning`.
+On `openai-compatible`, this is sent as `reasoning: { effort }`; on `openai-compatible-legacy`, as `reasoning_effort`. OpenAI effort values, including the distinct `xhigh` and `max` levels, are forwarded as-is. On `anthropic-compatible`, `minimal` maps to `low`, `none` disables thinking, and supported effort values are sent as `output_config.effort` while auto-enabling `thinking: { type: "adaptive" }`; the thinking content comes back in `result.reasoning`.
 
 For existing history or multi-turn conversations, pass `messages` directly:
 

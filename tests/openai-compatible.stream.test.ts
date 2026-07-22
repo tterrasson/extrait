@@ -83,7 +83,7 @@ describe("openai-compatible streaming", () => {
     expect(result.usage?.inputTokens).toBe(5);
     expect(result.usage?.outputTokens).toBe(2);
     expect(chunks.length).toBe(3);
-    expect(requests[0]?.reasoning_effort).toBe("xhigh");
+    expect(requests[0]?.reasoning_effort).toBe("max");
     expect(requests[0]?.stream_options).toEqual({ include_usage: true });
   });
 
@@ -526,6 +526,33 @@ describe("openai-compatible streaming", () => {
     });
   });
 
+  test("preserves incomplete native tool-call markup as text at the end of a completed stream", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          choices: [{
+            delta: { content: "Before <tool_call>{\"name\":\"lookup\"" },
+            finish_reason: "stop",
+          }],
+        }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({
+      prompt: "test",
+      body: { tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }] },
+    });
+
+    expect(result.text).toBe("Before <tool_call>{\"name\":\"lookup\"");
+    expect(result.toolCalls).toBeUndefined();
+  });
+
   test("does not intercept <tool_call> markup when the request declares no tools", async () => {
     const fetcher = (async () =>
       sseResponse([
@@ -570,6 +597,67 @@ describe("openai-compatible streaming", () => {
 
     expect(result.text).toBe("ok");
     expect(tokens).toEqual(["ok"]);
+  });
+
+  test("streams refusal deltas as response text", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { refusal: "I cannot" } }] }),
+        JSON.stringify({ choices: [{ delta: { refusal: " help." }, finish_reason: "content_filter" }] }),
+        "[DONE]",
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({ prompt: "test" });
+
+    expect(result.text).toBe("I cannot help.");
+    expect(result.finishReason).toBe("content_filter");
+  });
+
+  test("throws when a Chat Completions stream ends before a terminal event", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "partial" } }] }),
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("before a terminal event");
+  });
+
+  test("throws for an in-band Chat Completions stream error", async () => {
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ error: { type: "server_error", message: "Upstream failed" } }),
+      ])) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("Upstream failed");
+  });
+
+  test("throws for a malformed Chat Completions stream event", async () => {
+    const fetcher = (async () => sseResponse(["not-json", "[DONE]"])) as unknown as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    await expect(adapter.stream!({ prompt: "test" })).rejects.toThrow("Invalid JSON event");
   });
 
   test("throws on HTTP error during streaming", async () => {
@@ -1080,6 +1168,58 @@ describe("openai-compatible streaming", () => {
       outputTokens: 3,
       totalTokens: 8,
     });
+  });
+
+  test("uses distinct fallback IDs for native tool calls across MCP rounds", async () => {
+    const requests: Record<string, unknown>[] = [];
+    let round = 0;
+    const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      round += 1;
+
+      if (round <= 2) {
+        return sseResponse([
+          JSON.stringify({
+            choices: [{
+              delta: {
+                content: `<tool_call>{"name":"add","arguments":{"a":${round},"b":1}}</tool_call>`,
+              },
+              finish_reason: "tool_calls",
+            }],
+          }),
+          "[DONE]",
+        ]);
+      }
+
+      return sseResponse([
+        JSON.stringify({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }),
+        "[DONE]",
+      ]);
+    }) as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "gpt-test",
+      fetcher,
+    });
+
+    const result = await adapter.stream!({
+      prompt: "test",
+      mcpClients: [createSimpleMCP()],
+      maxToolRounds: 2,
+    });
+
+    expect(result.text).toBe("done");
+    expect(result.toolCalls?.map((call) => call.id)).toEqual([
+      "call_native_round_1_0",
+      "call_native_round_2_0",
+    ]);
+    const finalMessages = requests[2]?.messages as Array<Record<string, unknown>>;
+    const assistantMessages = finalMessages.filter((message) => message.role === "assistant");
+    expect(assistantMessages.map((message) => {
+      const calls = message.tool_calls as Array<Record<string, unknown>>;
+      return calls[0]?.id;
+    })).toEqual(["call_native_round_1_0", "call_native_round_2_0"]);
   });
 });
 

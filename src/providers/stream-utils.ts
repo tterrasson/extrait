@@ -29,10 +29,7 @@ export async function consumeSSE(
       const rawEvent = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + (buffer.startsWith("\r\n\r\n", boundary) ? 4 : 2));
 
-      const dataLines = rawEvent
-        .split(RE_LINE_ENDING)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim());
+      const dataLines = extractSSEDataLines(rawEvent);
 
       if (dataLines.length === 0) {
         continue;
@@ -42,17 +39,28 @@ export async function consumeSSE(
     }
   }
 
-  const remainder = buffer.trim();
-  if (remainder.length > 0) {
-    const dataLines = remainder
-      .split(RE_LINE_ENDING)
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trim());
+  buffer += decoder.decode();
+  if (buffer.trim().length > 0) {
+    const dataLines = extractSSEDataLines(buffer);
 
     if (dataLines.length > 0) {
       onEvent(dataLines.join("\n"));
     }
   }
+}
+
+function extractSSEDataLines(rawEvent: string): string[] {
+  return rawEvent
+    .split(RE_LINE_ENDING)
+    .filter((line) => line === "data" || line.startsWith("data:"))
+    .map((line) => {
+      if (line === "data") {
+        return "";
+      }
+
+      const value = line.slice(5);
+      return value.startsWith(" ") ? value.slice(1) : value;
+    });
 }
 
 function findSSEBoundary(buffer: string): number {
