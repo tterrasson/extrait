@@ -279,7 +279,7 @@ async function completeWithMCPToolLoop(
     const payload = (await response.json()) as Record<string, unknown>;
     lastPayload = payload;
     aggregatedUsage = mergeUsage(aggregatedUsage, pickUsage(payload));
-    finishReason = pickFinishReason(payload);
+    finishReason = pickFinishReason(payload) ?? finishReason;
 
     const content = Array.isArray(payload.content) ? payload.content : [];
     const calledTools = pickAnthropicToolCalls(payload).filter((call) => call.type === "function");
@@ -559,8 +559,6 @@ function buildAnthropicRequestBody(
       ? (hasExplicitThinking ? bodyThinking : { type: "adaptive" })
       : bodyThinking;
 
-  assertAnthropicThinkingToolChoiceCompatibility(thinking, body.tool_choice);
-
   return cleanUndefined({
     ...body,
     // Precedence: per-request maxTokens > max_tokens already present in the
@@ -576,20 +574,6 @@ function buildAnthropicRequestBody(
         : bodyOutputConfig,
     thinking,
   });
-}
-
-function assertAnthropicThinkingToolChoiceCompatibility(
-  thinking: unknown,
-  toolChoice: unknown,
-): void {
-  if (!isRecord(thinking) || pickString(thinking.type) === "disabled" || !isRecord(toolChoice)) {
-    return;
-  }
-
-  const type = pickString(toolChoice.type);
-  if (type === "any" || type === "tool") {
-    throw new Error('Anthropic thinking only supports toolChoice "auto" or "none".');
-  }
 }
 
 function toAnthropicReasoningEffort(

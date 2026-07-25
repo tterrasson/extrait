@@ -692,19 +692,34 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
     });
   });
 
-  test("rejects forced tool choice while Anthropic thinking is enabled", async () => {
+  // Forced tool choice alongside thinking was rejected by the extended-thinking
+  // era API; adaptive thinking accepts it, so the combination is passed through
+  // and the server decides.
+  test("forwards forced tool choice while Anthropic thinking is enabled", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse({
+        content: [{ type: "text", text: "hi" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "claude-test",
-      fetcher: (async () => jsonResponse({})) as unknown as typeof fetch,
+      fetcher,
     });
 
-    await expect(adapter.complete({
+    await adapter.complete({
       prompt: "test",
       reasoningEffort: "high",
       mcpClients: [createSimpleMCP()],
       toolChoice: "required",
-    })).rejects.toThrow('only supports toolChoice "auto" or "none"');
+    });
+
+    expect(requests[0]?.tool_choice).toEqual({ type: "any" });
+    expect(requests[0]?.thinking).toEqual({ type: "adaptive" });
   });
 });
 

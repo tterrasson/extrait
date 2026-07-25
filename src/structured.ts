@@ -362,13 +362,16 @@ export async function structured<TSchema extends z.ZodTypeAny>(
       maxContextChars: selfHealConfig.maxContextChars,
     });
 
+    const healPayload = buildSelfHealPayload(preparedPrompt, repairPrompt);
+
     const healed = await executeAttempt(adapter, {
-      prompt: repairPrompt,
+      prompt: healPayload.prompt,
+      messages: healPayload.messages,
       schema: normalized.schema,
       parseOptions,
       stream: streamConfig,
       request: resolvedRequest,
-      systemPrompt: preparedPrompt.systemPrompt,
+      systemPrompt: healPayload.systemPrompt,
       observe: normalized.observe,
       debug: debugConfig,
       attemptNumber,
@@ -455,6 +458,34 @@ function prepareStructuredPromptPayload<TSchema extends z.ZodTypeAny>(
         })
       : resolvedPrompt,
     systemPrompt: mergeSystemPrompts(payload.systemPrompt, systemPrompt),
+  };
+}
+
+/**
+ * Builds the request payload for a self-heal attempt.
+ *
+ * When the original call used `messages`, the repair prompt is appended as a new
+ * user turn on top of the original conversation instead of replacing it: the
+ * prior turns, the system prompt (merged into the messages upstream), and any
+ * image blocks all stay visible to the model. Re-extracting from an image the
+ * model can no longer see would otherwise be impossible.
+ */
+function buildSelfHealPayload(
+  payload: { prompt?: string; systemPrompt?: string; messages?: LLMMessage[] },
+  repairPrompt: string,
+): { prompt?: string; systemPrompt?: string; messages?: LLMMessage[] } {
+  if (payload.messages && payload.messages.length > 0) {
+    return {
+      messages: [
+        ...payload.messages.map((message) => ({ ...message })),
+        { role: "user" as const, content: repairPrompt },
+      ],
+    };
+  }
+
+  return {
+    prompt: repairPrompt,
+    systemPrompt: payload.systemPrompt,
   };
 }
 

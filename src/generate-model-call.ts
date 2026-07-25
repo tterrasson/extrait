@@ -273,6 +273,23 @@ export async function callModel<TSnapshot, TTraceEvent>(
   const response = await adapter.complete(requestPayload);
   const normalized = normalizeModelOutput(response.text, response.reasoning, response.reasoningBlocks);
 
+  // Streaming was requested but the adapter cannot stream. Consumers finalize on
+  // `done`, so emit the completed response as a single terminal event rather than
+  // silently never calling `onData` at all.
+  if (options.stream.enabled) {
+    options.stream.onData?.({
+      delta: { text: normalized.text, reasoning: normalized.reasoning },
+      snapshot: options.buildSnapshot(normalized),
+      done: true,
+      usage: response.usage,
+      finishReason: response.finishReason,
+    });
+
+    if (options.stream.to === "stdout" && normalized.text) {
+      process.stdout.write(normalized.text);
+    }
+  }
+
   options.observe?.(
     options.buildEvent({
       stage: "llm.response",

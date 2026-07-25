@@ -1143,4 +1143,69 @@ describe("structured", () => {
     expect(result.attempts).toHaveLength(2);
     expect(result.attempts[0]?.reasoning).toBe("I should return JSON");
   });
+  test("self-heal keeps the original messages, system prompt and image blocks", async () => {
+    const adapter = new MockAdapter(['{"value": "nope"}', '{"value": 7}']);
+    const schema = z.object({ value: z.number() });
+
+    const result = await structured(adapter, {
+      schema,
+      systemPrompt: "SYSTEM-MARKER",
+      prompt: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "USER-MARKER" },
+              { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } },
+            ],
+          },
+        ],
+      },
+      selfHeal: 1,
+    });
+
+    expect(result.data).toEqual({ value: 7 });
+    expect(adapter.requests).toHaveLength(2);
+
+    const healMessages = adapter.requests[1]?.messages ?? [];
+    // Original system turn + original multimodal user turn + the repair turn.
+    expect(healMessages).toHaveLength(3);
+    expect(healMessages[0]).toEqual({ role: "system", content: "SYSTEM-MARKER" });
+    expect(JSON.stringify(healMessages[1])).toContain("USER-MARKER");
+    expect(JSON.stringify(healMessages[1])).toContain("base64");
+    expect(healMessages[2]?.role).toBe("user");
+    expect(String(healMessages[2]?.content)).toContain("Raw output to fix:");
+  });
+
+  test("self-heal on a string prompt keeps the system prompt", async () => {
+    const adapter = new MockAdapter(['nope', '{"value": 7}']);
+    const schema = z.object({ value: z.number() });
+
+    await structured(adapter, schema, "Return JSON", {
+      systemPrompt: "SYSTEM-MARKER",
+      selfHeal: 1,
+    });
+
+    expect(adapter.requests[1]?.systemPrompt).toBe("SYSTEM-MARKER");
+    expect(adapter.requests[1]?.messages).toBeUndefined();
+  });
+
+  test("emits a terminal stream event when the adapter cannot stream", async () => {
+    const adapter = new MockAdapter(['{"value": 7}']);
+    const schema = z.object({ value: z.number() });
+    const events: Array<{ done: boolean; data: unknown }> = [];
+
+    const result = await structured(adapter, schema, "Return JSON", {
+      stream: {
+        onData: (event) => {
+          events.push({ done: event.done, data: event.snapshot.data });
+        },
+      },
+    });
+
+    expect(result.data).toEqual({ value: 7 });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.done).toBe(true);
+    expect(events[0]?.data).toEqual({ value: 7 });
+  });
 });

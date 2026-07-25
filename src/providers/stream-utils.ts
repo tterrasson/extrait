@@ -11,40 +11,52 @@ export async function consumeSSE(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  // `onEvent` throws on provider `error` events and malformed payloads. Without
+  // the cancel below, that exception would escape while the reader still holds
+  // the response body, leaking the connection until GC.
+  let drained = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-
+  try {
     while (true) {
-      const boundary = findSSEBoundary(buffer);
-      if (boundary < 0) {
+      const { done, value } = await reader.read();
+      if (done) {
         break;
       }
 
-      const rawEvent = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + (buffer.startsWith("\r\n\r\n", boundary) ? 4 : 2));
+      buffer += decoder.decode(value, { stream: true });
 
-      const dataLines = extractSSEDataLines(rawEvent);
+      while (true) {
+        const boundary = findSSEBoundary(buffer);
+        if (boundary < 0) {
+          break;
+        }
 
-      if (dataLines.length === 0) {
-        continue;
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + (buffer.startsWith("\r\n\r\n", boundary) ? 4 : 2));
+
+        const dataLines = extractSSEDataLines(rawEvent);
+
+        if (dataLines.length === 0) {
+          continue;
+        }
+
+        onEvent(dataLines.join("\n"));
       }
-
-      onEvent(dataLines.join("\n"));
     }
-  }
 
-  buffer += decoder.decode();
-  if (buffer.trim().length > 0) {
-    const dataLines = extractSSEDataLines(buffer);
+    buffer += decoder.decode();
+    if (buffer.trim().length > 0) {
+      const dataLines = extractSSEDataLines(buffer);
 
-    if (dataLines.length > 0) {
-      onEvent(dataLines.join("\n"));
+      if (dataLines.length > 0) {
+        onEvent(dataLines.join("\n"));
+      }
+    }
+
+    drained = true;
+  } finally {
+    if (!drained) {
+      await reader.cancel().catch(() => {});
     }
   }
 }

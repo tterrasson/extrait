@@ -528,7 +528,7 @@ Successful `structured()` calls return validated data plus normalized text/reaso
     totalTokens?: number,
     cost?: number,
   },
-  finishReason?: string,        // provider vocabulary: "completed" (Responses), "stop" (Chat Completions / Anthropic)
+  finishReason?: string,        // provider vocabulary: "completed" (Responses), "stop" (Chat Completions), "end_turn" (Anthropic)
   logprobs?: LLMLogprobs,          // when request.topLogprobs is set
   reasoningBlocks?: ReasoningBlock[], // per-turn reasoning for multi-round MCP streams
 }
