@@ -42,6 +42,15 @@ export interface ExecutedMCPToolCall {
 
 export const DEFAULT_MAX_TOOL_ROUNDS = 100;
 
+// OpenAI and Anthropic both reject function names longer than 64 characters.
+// Remote MCP servers are free to expose longer ones, and the `clientId__toolName`
+// prefix added on collision makes it easy to cross the limit.
+export const MAX_TOOL_NAME_LENGTH = 64;
+
+// Budget for the disambiguating `clientId__` prefix, so a long client id can
+// never eat the whole allowance and collapse every tool onto the same name.
+const MAX_TOOL_NAME_CLIENT_PREFIX_LENGTH = 20;
+
 export async function resolveMCPToolset(clients: MCPToolClient[] | undefined): Promise<ResolvedMCPToolset> {
   if (!Array.isArray(clients) || clients.length === 0) {
     return {
@@ -69,9 +78,12 @@ export async function resolveMCPToolset(clients: MCPToolClient[] | undefined): P
   const byName = new Map<string, ResolvedMCPTool>();
 
   for (const entry of listed) {
-    const name = collisions.get(entry.tool.name)! > 1
-      ? `${sanitizeToolName(entry.client.id)}__${sanitizeToolName(entry.tool.name)}`
-      : sanitizeToolName(entry.tool.name);
+    const name = uniqueToolName(
+      byName,
+      collisions.get(entry.tool.name)! > 1
+        ? prefixedToolName(entry.client.id, entry.tool.name)
+        : capToolNameLength(sanitizeToolName(entry.tool.name)),
+    );
 
     const resolved: ResolvedMCPTool = {
       name,
@@ -350,6 +362,42 @@ export function sanitizeToolName(input: string): string {
   }
 
   return trimmed;
+}
+
+export function capToolNameLength(name: string, maxLength = MAX_TOOL_NAME_LENGTH): string {
+  if (name.length <= maxLength) {
+    return name;
+  }
+
+  const truncated = name.slice(0, maxLength).replace(RE_TRAILING_UNDERSCORES, "");
+  return truncated || "tool";
+}
+
+function prefixedToolName(clientId: string, toolName: string): string {
+  const prefix = capToolNameLength(sanitizeToolName(clientId), MAX_TOOL_NAME_CLIENT_PREFIX_LENGTH);
+  const available = MAX_TOOL_NAME_LENGTH - prefix.length - "__".length;
+  return `${prefix}__${capToolNameLength(sanitizeToolName(toolName), available)}`;
+}
+
+// Truncation (and sanitization before it) can map two distinct remote names onto
+// the same provider-facing name, which would silently drop a tool from `byName`.
+function uniqueToolName(taken: Map<string, ResolvedMCPTool>, name: string): string {
+  if (!taken.has(name)) {
+    return name;
+  }
+
+  // Terminates: for a given digit count every suffix yields a distinct candidate
+  // of the same shape, so at worst it exhausts the names already taken.
+  for (let suffix = 2; ; suffix += 1) {
+    const marker = `_${suffix}`;
+    const stem = name
+      .slice(0, MAX_TOOL_NAME_LENGTH - marker.length)
+      .replace(RE_TRAILING_UNDERSCORES, "");
+    const candidate = `${stem}${marker}`;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

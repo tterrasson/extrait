@@ -179,6 +179,11 @@ export function buildSelfHealPrompt(input: SelfHealPromptInput): string {
     DEFAULT_SELF_HEAL_MAX_CONTEXT_CHARS,
   );
   const selectedOutput = input.selectedOutput ?? input.rawOutput;
+  const truncatedRawOutput = truncateForPrompt(input.rawOutput, maxContextChars);
+  const truncatedSelectedOutput = truncateForPrompt(selectedOutput, maxContextChars);
+  const truncatedSanitizedOutput = input.sanitizedOutput
+    ? truncateForPrompt(input.sanitizedOutput, maxContextChars)
+    : undefined;
   const contextPayload = {
     protocol: DEFAULT_SELF_HEAL_PROTOCOL,
     attempt: input.attempt,
@@ -204,11 +209,12 @@ export function buildSelfHealPrompt(input: SelfHealPromptInput): string {
       message: diagnostic.message,
     })),
     repairLog: input.repairLog ?? [],
-    selectedOutput: truncateForPrompt(selectedOutput, maxContextChars),
-    sanitizedOutput: input.sanitizedOutput
-      ? truncateForPrompt(input.sanitizedOutput, maxContextChars)
-      : undefined,
-    rawOutput: truncateForPrompt(input.rawOutput, maxContextChars),
+    // The raw output is already rendered verbatim below, and the selected /
+    // sanitized variants are usually the very same string. Echoing all four
+    // billed up to 4x `maxContextChars` per heal attempt, so only keep the
+    // variants that actually differ.
+    selectedOutput: truncatedSelectedOutput === truncatedRawOutput ? undefined : truncatedSelectedOutput,
+    sanitizedOutput: truncatedSanitizedOutput === truncatedRawOutput ? undefined : truncatedSanitizedOutput,
   };
 
   return [
@@ -221,10 +227,16 @@ export function buildSelfHealPrompt(input: SelfHealPromptInput): string {
     issueText,
     "",
     text.rawOutputLabel,
-    truncateForPrompt(input.rawOutput, maxContextChars),
+    // Delimit the model-authored payloads so their content cannot read as part
+    // of the surrounding repair instructions.
+    "<raw_output>",
+    truncatedRawOutput,
+    "</raw_output>",
     "",
     text.contextLabel,
+    "<self_heal_context>",
     JSON.stringify(contextPayload, null, 2),
+    "</self_heal_context>",
   ].join("\n");
 }
 
