@@ -49,7 +49,7 @@ export async function resizeImage(
       ? (IMAGE_MIME_TYPES[extname(source).toLowerCase()] ?? "image/jpeg")
       : "image/jpeg");
 
-  let sharp: typeof import("sharp");
+  let sharp: import("sharp").SharpConstructor;
   try {
     sharp = (await import("sharp")).default;
   } catch {
