@@ -9,6 +9,7 @@ import {
   stringifyToolOutput,
   formatToolExecutionDebugLine,
   sanitizeToolName,
+  MAX_TOOL_NAME_LENGTH,
 } from "@/providers/mcp-runtime";
 import type { MCPToolClient, LLMToolExecution, MCPToolSchema } from "@/types";
 
@@ -96,6 +97,43 @@ describe("resolveMCPToolset", () => {
     expect(result.tools.length).toBe(2);
     expect(result.tools[0]!.name).toBe("alpha__run");
     expect(result.tools[1]!.name).toBe("beta__run");
+  });
+
+  test("caps tool names at the provider limit", async () => {
+    const client = createMockClient("svc", [{ name: "a".repeat(200) }]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.name.length).toBe(MAX_TOOL_NAME_LENGTH);
+    expect(result.tools[0]!.remoteName).toBe("a".repeat(200));
+    expect(result.byName.has(result.tools[0]!.name)).toBe(true);
+  });
+
+  test("caps prefixed names on collision across clients", async () => {
+    const longName = "b".repeat(120);
+    const client1 = createMockClient("alpha", [{ name: longName }]);
+    const client2 = createMockClient("beta", [{ name: longName }]);
+    const result = await resolveMCPToolset([client1, client2]);
+    for (const tool of result.tools) {
+      expect(tool.name.length).toBeLessThanOrEqual(MAX_TOOL_NAME_LENGTH);
+    }
+  });
+
+  test("keeps the tool name readable when the client id is long", async () => {
+    const client1 = createMockClient("a".repeat(100), [{ name: "search" }]);
+    const client2 = createMockClient("b".repeat(100), [{ name: "search" }]);
+    const result = await resolveMCPToolset([client1, client2]);
+    for (const tool of result.tools) {
+      expect(tool.name.length).toBeLessThanOrEqual(MAX_TOOL_NAME_LENGTH);
+      expect(tool.name.endsWith("__search")).toBe(true);
+    }
+    expect(result.tools[0]!.name).not.toBe(result.tools[1]!.name);
+  });
+
+  test("keeps names unique when truncation collides", async () => {
+    const stem = "c".repeat(80);
+    const client = createMockClient("svc", [{ name: `${stem}-one` }, { name: `${stem}-two` }]);
+    const result = await resolveMCPToolset([client]);
+    expect(result.tools[0]!.name).not.toBe(result.tools[1]!.name);
+    expect(result.byName.size).toBe(2);
   });
 
   test("normalizes missing inputSchema", async () => {
