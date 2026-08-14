@@ -32,10 +32,16 @@ function ensurePatchedZod(): void {
   };
 
   if (!zodNumberPrototype.coerce) {
-    zodNumberPrototype.coerce = function coerceNumber(): z.ZodNumber {
-      const coerced = z.coerce.number();
-      return coerced as z.ZodNumber;
-    };
+    // Defined as non-enumerable so the patch never shows up when other consumers
+    // of the shared Zod instance enumerate a schema's own/inherited keys.
+    Object.defineProperty(zodNumberPrototype, "coerce", {
+      value: function coerceNumber(): z.ZodNumber {
+        return z.coerce.number() as z.ZodNumber;
+      },
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
   }
 
   didPatchZod = true;

@@ -20,13 +20,29 @@ export function normalizeBaseURL(baseURL: string): string {
 }
 
 export function buildURL(baseURL: string, path: string): string {
+  const base = new URL(normalizeBaseURL(baseURL));
+
+  let absolutePath: URL | undefined;
   try {
-    return new URL(path).toString();
+    absolutePath = new URL(path);
   } catch {
     // Treat provider paths as relative to the configured base URL, even when they start with "/".
   }
 
-  const base = new URL(normalizeBaseURL(baseURL));
+  if (absolutePath) {
+    // An absolute `path` would otherwise silently override `baseURL`, and every
+    // request carries the API key — so a stray or attacker-influenced path could
+    // ship credentials to another host. Only same-origin absolute paths pass.
+    if (absolutePath.origin !== base.origin) {
+      throw new Error(
+        `Provider path "${path}" points to a different origin than baseURL "${baseURL}". ` +
+          "Use a relative path so credentials are never sent to an unintended host.",
+      );
+    }
+
+    return absolutePath.toString();
+  }
+
   const resolvedPath = new URL(path, "http://provider-path.local");
 
   base.pathname = mergePathnames(base.pathname, resolvedPath.pathname);
@@ -47,11 +63,57 @@ export function safeJSONParse(input: string): unknown {
 export function cleanUndefined<T extends Record<string, unknown>>(input: T): T {
   const out = {} as T;
   for (const [key, value] of Object.entries(input)) {
-    if (value !== undefined) {
+    // Request bodies can be merged from LLM- or config-authored JSON: assigning a
+    // `__proto__` key would hit the prototype setter instead of adding a field.
+    if (value !== undefined && key !== "__proto__") {
       (out as Record<string, unknown>)[key] = value;
     }
   }
   return out;
+}
+
+const DEFAULT_MAX_ERROR_BODY_BYTES = 16_000;
+
+/**
+ * Read an error response body without letting a hostile or broken provider
+ * stream an unbounded amount of memory into an exception message.
+ */
+export async function readErrorBody(
+  response: Response,
+  maxBytes = DEFAULT_MAX_ERROR_BODY_BYTES,
+): Promise<string> {
+  if (!response.body) {
+    return truncateBody(await response.text(), maxBytes);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+
+  try {
+    while (out.length < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      out += decoder.decode(value, { stream: true });
+    }
+  } catch {
+    // A truncated/aborted error body is still worth reporting.
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+
+  return truncateBody(out, maxBytes);
+}
+
+function truncateBody(body: string, maxBytes: number): string {
+  const normalized = body.trim();
+  if (normalized.length <= maxBytes) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxBytes)}...[truncated]`;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

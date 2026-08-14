@@ -25,6 +25,7 @@ import {
   mergeUsage,
   pickString,
   preferLatestUsage,
+  readErrorBody,
   safeJSONParse,
   toFiniteNumber,
 } from "./utils";
@@ -90,7 +91,7 @@ async function streamWithChatCompletionsPassThrough(
   );
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorBody(response);
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 
@@ -385,7 +386,7 @@ async function streamWithChatCompletionsWithMCP(
     );
 
     if (!response.ok) {
-      const message = await response.text();
+      const message = await readErrorBody(response);
       throw new Error(`HTTP ${response.status}: ${message}`);
     }
 

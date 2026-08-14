@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { buildURL, normalizeBaseURL, preferLatestUsage } from "@/providers/utils";
+import {
+  buildURL,
+  cleanUndefined,
+  normalizeBaseURL,
+  preferLatestUsage,
+  readErrorBody,
+} from "@/providers/utils";
 
 describe("providers/utils normalizeBaseURL", () => {
   test("adds a trailing slash if absent", () => {
@@ -54,6 +60,70 @@ describe("providers/utils buildURL", () => {
     expect(buildURL("https://example.com/api/", "/v1/messages")).toBe(
       "https://example.com/api/v1/messages",
     );
+  });
+
+  test("rejects an absolute path pointing at another host", () => {
+    expect(() => buildURL("https://example.com/api/", "https://attacker.example/v1/responses"))
+      .toThrow(/different origin/);
+  });
+
+  test("rejects an absolute path on a non-http scheme", () => {
+    expect(() => buildURL("https://example.com/api/", "file:///etc/passwd")).toThrow(
+      /different origin/,
+    );
+  });
+
+  test("accepts an absolute path on the same origin", () => {
+    expect(buildURL("https://example.com/api/", "https://example.com/v1/responses")).toBe(
+      "https://example.com/v1/responses",
+    );
+  });
+});
+
+describe("providers/utils cleanUndefined", () => {
+  test("drops undefined values", () => {
+    expect(cleanUndefined({ a: 1, b: undefined } as Record<string, unknown>)).toEqual({ a: 1 });
+  });
+
+  test("drops __proto__ instead of hitting the prototype setter", () => {
+    const polluted = JSON.parse('{"model":"m","__proto__":{"polluted":true}}') as Record<
+      string,
+      unknown
+    >;
+    const cleaned = cleanUndefined(polluted);
+
+    expect(cleaned).toEqual({ model: "m" });
+    expect(Object.getPrototypeOf(cleaned)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe("providers/utils readErrorBody", () => {
+  test("returns the trimmed body when it fits", async () => {
+    expect(await readErrorBody(new Response("  boom  "))).toBe("boom");
+  });
+
+  test("truncates an oversized body", async () => {
+    const body = await readErrorBody(new Response("x".repeat(500)), 100);
+    expect(body).toBe(`${"x".repeat(100)}...[truncated]`);
+  });
+
+  test("stops reading an endless stream", async () => {
+    const encoder = new TextEncoder();
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(encoder.encode("x".repeat(1_000)));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    const body = await readErrorBody(new Response(stream), 5_000);
+
+    expect(body.length).toBeLessThanOrEqual(5_000 + "...[truncated]".length);
+    expect(cancelled).toBe(true);
   });
 });
 

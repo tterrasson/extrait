@@ -276,6 +276,27 @@ describe("executeMCPToolCalls", () => {
     expect(results[0]!.execution.error).toBe("Missing tool: unknown");
   });
 
+  test("reports malformed tool arguments instead of calling the tool", async () => {
+    let called = false;
+    const client = createMockClient("svc", [{ name: "run" }], () => {
+      called = true;
+      return { done: true };
+    });
+    const toolset = await resolveMCPToolset([client]);
+    const results = await executeMCPToolCalls(
+      [{ id: "c1", name: "run", arguments: "{not json" }],
+      toolset,
+      { round: 1, request: { prompt: "test" } },
+    );
+
+    expect(called).toBe(false);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.call.error).toContain("not valid JSON");
+    expect(results[0]!.execution.error).toContain("not valid JSON");
+    expect(results[0]!.execution.clientId).toBe("svc");
+    expect(results[0]!.execution.remoteName).toBe("run");
+  });
+
   test("executes tool successfully", async () => {
     const client = createMockClient("svc", [{ name: "run" }], () => ({ done: true }));
     const toolset = await resolveMCPToolset([client]);

@@ -27,6 +27,7 @@ import {
   mergeUsage,
   pickString,
   preferLatestUsage,
+  readErrorBody,
   safeJSONParse,
 } from "./utils";
 import {
@@ -293,7 +294,7 @@ async function streamWithResponsesAPIPassThrough(
   );
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorBody(response);
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 
@@ -406,7 +407,7 @@ async function streamWithResponsesAPIWithMCP(
     );
 
     if (!response.ok) {
-      const message = await response.text();
+      const message = await readErrorBody(response);
       throw new Error(`HTTP ${response.status}: ${message}`);
     }
 

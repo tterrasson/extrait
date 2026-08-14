@@ -31,6 +31,7 @@ import {
   pickString,
   preferLatestUsage,
   pushReasoningBlock,
+  readErrorBody,
   safeJSONParse,
   toFiniteNumber,
 } from "./utils";
@@ -100,7 +101,7 @@ async function streamPassThrough(
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorBody(response);
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 
@@ -219,7 +220,7 @@ async function completePassThrough(
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorBody(response);
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 
@@ -272,7 +273,7 @@ async function completeWithMCPToolLoop(
     });
 
     if (!response.ok) {
-      const message = await response.text();
+      const message = await readErrorBody(response);
       throw new Error(`HTTP ${response.status}: ${message}`);
     }
 
@@ -373,7 +374,7 @@ async function streamWithMCPToolLoop(
     });
 
     if (!response.ok) {
-      const message = await response.text();
+      const message = await readErrorBody(response);
       throw new Error(`HTTP ${response.status}: ${message}`);
     }
 

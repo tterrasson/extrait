@@ -228,14 +228,15 @@ export function buildSelfHealPrompt(input: SelfHealPromptInput): string {
     "",
     text.rawOutputLabel,
     // Delimit the model-authored payloads so their content cannot read as part
-    // of the surrounding repair instructions.
+    // of the surrounding repair instructions. The payloads are escaped so a
+    // model emitting the closing tag itself cannot break out of the container.
     "<raw_output>",
-    truncatedRawOutput,
+    escapeSelfHealDelimiters(truncatedRawOutput),
     "</raw_output>",
     "",
     text.contextLabel,
     "<self_heal_context>",
-    JSON.stringify(contextPayload, null, 2),
+    escapeSelfHealDelimiters(JSON.stringify(contextPayload, null, 2)),
     "</self_heal_context>",
   ].join("\n");
 }
@@ -687,6 +688,16 @@ function normalizePositiveInt(value: number | undefined, fallback: number): numb
 
   const normalized = Math.floor(value);
   return normalized > 0 ? normalized : fallback;
+}
+
+// Model-authored payloads are wrapped in fixed tags; neutralize any occurrence
+// of those tags inside the payload so the container cannot be closed early.
+const RE_SELF_HEAL_DELIMITER = /<(\/?)(raw_output|self_heal_context)>/gi;
+
+export function escapeSelfHealDelimiters(value: string): string {
+  return value.replace(RE_SELF_HEAL_DELIMITER, (_match, slash: string, tag: string) => (
+    `&lt;${slash}${tag}&gt;`
+  ));
 }
 
 function truncateForPrompt(value: string, maxChars: number): string {

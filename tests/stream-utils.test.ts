@@ -111,4 +111,22 @@ describe("consumeSSE", () => {
     await consumeSSE(response, (data) => events.push(data));
     expect(events).toEqual(["  spaced  "]);
   });
+
+  test("aborts a stream that never emits an event boundary", async () => {
+    const encoder = new TextEncoder();
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(encoder.encode("data: ".concat("x".repeat(1_000_000))));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    await expect(consumeSSE(new Response(stream), () => {})).rejects.toThrow(
+      /without an event boundary/,
+    );
+    expect(cancelled).toBe(true);
+  });
 });

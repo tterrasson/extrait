@@ -15,6 +15,7 @@ import {
   cleanUndefined,
   isRecord,
   pickString,
+  readErrorBody,
   toFiniteNumber,
 } from "./utils";
 
@@ -57,7 +58,7 @@ export async function embedOpenAI(
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorBody(response);
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 
@@ -113,7 +114,7 @@ export async function sendOpenAIJsonRequest(
   const response = await sendOpenAIRequest(options, fetcher, path, request, body);
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorBody(response);
     throw new Error(`HTTP ${response.status}: ${message}`);
   }
 

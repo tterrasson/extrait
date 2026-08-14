@@ -134,14 +134,19 @@ export async function executeMCPToolCalls(
     }
 
     const tool = toolset.byName.get(toolName);
-    const parsedArguments = parseToolArguments(call.arguments);
+    const parsed = parseToolArgumentsResult(call.arguments);
+    const parsedArguments = parsed.value;
 
-    if (!tool) {
-      const errorMessage = context.request.unknownToolError
+    // Malformed arguments are reported back instead of running the tool with an
+    // empty payload, which would hide the failure and may hit unintended defaults.
+    const errorMessage = tool
+      ? parsed.error
+      : context.request.unknownToolError
         ? context.request.unknownToolError(toolName)
         : `Tool "${toolName}" is not registered in the current toolset.`;
 
-        const metadata: LLMToolCall = {
+    if (!tool || errorMessage !== undefined) {
+      const metadata: LLMToolCall = {
         id: callId,
         type: call.type ?? "function",
         name: toolName,
@@ -155,8 +160,8 @@ export async function executeMCPToolCalls(
         callId,
         type: metadata.type,
         name: toolName,
-        clientId: "__unregistered__",
-        remoteName: toolName,
+        clientId: tool?.clientId ?? "__unregistered__",
+        remoteName: tool?.remoteName ?? toolName,
         arguments: parsedArguments,
         error: errorMessage,
         round: context.round,
@@ -282,14 +287,29 @@ export function normalizeMaxToolRounds(value: number | undefined): number {
 }
 
 export function parseToolArguments(value: unknown): unknown {
+  return parseToolArgumentsResult(value).value;
+}
+
+export interface ParsedToolArguments {
+  value: unknown;
+  error?: string;
+}
+
+/**
+ * Same parsing as {@link parseToolArguments}, but reports malformed JSON instead
+ * of silently degrading to `{}` — a tool must not run with no arguments just
+ * because the model emitted a broken payload.
+ */
+export function parseToolArgumentsResult(value: unknown): ParsedToolArguments {
   if (typeof value !== "string") {
-    return value ?? {};
+    return { value: value ?? {} };
   }
 
   try {
-    return JSON.parse(value);
-  } catch {
-    return {};
+    return { value: JSON.parse(value) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { value: {}, error: `Tool arguments are not valid JSON: ${message}` };
   }
 }
 

@@ -1,4 +1,7 @@
 const RE_LINE_ENDING = /\r?\n/;
+// A stream is unbounded by design, but a single SSE event is not: without this
+// cap a provider that never emits an event boundary grows the buffer forever.
+const MAX_SSE_EVENT_CHARS = 8_000_000;
 
 export async function consumeSSE(
   response: Response,
@@ -41,6 +44,12 @@ export async function consumeSSE(
         }
 
         onEvent(dataLines.join("\n"));
+      }
+
+      if (buffer.length > MAX_SSE_EVENT_CHARS) {
+        throw new Error(
+          `SSE stream exceeded ${MAX_SSE_EVENT_CHARS} characters without an event boundary.`,
+        );
       }
     }
 
