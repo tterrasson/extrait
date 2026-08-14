@@ -693,7 +693,8 @@ function toAnthropicMessageContent(content: LLMMessage["content"]): Array<Record
 }
 
 function toAnthropicImageSource(url: string): Record<string, unknown> {
-  const dataURL = /^data:([^;,]+);base64,(.*)$/s.exec(url);
+  // Scheme and the `;base64` marker are case-insensitive.
+  const dataURL = /^data:([^;,]+);base64,(.*)$/is.exec(url);
   if (dataURL) {
     return {
       type: "base64",

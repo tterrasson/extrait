@@ -2,31 +2,25 @@
  * Image Analysis Example
  *
  * Demonstrates:
- * - Building base64 image content blocks with `images()`
+ * - Loading an image from a file path with `loadImages()`
  * - Sending multimodal messages to a vision-capable LLM
  * - Structured extraction from image analysis
  *
- * Usage: bun run dev image-analysis <path-to-image> [low|mid|high|raw|<px>]
- * Example: bun run dev image-analysis photo.png high
+ * Images are sent as-is: extrait never decodes or resizes them. Resize upstream
+ * if you care about token cost — see the commented snippet below.
+ *
+ * Usage: bun run dev image-analysis <path-to-image-or-url>
+ * Example: bun run dev image-analysis photo.png
  */
 
 import { z } from "zod";
-import {
-  createLLM,
-  images,
-  resizeImage,
-  s,
-  StructuredParseError,
-  type ImageSize
-} from "@/index";
+import { createLLM, loadImages, s, StructuredParseError } from "@/index";
 
 const filePath = process.argv[3];
-const rawSize = process.argv[4] ?? "mid";
-const sizeArg: ImageSize = /^\d+$/.test(rawSize) ? parseInt(rawSize, 10) : (rawSize as ImageSize);
 
 if (!filePath) {
-  console.error("Usage: bun run dev image-analysis <path-to-image> [low|mid|high|raw|<px>]");
-  console.error("Example: bun run dev image-analysis photo.png high");
+  console.error("Usage: bun run dev image-analysis <path-to-image-or-url>");
+  console.error("Example: bun run dev image-analysis photo.png");
   process.exit(1);
 }
 
@@ -57,7 +51,16 @@ const ImageAnalysisSchema = s.schema(
   })
 );
 
-const imageInput = await resizeImage(filePath, sizeArg);
+// Accepts a file path, a data URL, an http(s) URL, a Blob or raw bytes.
+const imageContent = await loadImages(filePath);
+
+// To resize before sending, do it yourself with the tool of your choice:
+//
+//   import sharp from "sharp";
+//   const buf = await sharp(filePath)
+//     .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+//     .toBuffer();
+//   const imageContent = images(buf);
 
 try {
   const result = await llm.structured(
@@ -68,7 +71,7 @@ try {
           role: "user",
           content: [
             { type: "text", text: "Analyze this image and return structured data." },
-            ...images(imageInput),
+            ...imageContent,
           ],
         },
       ],

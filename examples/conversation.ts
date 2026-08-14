@@ -11,15 +11,7 @@
  */
 
 import { z } from "zod";
-import {
-  conversation,
-  createLLM,
-  images,
-  prompt,
-  resizeImage,
-  s,
-  StructuredParseError,
-} from "@/index";
+import { conversation, createLLM, loadImages, prompt, s, StructuredParseError } from "@/index";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"
@@ -76,11 +68,12 @@ const imagePath = process.argv[3];
 if (!imagePath) {
   console.log("Tip: pass an image path to test multimodal — bun run dev conversation <path-to-image>");
 } else {
-  const img = await resizeImage(imagePath, "mid");
+  // loadImages() reads the file and builds the content blocks — no resizing.
+  const imageContent = await loadImages(imagePath);
 
   const multimodalPrompt = prompt()
     .system`You are a vision assistant. Describe images concisely.`
-    .user([{ type: "text", text: "What color is dominant in this image?" }, ...images(img)]);
+    .user([{ type: "text", text: "What color is dominant in this image?" }, ...imageContent]);
 
   try {
     const result = await llm.structured(ReplySchema, multimodalPrompt);

@@ -17,6 +17,7 @@ High-level LLM text generation and structured JSON extraction with validation, r
 - Streaming support
 - MCP tools
 - Vector embeddings (OpenAI-compatible + Voyage AI)
+- Multimodal images from paths, URLs, bytes or blobs
 
 ## Installation
 
@@ -406,46 +407,68 @@ Some Responses-dialect servers (e.g. llama.cpp) also require the Chat Completion
 
 ### Images (multimodal)
 
-Use `images()` to build base64 image content blocks for vision-capable models.
+Two functions build the content blocks that spread into a message:
+
+| | Accepts | I/O |
+|---|---|---|
+| `images(...)` | data URL, `http(s)` URL, `URL`, `Uint8Array` / `ArrayBuffer` / `Buffer`, `{ base64, mimeType }` | none — synchronous |
+| `await loadImages(...)` | everything above **plus** file paths, `file:` URLs and `Blob` / `File` | reads files and blobs |
+
+Both take a single source or an array, and always return an `LLMImageContent[]`.
 
 ```typescript
-import { images, prompt } from "extrait";
-import { readFileSync } from "fs";
+import { loadImages, prompt } from "extrait";
 
-const base64 = readFileSync("photo.png").toString("base64");
-const img = { base64, mimeType: "image/png" };
+const content = await loadImages("photo.png");
 
-// With prompt() builder — pass LLMMessageContent array to .user() or .assistant()
 const result = await llm.structured(Schema,
   prompt()
     .system`You are a vision assistant.`
-    .user([{ type: "text", text: "Describe this image." }, ...images(img)])
+    .user([{ type: "text", text: "Describe this image." }, ...content])
 );
-
-// With raw messages array
-const result = await llm.structured(Schema, {
-  messages: [
-    {
-      role: "user",
-      content: [
-        { type: "text", text: "Describe this image." },
-        ...images(img),
-      ],
-    },
-  ],
-});
-
-// Multiple images
-const content = [
-  { type: "text", text: "Compare these two images." },
-  ...images([
-    { base64: base64A, mimeType: "image/png" },
-    { base64: base64B, mimeType: "image/jpeg" },
-  ]),
-];
 ```
 
-`images()` accepts a single `{ base64, mimeType }` object or an array, and always returns an `LLMImageContent[]` that spreads directly into a content array.
+```typescript
+import { images, loadImages } from "extrait";
+
+// No I/O needed — synchronous
+images("https://example.com/photo.png");          // remote URL, passed through as-is
+images("data:image/png;base64,iVBORw0KG...");     // data URL, passed through byte for byte
+images(await sharp(path).resize(512).toBuffer()); // raw bytes, mime type sniffed
+images({ base64, mimeType: "image/png" });        // explicit pair
+
+// Needs I/O
+await loadImages(["a.png", "b.jpg"]);             // file paths
+await loadImages(new Blob([bytes]));              // Blob / File
+
+// Mix freely — order is preserved
+await loadImages(["local.png", "https://example.com/remote.jpg"]);
+```
+
+**How a `string` is resolved**, in order:
+
+1. starts with `data:` → used as-is;
+2. starts with `http://` or `https://` → forwarded to the provider as-is (`extrait` does not fetch it — some models reject remote URLs);
+3. otherwise → treated as a **file path**, so it requires `loadImages()`. Passing one to `images()` throws an explicit error.
+
+A bare base64 string is not accepted: it is indistinguishable from a path. Pass `{ base64, mimeType }`.
+
+**Mime type detection**, in order: the explicit `mimeType` → magic bytes (PNG, JPEG, WebP, GIF, AVIF/HEIC, BMP) → file extension → error. `sniffMimeType(bytes)` is exported if you need it on its own.
+
+Providers commonly cap images around 5 MB and 8000 px. Since nothing is resized for you, resize upstream when it matters:
+
+```typescript
+import sharp from "sharp";
+import { images } from "extrait";
+
+const buf = await sharp("photo.png")
+  .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+  .toBuffer();
+
+const content = images(buf);
+```
+
+See [examples/image-analysis.ts](examples/image-analysis.ts).
 
 ### Conversations (multi-turn history)
 
@@ -474,7 +497,7 @@ const messages = conversation("You are a vision assistant.", [
   {
     role: "user",
     text: "What is in this image?",
-    images: [{ base64, mimeType: "image/png" }],
+    images: ["https://example.com/photo.png"], // any synchronous source
   },
 ]);
 ```
@@ -780,6 +803,26 @@ These environment variables are used across the examples and common client setup
   By default, structured debug prints `text` (public visible output) and
   `reasoning` (normalized reasoning). `parseSource` (the internal source used by
   parsing and self-heal) is only printed when `debug.verbose` is enabled.
+
+## Migration 0.8 → 0.9
+
+`resizeImage()` and the `ImageSize` type are gone, along with the optional `sharp` peer dependency: `extrait` no longer processes images, it only transports them. `images()` now accepts URLs, raw bytes and `{ base64, mimeType }`, and the new `loadImages()` handles file paths and blobs.
+
+```typescript
+// Before
+const img = await resizeImage(path, "mid");
+...images(img)
+
+// After — no resizing
+...(await loadImages(path))
+
+// After — resizing on your side
+import sharp from "sharp";
+const buf = await sharp(path).resize(512, 512, { fit: "inside", withoutEnlargement: true }).toBuffer();
+...images(buf)
+```
+
+`{ base64, mimeType }` inputs, including `ConversationEntry.images`, keep working unchanged.
 
 ## Testing
 

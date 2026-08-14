@@ -1,9 +1,9 @@
-import { images, type ImageInput } from "./image";
+import { images, type SyncImageSource } from "./image";
 import type { LLMMessage } from "./types";
 
 export type ConversationEntry =
-  | { role: "user"; text: string; images?: ImageInput[] }
-  | { role: "assistant"; text: string; images?: ImageInput[] }
+  | { role: "user"; text: string; images?: SyncImageSource[] }
+  | { role: "assistant"; text: string; images?: SyncImageSource[] }
   | { role: "tool_call"; id: string; name: string; arguments?: Record<string, unknown> }
   | { role: "tool_result"; id: string; output: unknown };
 

@@ -23,7 +23,14 @@ export {
   type MCPTransportConfig,
   type ManagedMCPToolClient,
 } from "./mcp";
-export { images, resizeImage, type ImageInput, type ImageSize } from "./image";
+export {
+  images,
+  loadImages,
+  sniffMimeType,
+  type ImageInput,
+  type ImageSource,
+  type SyncImageSource,
+} from "./image";
 export { conversation, type ConversationEntry } from "./conversation";
 export { dedent, prompt, type PromptMessageBuilder } from "./prompt";
 export { s, inspectSchemaMetadata, inferSchemaExample } from "./schema-builder";
