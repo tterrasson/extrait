@@ -55,6 +55,7 @@ export async function embedOpenAI(
     method: "POST",
     headers: buildHeaders(options),
     body: JSON.stringify(body),
+    signal: request.signal,
   });
 
   if (!response.ok) {

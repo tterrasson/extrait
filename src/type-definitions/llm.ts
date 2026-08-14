@@ -163,6 +163,7 @@ export interface EmbeddingRequest {
   model?: string;
   dimensions?: number;
   body?: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 export interface EmbeddingResult {

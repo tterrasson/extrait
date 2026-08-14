@@ -139,6 +139,25 @@ describe("openai-compatible embed()", () => {
 
     expect(capturedBody?.user).toBe("test-user");
   });
+
+  test("forwards the abort signal to the fetcher", async () => {
+    let capturedSignal: AbortSignal | null | undefined;
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      capturedSignal = init.signal;
+      return embeddingResponse([VECTOR_A]);
+    }) as unknown as typeof fetch;
+
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
+      fetcher,
+    });
+
+    const controller = new AbortController();
+    await adapter.embed!({ input: "hello", signal: controller.signal });
+
+    expect(capturedSignal).toBe(controller.signal);
+  });
 });
 
 describe("LLMClient.embed()", () => {

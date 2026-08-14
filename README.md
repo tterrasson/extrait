@@ -621,6 +621,7 @@ const { embeddings } = await embedder.embed("Hello", {
   model: "text-embedding-ada-002",
   dimensions: 512,              // supported by text-embedding-3-* models
   body: { user: "user-id" },    // pass-through to provider
+  signal: AbortSignal.timeout(10_000), // optional cancellation / timeout
 });
 ```
 
