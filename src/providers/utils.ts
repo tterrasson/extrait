@@ -1,9 +1,8 @@
 import type { LLMUsage, ReasoningBlock } from "../types";
-
-const RE_THINK_TAG = /<\/?think\s*>/gi;
+import { stripThinkTags } from "../think";
 
 export function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: string | undefined): void {
-  const clean = text?.replace(RE_THINK_TAG, "").trim();
+  const clean = text ? stripThinkTags(text).trim() : undefined;
   if (!clean) {
     return;
   }

@@ -1,30 +1,34 @@
-import { sanitizeThink } from "./think";
+import { scanThinkBlocks, stripThinkTags } from "./think";
 import { mergeUsage } from "./providers/utils";
 import type { LLMUsage, ReasoningBlock, StreamTurnTransition, ThinkBlock } from "./types";
 import type { NormalizedModelOutput } from "./generate-shared";
 
 export { mergeUsage } from "./providers/utils";
 
-const RE_THINK_TAGS = /<\/?think\s*>/gi;
-
 export function normalizeModelOutput(
   text: string,
   dedicatedReasoning?: string,
   reasoningBlocks?: ReasoningBlock[],
 ): NormalizedModelOutput {
-  const sanitized = sanitizeThink(text);
-  const visibleText = stripThinkBlocks(text, sanitized.thinkBlocks);
+  const scanned = scanThinkBlocks(text);
+  const visibleText = stripThinkBlocks(text, scanned.thinkBlocks);
   const reasoning = joinReasoningSegments([
     sanitizeReasoningText(dedicatedReasoning),
-    ...sanitized.thinkBlocks.map((block) => block.content),
+    ...scanned.thinkBlocks.map((block) => block.content),
   ]);
 
+  // Lazy: the streaming hot path never reads `parseSource` (one snapshot per
+  // chunk); only the final result and debug output do.
+  let parseSourceCache: string | undefined;
   return {
     text: visibleText,
     reasoning,
     reasoningBlocks: normalizeReasoningBlocks(reasoningBlocks),
-    thinkBlocks: sanitized.thinkBlocks,
-    parseSource: composeParseSource(visibleText, reasoning),
+    thinkBlocks: scanned.thinkBlocks,
+    get parseSource(): string {
+      parseSourceCache ??= composeParseSource(visibleText, reasoning);
+      return parseSourceCache;
+    },
   };
 }
 
@@ -36,7 +40,7 @@ function normalizeReasoningBlocks(blocks: ReasoningBlock[] | undefined): Reasoni
   const normalized = blocks
     .map((block) => ({
       turnIndex: block.turnIndex,
-      text: block.text.replace(RE_THINK_TAGS, "").trim(),
+      text: stripThinkTags(block.text).trim(),
     }))
     .filter((block) => Number.isFinite(block.turnIndex) && block.text.length > 0);
 
@@ -47,7 +51,7 @@ export function appendReasoningBlock(
   blocks: ReasoningBlock[] | undefined,
   transition: StreamTurnTransition,
 ): ReasoningBlock[] | undefined {
-  const text = transition.reasoningText?.replace(RE_THINK_TAGS, "").trim();
+  const text = transition.reasoningText ? stripThinkTags(transition.reasoningText).trim() : undefined;
   if (!text) {
     return blocks;
   }
@@ -61,7 +65,7 @@ export function composeParseSource(text: string, reasoning?: string): string {
     return text;
   }
 
-  const sanitized = reasoning.replace(RE_THINK_TAGS, "");
+  const sanitized = stripThinkTags(reasoning);
   if (sanitized.length === 0) {
     return text;
   }
@@ -87,7 +91,7 @@ function joinReasoningSegments(parts: Array<string | undefined>): string {
 }
 
 function sanitizeReasoningText(value: string | undefined): string | undefined {
-  const sanitized = value?.replace(RE_THINK_TAGS, "").trim();
+  const sanitized = value ? stripThinkTags(value).trim() : undefined;
   return sanitized ? sanitized : undefined;
 }
 

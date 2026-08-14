@@ -44,6 +44,7 @@ export interface NormalizedStreamConfig<TSnapshot> {
   }) => void;
   onTurnTransition?: (transition: StreamTurnTransition) => void;
   to?: "stdout";
+  dataInterval?: number;
 }
 
 export interface NormalizedDebugConfig {
@@ -73,7 +74,7 @@ export interface ModelCallOptions<TSnapshot, TTraceEvent> {
     message: string;
     details?: unknown;
   }) => TTraceEvent;
-  buildSnapshot: (input: NormalizedModelOutput) => TSnapshot;
+  buildSnapshot: (input: NormalizedModelOutput, meta: { done: boolean }) => TSnapshot;
   debug: NormalizedDebugConfig;
   debugLabel: string;
   attempt: number;
@@ -177,6 +178,7 @@ export function normalizeStreamConfig<TSnapshot>(
         onData?: NormalizedStreamConfig<TSnapshot>["onData"];
         onTurnTransition?: NormalizedStreamConfig<TSnapshot>["onTurnTransition"];
         to?: "stdout";
+        dataInterval?: number;
       }
     | undefined,
 ): NormalizedStreamConfig<TSnapshot> {
@@ -197,6 +199,7 @@ export function normalizeStreamConfig<TSnapshot>(
     onData: option.onData,
     onTurnTransition: option.onTurnTransition,
     to: option.to,
+    dataInterval: option.dataInterval,
   };
 }
 

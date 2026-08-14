@@ -276,6 +276,15 @@ In `stream.onData`, the event is split into two layers:
 - `event.snapshot.reasoning` is the full normalized reasoning accumulated so far.
 - `event.snapshot.data` is the best structured JSON snapshot that can be parsed from the stream so far. It may stay unchanged while `event.delta.text` continues to grow.
 
+Recomputing `event.snapshot.data` means repairing and parsing the whole accumulated text, which gets expensive on long generations. By default this is adaptive: while the accumulated text is small (≤ 2 KB) every event reparses, then recomputations are coalesced to at most every 25 ms, events in between reuse the last parsed value, so `snapshot.data` can briefly lag behind `snapshot.text`. The final `done` event always reparses the complete output. Set `stream.dataInterval` (ms) to pick the interval yourself, or `0` to reparse on every event regardless of size:
+
+```typescript
+stream: {
+  dataInterval: 0, // exact preview: recompute snapshot.data on every event
+  onData: (event) => render(event.snapshot.data),
+},
+```
+
 Typical usage is:
 
 - render `event.delta.text` directly to a terminal or chat UI

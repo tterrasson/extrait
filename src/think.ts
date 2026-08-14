@@ -7,6 +7,11 @@ export interface SanitizeThinkResult {
   diagnostics: ThinkDiagnostics;
 }
 
+export interface ThinkScanResult {
+  thinkBlocks: ThinkBlock[];
+  diagnostics: ThinkDiagnostics;
+}
+
 interface ThinkTagToken {
   type: "open" | "close";
   start: number;
@@ -17,7 +22,7 @@ const THINK_TAG_NAME = "think";
 const RE_IDENTIFIER_CHAR = /[a-zA-Z0-9:_-]/;
 const RE_NON_LINE_BREAK = /[^\r\n]/g;
 
-export function sanitizeThink(input: string): SanitizeThinkResult {
+export function scanThinkBlocks(input: string): ThinkScanResult {
   const thinkBlocks: ThinkBlock[] = [];
   const diagnostics: ThinkDiagnostics = {
     unterminatedCount: 0,
@@ -25,8 +30,6 @@ export function sanitizeThink(input: string): SanitizeThinkResult {
     hiddenChars: 0,
   };
 
-  const visibleParts: string[] = [];
-  let cursor = 0;
   let searchFrom = 0;
   let depth = 0;
   let blockStart = -1;
@@ -41,7 +44,6 @@ export function sanitizeThink(input: string): SanitizeThinkResult {
 
     if (token.type === "open") {
       if (depth === 0) {
-        visibleParts.push(input.slice(cursor, token.start));
         blockStart = token.start;
         blockContentStart = token.end;
       } else {
@@ -61,7 +63,6 @@ export function sanitizeThink(input: string): SanitizeThinkResult {
     }
 
     const raw = input.slice(blockStart, token.end);
-    visibleParts.push(maskKeepingLineBreaks(raw));
     thinkBlocks.push({
       id: `think:${thinkBlocks.length}`,
       content: input.slice(blockContentStart, token.start).trim(),
@@ -70,14 +71,12 @@ export function sanitizeThink(input: string): SanitizeThinkResult {
       end: token.end,
     });
     diagnostics.hiddenChars += countHiddenChars(raw);
-    cursor = token.end;
     blockStart = -1;
     blockContentStart = -1;
   }
 
   if (depth > 0 && blockStart >= 0) {
     const raw = input.slice(blockStart);
-    visibleParts.push(maskKeepingLineBreaks(raw));
     thinkBlocks.push({
       id: `think:${thinkBlocks.length}`,
       content: input.slice(blockContentStart).trim(),
@@ -87,18 +86,60 @@ export function sanitizeThink(input: string): SanitizeThinkResult {
     });
     diagnostics.hiddenChars += countHiddenChars(raw);
     diagnostics.unterminatedCount += 1;
-    cursor = input.length;
-  }
-
-  if (cursor < input.length) {
-    visibleParts.push(input.slice(cursor));
   }
 
   return {
-    visibleText: visibleParts.join(""),
     thinkBlocks,
     diagnostics,
   };
+}
+
+export function sanitizeThink(input: string): SanitizeThinkResult {
+  const { thinkBlocks, diagnostics } = scanThinkBlocks(input);
+  if (thinkBlocks.length === 0) {
+    return { visibleText: input, thinkBlocks, diagnostics };
+  }
+
+  let visibleText = "";
+  let cursor = 0;
+  for (const block of thinkBlocks) {
+    visibleText += input.slice(cursor, block.start) + maskKeepingLineBreaks(block.raw);
+    cursor = block.end;
+  }
+  visibleText += input.slice(cursor);
+
+  return {
+    visibleText,
+    thinkBlocks,
+    diagnostics,
+  };
+}
+
+/**
+ * Removes every `<think>` / `</think>` tag token the scanner recognizes,
+ * including variants with attributes (`<think foo>`) or inner whitespace
+ * (`</ think >`), leaving the surrounding content untouched. Reasoning text
+ * must go through this (not a literal-tag regex) before being re-wrapped in a
+ * synthetic `<think>` block: a surviving variant tag would unbalance the
+ * composed source and make sanitization swallow the visible text after it.
+ */
+export function stripThinkTags(input: string): string {
+  let output = "";
+  let cursor = 0;
+
+  while (cursor < input.length) {
+    const token = findNextThinkTag(input, cursor);
+    if (!token) {
+      break;
+    }
+    output += input.slice(cursor, token.start);
+    cursor = token.end;
+  }
+
+  if (cursor === 0) {
+    return input;
+  }
+  return output + input.slice(cursor);
 }
 
 function findNextThinkTag(input: string, from: number): ThinkTagToken | null {

@@ -79,7 +79,12 @@ export async function callModel<TSnapshot, TTraceEvent>(
     let currentTurnIndex: number | undefined;
     let currentToolCalls: LLMToolCall[] | undefined;
     let streamedReasoningBlocks: ReasoningBlock[] | undefined;
-    let lastSnapshotFingerprint: string | undefined;
+    let emittedOnce = false;
+    let lastEmittedText: string | undefined;
+    let lastEmittedReasoning: string | undefined;
+    let lastEmittedReasoningBlocks: ReasoningBlock[] | undefined;
+    let lastEmittedTurnIndex: number | undefined;
+    let lastEmittedToolCallsFingerprint: string | undefined;
     let previousSnapshotText = "";
     let previousSnapshotReasoning = "";
 
@@ -93,16 +98,26 @@ export async function callModel<TSnapshot, TTraceEvent>(
         streamedDedicatedReasoning,
         streamedReasoningBlocks,
       );
-      const snapshot = options.buildSnapshot(normalized);
-      const fingerprint = toStreamDataFingerprint({
-        snapshot,
-        done,
-        turnIndex: currentTurnIndex,
-        toolCalls: currentToolCalls,
-      });
-      if (!done && fingerprint === lastSnapshotFingerprint) {
+      // Dedup on the rendered output (not on the raw accumulators): chunks that
+      // grow the input but render to an identical snapshot — e.g. `<think>`
+      // then `</think>` — must not emit twice. `toolCalls` is the only field
+      // still serialized; it stays small. Everything else the snapshot exposes
+      // is a deterministic function of these source fields.
+      const toolCallsFingerprint = currentToolCalls
+        ? toStreamDataFingerprint(currentToolCalls)
+        : undefined;
+      if (
+        !done &&
+        emittedOnce &&
+        normalized.text === lastEmittedText &&
+        normalized.reasoning === lastEmittedReasoning &&
+        streamedReasoningBlocks === lastEmittedReasoningBlocks &&
+        currentTurnIndex === lastEmittedTurnIndex &&
+        toolCallsFingerprint === lastEmittedToolCallsFingerprint
+      ) {
         return;
       }
+      const snapshot = options.buildSnapshot(normalized, { done });
 
       // Withhold a trailing partial `<think>`/`</think>` fragment while more
       // chunks may still arrive; the final (done) emit releases it in full.
@@ -120,7 +135,12 @@ export async function callModel<TSnapshot, TTraceEvent>(
           : "",
       };
 
-      lastSnapshotFingerprint = fingerprint;
+      emittedOnce = true;
+      lastEmittedText = normalized.text;
+      lastEmittedReasoning = normalized.reasoning;
+      lastEmittedReasoningBlocks = streamedReasoningBlocks;
+      lastEmittedTurnIndex = currentTurnIndex;
+      lastEmittedToolCallsFingerprint = toolCallsFingerprint;
       previousSnapshotText = stableText;
       previousSnapshotReasoning = stableReasoning;
       options.stream.onData?.({
@@ -279,7 +299,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
   if (options.stream.enabled) {
     options.stream.onData?.({
       delta: { text: normalized.text, reasoning: normalized.reasoning },
-      snapshot: options.buildSnapshot(normalized),
+      snapshot: options.buildSnapshot(normalized, { done: true }),
       done: true,
       usage: response.usage,
       finishReason: response.finishReason,

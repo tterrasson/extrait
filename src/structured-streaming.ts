@@ -1,14 +1,17 @@
 import { jsonrepair } from "jsonrepair";
-import { sanitizeThink } from "./think";
 
-export function parseStreamingStructuredData(parseSource: string): unknown | null {
-  const sanitized = sanitizeThink(parseSource);
-  const start = findFirstJsonRootStart(sanitized.visibleText);
+// Takes the already-normalized visible text (think blocks stripped). The
+// reasoning channel is intentionally not scanned: the previous implementation
+// re-sanitized `<think>${reasoning}</think>${text}`, which masked the entire
+// reasoning with whitespace before searching for a JSON root, so the search
+// only ever operated on the visible text.
+export function parseStreamingStructuredData(visibleText: string): unknown | null {
+  const start = findFirstJsonRootStart(visibleText);
   if (start < 0) {
     return null;
   }
 
-  const candidate = sanitized.visibleText.slice(start).trim();
+  const candidate = visibleText.slice(start).trim();
   if (!candidate) {
     return null;
   }

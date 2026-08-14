@@ -102,6 +102,16 @@ export interface StructuredStreamOptions<T = unknown> {
   onData?: (event: StructuredStreamEvent<T>) => void;
   onTurnTransition?: (transition: StreamTurnTransition) => void;
   to?: "stdout";
+  /**
+   * Minimum delay (ms) between two recomputations of `snapshot.data` while
+   * streaming. Between recomputations, events reuse the last parsed value, so
+   * `snapshot.data` can lag behind `snapshot.text` by up to this much. The
+   * final `done` event always reparses. `0` reparses on every event.
+   *
+   * Unset (default) is adaptive: exact while the accumulated text is small
+   * (≤ 2 ko), then coalesced to 25 ms so long generations stay linear.
+   */
+  dataInterval?: number;
 }
 
 export type StructuredStreamInput<T = unknown> = boolean | StructuredStreamOptions<T>;

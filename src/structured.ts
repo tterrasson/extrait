@@ -877,10 +877,26 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
   };
 }
 
+// Below this size, repairing+parsing the whole accumulation per event is cheap
+// enough that the preview stays exact; above it, the default coalesces to a
+// UI-frame-scale interval so the per-chunk cost stops growing with the output.
+const AUTO_DATA_INTERVAL_EXACT_MAX_CHARS = 2_048;
+const AUTO_DATA_INTERVAL_MS = 25;
+
 async function callModel(
   adapter: LLMAdapter,
   options: StructuredModelCallOptions,
 ): Promise<ModelCallResult> {
+  // stream.dataInterval coalesces the expensive repair+parse of the partial
+  // JSON preview: between recomputations the last parsed value is reused, so
+  // `snapshot.data` may lag behind `snapshot.text` by up to that many ms. The
+  // terminal (done) snapshot always reparses. When unset, the interval is
+  // adaptive: exact (reparse on every event) while the accumulated text stays
+  // small, coalesced once reparsing the whole accumulation gets expensive.
+  const dataInterval = options.stream.dataInterval;
+  let coalescedData: unknown = null;
+  let coalescedDataAt: number | undefined;
+
   return callModelShared(adapter, {
     ...options,
     buildEvent: ({ stage, message, details }) => ({
@@ -890,12 +906,27 @@ async function callModel(
       message,
       details,
     }),
-    buildSnapshot: (normalized) => ({
-      text: normalized.text,
-      reasoning: normalized.reasoning,
-      ...(normalized.reasoningBlocks ? { reasoningBlocks: normalized.reasoningBlocks } : {}),
-      data: parseStreamingStructuredData(normalized.parseSource) ?? null,
-    }),
+    buildSnapshot: (normalized, meta) => {
+      const interval =
+        dataInterval ??
+        (normalized.text.length <= AUTO_DATA_INTERVAL_EXACT_MAX_CHARS ? 0 : AUTO_DATA_INTERVAL_MS);
+      const now = performance.now();
+      if (
+        meta.done ||
+        interval <= 0 ||
+        coalescedDataAt === undefined ||
+        now - coalescedDataAt >= interval
+      ) {
+        coalescedData = parseStreamingStructuredData(normalized.text) ?? null;
+        coalescedDataAt = now;
+      }
+      return {
+        text: normalized.text,
+        reasoning: normalized.reasoning,
+        ...(normalized.reasoningBlocks ? { reasoningBlocks: normalized.reasoningBlocks } : {}),
+        data: coalescedData,
+      };
+    },
     debugLabel: "structured",
   });
 }

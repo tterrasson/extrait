@@ -35,6 +35,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "bun run examples/runner.ts",
+    "bench:stream": "bun run bench/streaming.ts",
     "build": "bun run build:types && bun run build:esm && bun run build:cjs",
     "build:esm": "bun build ./src/index.ts --outfile ./dist/index.js --target node --format esm --packages external",
     "build:cjs": "bun build ./src/index.ts --outfile ./dist/index.cjs --target node --format cjs --packages external",
