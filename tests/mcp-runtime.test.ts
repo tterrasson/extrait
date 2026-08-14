@@ -354,7 +354,7 @@ describe("executeMCPToolCalls", () => {
           },
         },
         provider: "openai-compatible",
-        model: "gpt-4",
+        model: "test-model",
       },
     );
     expect(capturedOutput).toEqual({ value: 42 });
@@ -363,7 +363,7 @@ describe("executeMCPToolCalls", () => {
       name: "run",
       round: 2,
       provider: "openai-compatible",
-      model: "gpt-4",
+      model: "test-model",
     });
   });
 
@@ -763,13 +763,13 @@ describe("formatToolExecutionDebugLine", () => {
       clientId: "svc",
       handledLocally: true,
       provider: "openai",
-      model: "gpt-4",
+      model: "test-model",
       startedAt: new Date().toISOString(),
       durationMs: 42,
     };
     const result = formatToolExecutionDebugLine(execution);
     expect(result).toContain("[tool:mcp:ok]");
-    expect(result).toContain("openai/gpt-4");
+    expect(result).toContain("openai/test-model");
     expect(result).toContain("svc:run");
     expect(result).toContain("42ms");
   });

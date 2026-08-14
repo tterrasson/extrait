@@ -118,7 +118,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -178,7 +178,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -215,7 +215,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -257,7 +257,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -289,7 +289,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -315,7 +315,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -345,7 +345,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -406,7 +406,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -496,7 +496,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -524,7 +524,7 @@ describe("openai-compatible MCP tools", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -587,7 +587,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -647,7 +647,7 @@ describe("openai-compatible MCP tools", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -738,7 +738,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -808,7 +808,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -856,7 +856,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -902,7 +902,7 @@ describe("openai-compatible MCP tools", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       defaultMaxToolRounds: 0,
       fetcher,
     });
@@ -950,7 +950,7 @@ describe("openai-compatible MCP logprobs", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -997,7 +997,7 @@ describe("openai-compatible MCP logprobs", () => {
 
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 

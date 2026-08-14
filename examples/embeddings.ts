@@ -7,7 +7,7 @@
  * - Computing cosine similarity between embeddings
  *
  * Uses the same LLM_BASE_URL / LLM_API_KEY as other examples.
- * Set EMBED_MODEL to override the embedding model (e.g. "text-embedding-3-small").
+ * Set EMBED_MODEL to override the embedding model used by this example.
  * For Anthropic users: set LLM_BASE_URL=https://api.voyageai.com and EMBED_MODEL=voyage-3.
  *
  * Usage: bun run dev embeddings [text1] [text2]
@@ -15,16 +15,15 @@
  */
 
 import { createLLM } from "@/index";
+import { requireBaseURL } from "./env";
 
 const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const embedder = createLLM({
   provider: "openai-compatible",
-  model: process.env.EMBED_MODEL ?? process.env.LLM_MODEL ?? "text-embedding-3-small",
-  transport: {
-    baseURL: process.env.LLM_BASE_URL,
-    apiKey: process.env.LLM_API_KEY,
-  },
+  model: process.env.EMBED_MODEL ?? process.env.LLM_MODEL ?? "my-embedding-model-id",
+  baseURL: requireBaseURL(),
+  apiKey: process.env.LLM_API_KEY,
   defaults: {
     debug: debugEnabled,
   },

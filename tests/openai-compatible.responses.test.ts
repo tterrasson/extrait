@@ -43,7 +43,7 @@ describe("openai-compatible Responses contract", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
     const result = await adapter.complete({
@@ -58,7 +58,7 @@ describe("openai-compatible Responses contract", () => {
 
     expect(url).toBe("https://example.com/v1/responses");
     expect(body).toMatchObject({
-      model: "gpt-test",
+      model: "test-model",
       input: "Answer",
       instructions: "Be brief",
       temperature: 0.2,
@@ -82,7 +82,7 @@ describe("openai-compatible Responses contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -113,7 +113,7 @@ describe("openai-compatible Responses contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -154,7 +154,7 @@ describe("openai-compatible Responses contract", () => {
     })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -178,7 +178,7 @@ describe("openai-compatible Responses contract", () => {
     ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -213,7 +213,7 @@ describe("openai-compatible Responses contract", () => {
     ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -231,7 +231,7 @@ describe("openai-compatible Responses contract", () => {
     ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -245,7 +245,7 @@ describe("openai-compatible Responses contract", () => {
     })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -265,7 +265,7 @@ describe("openai-compatible Responses contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       defaultBody: {
         include: ["message.output_text.logprobs"],
         reasoning: { summary: "auto" },
@@ -319,7 +319,7 @@ describe("openai-compatible Responses contract", () => {
     ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -342,7 +342,7 @@ describe("openai-compatible Responses contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -363,7 +363,7 @@ describe("openai-compatible Responses contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       defaultBody: { logprobs: true },
       fetcher,
     });
@@ -382,7 +382,7 @@ describe("openai-compatible Responses contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -408,7 +408,7 @@ describe("openai-compatible Responses contract", () => {
     })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -441,7 +441,7 @@ describe("openai-compatible Responses contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
     const mcpClient = {
@@ -472,7 +472,7 @@ describe("openai-compatible Responses contract", () => {
     ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -493,7 +493,7 @@ describe("openai-compatible Responses contract", () => {
     }])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -510,7 +510,7 @@ describe("openai-compatible Responses contract", () => {
     }) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -527,8 +527,8 @@ describe("openai-compatible Responses contract", () => {
       return jsonResponse({ output_text: "unused" });
     }) as unknown as typeof fetch;
     const adapters = [
-      createOpenAICompatibleAdapter({ baseURL: "https://example.com", model: "gpt-test", fetcher }),
-      createOpenAICompatibleLegacyAdapter({ baseURL: "https://example.com", model: "gpt-test", fetcher }),
+      createOpenAICompatibleAdapter({ baseURL: "https://example.com", model: "test-model", fetcher }),
+      createOpenAICompatibleLegacyAdapter({ baseURL: "https://example.com", model: "test-model", fetcher }),
     ];
 
     for (const adapter of adapters) {
@@ -553,7 +553,7 @@ describe("openai-compatible Responses contract", () => {
     })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
     const mcpClient = {
@@ -581,7 +581,7 @@ describe("openai-compatible-legacy contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleLegacyAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       defaultBody: { max_tokens: 64 },
       fetcher,
     });
@@ -610,7 +610,7 @@ describe("openai-compatible-legacy contract", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleLegacyAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -630,7 +630,7 @@ describe("openai-compatible-legacy contract", () => {
     })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleLegacyAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -666,7 +666,7 @@ describe("openai-compatible Responses tool-message conversion", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -706,7 +706,7 @@ describe("openai-compatible Responses tool-message conversion", () => {
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 

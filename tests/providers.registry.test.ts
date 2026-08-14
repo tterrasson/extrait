@@ -4,7 +4,32 @@ import {
   createModelAdapter,
   createProviderRegistry,
   registerBuiltinProviders,
+  type ModelAdapterConfig,
 } from "@/providers/registry";
+
+// Type-level guards: baseURL is mandatory for built-in providers, including when
+// the config is annotated without an explicit provider type parameter.
+const _typedConfig: ModelAdapterConfig = {
+  provider: "openai-compatible",
+  model: "test-model",
+  baseURL: "https://example.com",
+};
+
+// @ts-expect-error baseURL is required for built-in providers
+const _missingBaseURL: ModelAdapterConfig = {
+  provider: "openai-compatible",
+  model: "test-model",
+};
+
+// Custom provider kinds opt out by naming themselves.
+const _customConfig: ModelAdapterConfig<"custom"> = {
+  provider: "custom",
+  model: "test-model",
+};
+
+void _typedConfig;
+void _missingBaseURL;
+void _customConfig;
 
 describe("provider registry", () => {
   test("registers built-in providers", () => {
@@ -23,19 +48,17 @@ describe("provider registry", () => {
   test("instantiates an adapter from unified provider config", () => {
     const adapter = createModelAdapter({
       provider: "openai-compatible",
-      model: "gpt-test",
-      transport: {
-        baseURL: "https://example.com",
-      },
+      model: "test-model",
+      baseURL: "https://example.com",
     });
 
     expect(adapter.provider).toBe("openai-compatible");
-    expect(adapter.model).toBe("gpt-test");
+    expect(adapter.model).toBe("test-model");
 
     const legacy = createModelAdapter({
       provider: "openai-compatible-legacy",
-      model: "gpt-test",
-      transport: { baseURL: "https://example.com" },
+      model: "test-model",
+      baseURL: "https://example.com",
     });
     expect(legacy.provider).toBe("openai-compatible-legacy");
   });
@@ -54,10 +77,10 @@ describe("provider registry", () => {
     }) as typeof fetch;
     const adapter = createModelAdapter({
       provider: "openai-compatible-legacy",
-      model: "gpt-test",
+      model: "test-model",
+      baseURL: "https://legacy.example.com/root/",
+      apiKey: "secret",
       transport: {
-        baseURL: "https://legacy.example.com/root/",
-        apiKey: "secret",
         path: "/chat",
         headers: { "x-test": "yes" },
         defaultBody: { seed: 42 },
@@ -73,8 +96,20 @@ describe("provider registry", () => {
       "content-type": "application/json",
       "x-test": "yes",
     });
-    expect(body).toMatchObject({ model: "gpt-test", seed: 42 });
+    expect(body).toMatchObject({ model: "test-model", seed: 42 });
     expect(body.messages).toEqual([{ role: "user", content: "hello" }]);
+  });
+
+  test("refuses to build a built-in adapter without a baseURL", () => {
+    for (const provider of [
+      "openai-compatible",
+      "openai-compatible-legacy",
+      "anthropic-compatible",
+    ]) {
+      expect(() =>
+        createModelAdapter({ provider, model: "m1" } as Parameters<typeof createModelAdapter>[0]),
+      ).toThrow(`Provider "${provider}" requires an explicit baseURL`);
+    }
   });
 
   test("accepts a custom provider via register", async () => {
@@ -117,9 +152,9 @@ describe("provider registry adapter option forwarding", () => {
 
     const adapter = createModelAdapter({
       provider: "anthropic-compatible",
-      model: "claude-test",
+      model: "test-model",
+      baseURL: "https://example.com",
       transport: {
-        baseURL: "https://example.com",
         defaultMaxTokens: 4096,
         fetcher,
       },
@@ -142,8 +177,8 @@ describe("provider registry adapter option forwarding", () => {
     const adapter = createModelAdapter({
       provider: "openai-compatible",
       model: "embed-test",
+      baseURL: "https://example.com",
       transport: {
-        baseURL: "https://example.com",
         embeddingPath: "/custom/embeddings",
         fetcher,
       },
@@ -171,9 +206,9 @@ describe("provider registry adapter option forwarding", () => {
 
     const adapter = createModelAdapter({
       provider: "openai-compatible-legacy",
-      model: "gpt-test",
+      model: "test-model",
+      baseURL: "https://example.com",
       transport: {
-        baseURL: "https://example.com",
         defaultMaxToolRounds: 0,
         fetcher,
       },

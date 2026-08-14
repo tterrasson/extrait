@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { createLLM, loadImages, s, StructuredParseError } from "@/index";
+import { requireBaseURL } from "./env";
 
 const filePath = process.argv[3];
 
@@ -29,15 +30,16 @@ const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible-legacy"
   | "anthropic-compatible";
 
-const model = process.env.LLM_MODEL ?? "gpt-4o-mini";
-const baseURL = process.env.LLM_BASE_URL;
+const model = process.env.LLM_MODEL ?? "my-model-id";
+const baseURL = requireBaseURL();
 const apiKey = process.env.LLM_API_KEY;
 const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
   provider,
   model,
-  transport: { baseURL, apiKey },
+  baseURL,
+  apiKey,
   defaults: { mode: "loose", selfHeal: 1, debug: debugEnabled },
 });
 

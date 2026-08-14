@@ -3,7 +3,7 @@ import { createOpenAICompatibleAdapter } from "@/providers/openai-compatible";
 import { createAnthropicCompatibleAdapter } from "@/providers/anthropic-compatible";
 import { createLLM } from "@/llm";
 
-function embeddingResponse(embeddings: number[][], model = "text-embedding-3-small"): Response {
+function embeddingResponse(embeddings: number[][], model = "test-embedding-model"): Response {
   return new Response(
     JSON.stringify({
       object: "list",
@@ -26,8 +26,8 @@ describe("openai-compatible embed()", () => {
   test("embeds a single string and returns number[][]", async () => {
     const fetcher = (async () => embeddingResponse([VECTOR_A])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       fetcher,
     });
 
@@ -35,7 +35,7 @@ describe("openai-compatible embed()", () => {
 
     expect(result.embeddings).toHaveLength(1);
     expect(result.embeddings[0]).toEqual(VECTOR_A);
-    expect(result.model).toBe("text-embedding-3-small");
+    expect(result.model).toBe("test-embedding-model");
     expect(result.usage?.inputTokens).toBe(4);
     expect(result.usage?.totalTokens).toBe(4);
   });
@@ -43,8 +43,8 @@ describe("openai-compatible embed()", () => {
   test("embeds an array of strings and returns one vector per input", async () => {
     const fetcher = (async () => embeddingResponse([VECTOR_A, VECTOR_B])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       fetcher,
     });
 
@@ -59,19 +59,19 @@ describe("openai-compatible embed()", () => {
     let capturedBody: Record<string, unknown> | undefined;
     const fetcher = (async (_url: string, init: RequestInit) => {
       capturedBody = JSON.parse(init.body as string);
-      return embeddingResponse([VECTOR_A], "text-embedding-ada-002");
+      return embeddingResponse([VECTOR_A], "other-embedding-model");
     }) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.openai.com",
-      model: "gpt-4o",
+      baseURL: "https://example.com",
+      model: "test-model",
       fetcher,
     });
 
-    const result = await adapter.embed!({ input: "hello", model: "text-embedding-ada-002" });
+    const result = await adapter.embed!({ input: "hello", model: "other-embedding-model" });
 
-    expect(capturedBody?.model).toBe("text-embedding-ada-002");
-    expect(result.model).toBe("text-embedding-ada-002");
+    expect(capturedBody?.model).toBe("other-embedding-model");
+    expect(result.model).toBe("other-embedding-model");
   });
 
   test("sends dimensions when specified", async () => {
@@ -82,8 +82,8 @@ describe("openai-compatible embed()", () => {
     }) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       fetcher,
     });
 
@@ -114,8 +114,8 @@ describe("openai-compatible embed()", () => {
   test("throws on non-ok response", async () => {
     const fetcher = (async () => errorResponse(401, "Unauthorized")) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       fetcher,
     });
 
@@ -130,8 +130,8 @@ describe("openai-compatible embed()", () => {
     }) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       fetcher,
     });
 
@@ -146,8 +146,8 @@ describe("LLMClient.embed()", () => {
     const fetcher = (async () => embeddingResponse([VECTOR_A])) as unknown as typeof fetch;
     const llm = createLLM({
       provider: "openai-compatible",
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       transport: { fetcher },
     });
 
@@ -161,8 +161,8 @@ describe("LLMClient.embed()", () => {
     const fetcher = (async () => embeddingResponse([VECTOR_A, VECTOR_B])) as unknown as typeof fetch;
     const llm = createLLM({
       provider: "openai-compatible",
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       transport: { fetcher },
     });
 
@@ -180,14 +180,14 @@ describe("LLMClient.embed()", () => {
 
     const llm = createLLM({
       provider: "openai-compatible",
-      baseURL: "https://api.openai.com",
-      model: "gpt-4o",
+      baseURL: "https://example.com",
+      model: "test-model",
       transport: { fetcher },
     });
 
-    await llm.embed("hello", { model: "text-embedding-3-small", dimensions: 512 });
+    await llm.embed("hello", { model: "test-embedding-model", dimensions: 512 });
 
-    expect(capturedBody?.model).toBe("text-embedding-3-small");
+    expect(capturedBody?.model).toBe("test-embedding-model");
     expect(capturedBody?.dimensions).toBe(512);
   });
 });
@@ -195,8 +195,8 @@ describe("LLMClient.embed()", () => {
 describe("anthropic-compatible embed()", () => {
   test("throws a descriptive error mentioning Voyage AI", async () => {
     const adapter = createAnthropicCompatibleAdapter({
-      baseURL: "https://api.anthropic.com",
-      model: "claude-3-5-sonnet-20241022",
+      baseURL: "https://example.com",
+      model: "test-model",
       apiKey: "test",
     });
 
@@ -213,8 +213,8 @@ describe("openai-compatible embed() encoding_format", () => {
       return embeddingResponse([VECTOR_A]);
     }) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.openai.com",
-      model: "text-embedding-3-small",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       fetcher,
     });
 
@@ -227,11 +227,11 @@ describe("openai-compatible embed() encoding_format", () => {
     const bodies: Record<string, unknown>[] = [];
     const fetcher = (async (_input: Request | string | URL, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return embeddingResponse([VECTOR_A], "voyage-3");
+      return embeddingResponse([VECTOR_A], "test-embedding-model");
     }) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
-      baseURL: "https://api.voyageai.com",
-      model: "voyage-3",
+      baseURL: "https://example.com",
+      model: "test-embedding-model",
       defaultBody: { encoding_format: null },
       fetcher,
     });

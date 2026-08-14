@@ -62,7 +62,7 @@ describe("anthropic-compatible streaming", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -106,7 +106,7 @@ describe("anthropic-compatible streaming", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -129,7 +129,7 @@ describe("anthropic-compatible streaming", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -148,7 +148,7 @@ describe("anthropic-compatible streaming", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -228,7 +228,7 @@ describe("anthropic-compatible streaming", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -316,7 +316,7 @@ describe("anthropic-compatible streaming", () => {
       ]);
     }) as unknown as typeof fetch;
 
-    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "claude-test", fetcher });
+    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "test-model", fetcher });
 
     const chunks: LLMStreamChunk[] = [];
     await adapter.stream!(
@@ -343,7 +343,7 @@ describe("anthropic-compatible streaming", () => {
         "[DONE]",
       ])) as unknown as typeof fetch;
 
-    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "claude-test", fetcher });
+    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "test-model", fetcher });
 
     const chunks: LLMStreamChunk[] = [];
     const result = await adapter.stream!(
@@ -374,7 +374,7 @@ describe("anthropic-compatible streaming", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -398,7 +398,7 @@ describe("anthropic-compatible streaming", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -423,7 +423,7 @@ describe("anthropic-compatible pickUsage", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -447,7 +447,7 @@ describe("anthropic-compatible pickUsage", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -471,7 +471,7 @@ describe("anthropic-compatible pickUsage", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -491,7 +491,7 @@ describe("anthropic-compatible pickFinishReason", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -508,7 +508,7 @@ describe("anthropic-compatible pickFinishReason", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -525,7 +525,7 @@ describe("anthropic-compatible pickFinishReason", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -542,7 +542,7 @@ describe("anthropic-compatible pickFinishReason", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -565,7 +565,7 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -590,7 +590,7 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -616,7 +616,7 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -642,7 +642,7 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -667,7 +667,7 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -707,7 +707,7 @@ describe("anthropic-compatible toAnthropicToolChoice", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -728,7 +728,7 @@ describe("anthropic-compatible error paths", () => {
     const fetcher = (async () => sseResponse(["not-json", "[DONE]"])) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -745,7 +745,7 @@ describe("anthropic-compatible error paths", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -759,7 +759,7 @@ describe("anthropic-compatible error paths", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -772,7 +772,7 @@ describe("anthropic-compatible error paths", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -785,7 +785,7 @@ describe("anthropic-compatible error paths", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -818,7 +818,7 @@ describe("anthropic-compatible error paths", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -846,7 +846,7 @@ describe("anthropic-compatible pass-through reasoning streaming", () => {
     const fetcher = (async () => sseResponse(events)) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 

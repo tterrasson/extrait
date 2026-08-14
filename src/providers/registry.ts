@@ -28,9 +28,8 @@ export interface ProviderRegistry {
   list(): string[];
 }
 
+/** Advanced knobs only — the endpoint and credentials live at the top level of the config. */
 export interface ProviderTransportConfig {
-  baseURL?: string;
-  apiKey?: string;
   path?: string;
   /** Embedding endpoint override (openai-compatible providers only). */
   embeddingPath?: string;
@@ -44,14 +43,28 @@ export interface ProviderTransportConfig {
   fetcher?: typeof fetch;
 }
 
-export interface ModelAdapterConfig {
-  provider: string;
+interface ModelAdapterConfigBase {
   model: string;
-  baseURL?: string;
   apiKey?: string;
   transport?: ProviderTransportConfig;
   options?: Record<string, unknown>;
 }
+
+/**
+ * Built-in providers have no default endpoint: `baseURL` is mandatory, so an
+ * unconfigured client never ships credentials to a vendor host. Custom providers
+ * registered through {@link ProviderRegistry.register} opt out by naming their
+ * kind explicitly, e.g. `ModelAdapterConfig<"my-provider">`.
+ */
+export type ModelAdapterConfig<TProvider extends string = BuiltinProviderKind> = ModelAdapterConfigBase & {
+  provider: TProvider;
+} & (TProvider extends BuiltinProviderKind ? { baseURL: string } : { baseURL?: string });
+
+/** Structural view used internally, once the generic requirement has been checked. */
+type ResolvedModelAdapterConfig = ModelAdapterConfigBase & {
+  provider: string;
+  baseURL?: string;
+};
 
 class InMemoryProviderRegistry implements ProviderRegistry {
   private readonly factories = new Map<string, ProviderFactory<unknown>>();
@@ -93,26 +106,34 @@ export function createDefaultProviderRegistry(): ProviderRegistry {
   return registerBuiltinProviders(createProviderRegistry());
 }
 
-export function createModelAdapter(
-  config: ModelAdapterConfig,
+export function createModelAdapter<TProvider extends string>(
+  config: ModelAdapterConfig<TProvider>,
   registry: ProviderRegistry = createDefaultProviderRegistry(),
 ): LLMAdapter {
-  const providerOptions = buildProviderOptions(config);
-  return registry.create(config.provider, providerOptions);
+  const resolved = config as ResolvedModelAdapterConfig;
+  const providerOptions = buildProviderOptions(resolved);
+  return registry.create(resolved.provider, providerOptions);
 }
 
-function buildProviderOptions(config: ModelAdapterConfig): unknown {
-  const transport = {
-    ...config.transport,
-    baseURL: config.transport?.baseURL ?? config.baseURL,
-    apiKey: config.transport?.apiKey ?? config.apiKey,
-  };
+function requireBaseURL(provider: string, baseURL: string | undefined): string {
+  if (!baseURL) {
+    throw new Error(
+      `Provider "${provider}" requires an explicit baseURL. ` +
+        `There is no default endpoint, so credentials are never sent to an unintended host.`,
+    );
+  }
+
+  return baseURL;
+}
+
+function buildProviderOptions(config: ResolvedModelAdapterConfig): unknown {
+  const transport: ProviderTransportConfig = config.transport ?? {};
 
   if (config.provider === "openai-compatible") {
     const options: OpenAICompatibleAdapterOptions = {
       model: config.model,
-      baseURL: transport.baseURL ?? "https://api.openai.com",
-      apiKey: transport.apiKey,
+      baseURL: requireBaseURL(config.provider, config.baseURL),
+      apiKey: config.apiKey,
       path: transport.path,
       embeddingPath: transport.embeddingPath,
       headers: transport.headers,
@@ -127,8 +148,8 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
   if (config.provider === "openai-compatible-legacy") {
     const options: OpenAICompatibleLegacyAdapterOptions = {
       model: config.model,
-      baseURL: transport.baseURL ?? "https://api.openai.com",
-      apiKey: transport.apiKey,
+      baseURL: requireBaseURL(config.provider, config.baseURL),
+      apiKey: config.apiKey,
       path: transport.path,
       embeddingPath: transport.embeddingPath,
       headers: transport.headers,
@@ -143,8 +164,8 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
   if (config.provider === "anthropic-compatible") {
     const options: AnthropicCompatibleAdapterOptions = {
       model: config.model,
-      baseURL: transport.baseURL ?? "https://api.anthropic.com",
-      apiKey: transport.apiKey,
+      baseURL: requireBaseURL(config.provider, config.baseURL),
+      apiKey: config.apiKey,
       path: transport.path,
       headers: transport.headers,
       version: transport.version,
@@ -159,6 +180,8 @@ function buildProviderOptions(config: ModelAdapterConfig): unknown {
 
   return {
     model: config.model,
+    baseURL: config.baseURL,
+    apiKey: config.apiKey,
     ...transport,
     ...config.options,
   };

@@ -32,7 +32,7 @@ describe("image passthrough reaches provider payloads", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
     await adapter.complete({ messages: imageMessages });
@@ -52,7 +52,7 @@ describe("image passthrough reaches provider payloads", () => {
 
     const adapter = createOpenAICompatibleLegacyAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
     await adapter.complete({ messages: imageMessages });
@@ -70,7 +70,7 @@ describe("image passthrough reaches provider payloads", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
     await adapter.complete({ messages: imageMessages });
@@ -88,7 +88,7 @@ describe("image passthrough reaches provider payloads", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
     await adapter.complete({

@@ -14,12 +14,13 @@
  */
 
 import { createLLM, type LLMTokenLogprob } from "@/index";
+import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"
   | "openai-compatible-legacy";
-const model = process.env.LLM_MODEL ?? "gpt-4.1-nano";
-const baseURL = process.env.LLM_BASE_URL;
+const model = process.env.LLM_MODEL ?? "my-model-id";
+const baseURL = requireBaseURL();
 const apiKey = process.env.LLM_API_KEY;
 
 if (!apiKey) {
@@ -35,11 +36,9 @@ const input = args.filter((arg) => arg !== "--legacy-logprobs").join(" ").trim()
 const llm = createLLM({
   provider,
   model,
-  transport: {
-    baseURL,
-    apiKey,
-    ...(legacyLogprobs ? { defaultBody: { logprobs: true } } : {}),
-  },
+  baseURL,
+  apiKey,
+  ...(legacyLogprobs ? { transport: { defaultBody: { logprobs: true } } } : {}),
 });
 
 const result = await llm.generate(input, {

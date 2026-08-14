@@ -43,10 +43,8 @@ import { z } from "zod";
 const llm = createLLM({
   provider: "openai-compatible",
   model: "mistralai/ministral-3-3b",
-  transport: {
-    baseURL: "http://localhost:1234/v1",
-    apiKey: process.env.LLM_API_KEY ?? "local-demo-key",
-  },
+  baseURL: "http://localhost:1234/v1",
+  apiKey: process.env.LLM_API_KEY ?? "local-demo-key",
 });
 
 const text = "Beat two eggs, add flour and milk, then cook thin pancakes in a hot pan.";
@@ -100,11 +98,9 @@ Use `createLLM()` to configure the provider, model, transport, and client defaul
 const llm = createLLM({
   provider: "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible",
   model: "gpt-5-nano",
-  baseURL: "https://api.openai.com",       // optional alias for transport.baseURL
-  apiKey: process.env.LLM_API_KEY,         // optional alias for transport.apiKey
-  transport: {
-    baseURL: "https://api.openai.com",     // optional
-    apiKey: process.env.LLM_API_KEY,       // optional
+  baseURL: "http://localhost:1234/v1",     // required
+  apiKey: process.env.LLM_API_KEY,         // optional
+  transport: {                             // optional advanced settings
     path: "/v1/responses",                 // optional provider endpoint override
     embeddingPath: "/v1/embeddings",       // optional embedding endpoint (openai-compatible only)
     headers: { "x-trace-id": "docs-demo" }, // optional extra headers
@@ -129,16 +125,18 @@ const llm = createLLM({
 });
 ```
 
-`baseURL` and `apiKey` at the top level are shorthand aliases for `transport.baseURL` and `transport.apiKey`. For request-specific options such as `stream`, `request`, `schemaInstruction`, and parse tuning, see the sections below.
+The endpoint and credentials always live at the top level (`baseURL`, `apiKey`); `transport` is reserved for advanced settings such as endpoint paths, headers, body defaults, and a custom `fetcher`.
+
+`baseURL` is **required** for the built-in providers. There is no implicit `https://api.openai.com` / `https://api.anthropic.com` fallback, so a client that was never pointed at an endpoint fails at construction instead of shipping your key to a vendor host. For request-specific options such as `stream`, `request`, `schemaInstruction`, and parse tuning, see the sections below.
 
 Common setup patterns:
 
 ```typescript
-// OpenAI-compatible gateway or local endpoint with top-level aliases
+// OpenAI-compatible gateway or local endpoint
 const llm = createLLM({
   provider: "openai-compatible",
-  model: "gpt-4o-mini",
-  baseURL: process.env.LLM_BASE_URL ?? "http://localhost:1234/v1",
+  model: "local-model",
+  baseURL: process.env.LLM_BASE_URL ?? "http://localhost:1234/v1", // never left undefined
   apiKey: process.env.LLM_API_KEY ?? "local-demo-key",
 });
 
@@ -146,19 +144,17 @@ const llm = createLLM({
 const legacy = createLLM({
   provider: "openai-compatible-legacy",
   model: "local-model",
-  transport: {
-    baseURL: "http://localhost:1234",
-    apiKey: "local-demo-key",
-  },
+  baseURL: "http://localhost:1234",
+  apiKey: "local-demo-key",
 });
 
 // Anthropic-compatible endpoint with explicit API version
 const anthropic = createLLM({
   provider: "anthropic-compatible",
   model: "claude-3-5-sonnet-latest",
+  baseURL: "http://localhost:8080",
+  apiKey: process.env.LLM_API_KEY,
   transport: {
-    baseURL: "https://api.anthropic.com",
-    apiKey: process.env.LLM_API_KEY,
     version: "2023-06-01",
   },
 });
@@ -608,7 +604,8 @@ Generate vector embeddings using `llm.embed()`. It always returns `number[][]` â
 const embedder = createLLM({
   provider: "openai-compatible",
   model: "text-embedding-3-small",
-  transport: { apiKey: process.env.LLM_API_KEY },
+  baseURL: "http://localhost:1234/v1",
+  apiKey: process.env.LLM_API_KEY,
 });
 
 // Single string
@@ -646,10 +643,8 @@ Anthropic does not provide a native embedding API. Their recommended solution is
 const embedder = createLLM({
   provider: "openai-compatible",
   model: "voyage-3",
-  transport: {
-    baseURL: "https://api.voyageai.com",
-    apiKey: process.env.LLM_API_KEY,
-  },
+  baseURL: "https://api.voyageai.com",
+  apiKey: process.env.LLM_API_KEY,
 });
 
 const { embeddings } = await embedder.embed(["query", "document"]);
@@ -748,7 +743,8 @@ You can also set defaults on the client:
 const llm = createLLM({
   provider: "openai-compatible",
   model: "gpt-5-nano",
-  transport: { apiKey: process.env.LLM_API_KEY },
+  baseURL: process.env.LLM_BASE_URL ?? "http://localhost:1234/v1",
+  apiKey: process.env.LLM_API_KEY,
   defaults: {
     timeout: { request: 60_000 },
   },
@@ -796,7 +792,7 @@ bun run dev embeddings "the cat sat on the mat" "a feline rested on the rug"
 These environment variables are used across the examples and common client setups.
 
 - `LLM_PROVIDER` - `openai-compatible`, `openai-compatible-legacy`, or `anthropic-compatible`
-- `LLM_BASE_URL` - API endpoint (optional)
+- `LLM_BASE_URL` - API endpoint (required, no default)
 - `LLM_MODEL` - Model name (default: `gpt-5-nano`)
 - `LLM_API_KEY` - API key for the provider
 - `STRUCTURED_DEBUG=1` - Enable debug output
@@ -823,6 +819,26 @@ const buf = await sharp(path).resize(512, 512, { fit: "inside", withoutEnlargeme
 ```
 
 `{ base64, mimeType }` inputs, including `ConversationEntry.images`, keep working unchanged.
+
+`baseURL` is now required and lives at the top level of the config, next to `apiKey`. Both were removed from `transport`, which is now reserved for advanced settings (`path`, `headers`, `defaultBody`, `fetcher`, â€¦). The `https://api.openai.com` / `https://api.anthropic.com` defaults are gone, so a misconfigured client throws instead of calling a vendor endpoint.
+
+```typescript
+// Before
+createLLM({
+  provider: "openai-compatible",
+  model: "local-model",
+  transport: { baseURL: "http://localhost:1234/v1", apiKey, headers },
+});
+
+// After
+createLLM({
+  provider: "openai-compatible",
+  model: "local-model",
+  baseURL: "http://localhost:1234/v1",
+  apiKey,
+  transport: { headers },
+});
+```
 
 ## Testing
 

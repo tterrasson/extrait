@@ -11,13 +11,14 @@
 
 import { z } from "zod";
 import { createLLM, prompt, s } from "@/index";
+import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"
   | "openai-compatible-legacy"
   | "anthropic-compatible";
-const model = process.env.LLM_MODEL ?? "gpt-5-nano";
-const baseURL = process.env.LLM_BASE_URL;
+const model = process.env.LLM_MODEL ?? "my-model-id";
+const baseURL = requireBaseURL();
 const apiKey = process.env.LLM_API_KEY;
 const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
@@ -30,10 +31,8 @@ if (!apiKey) {
 const llm = createLLM({
   provider,
   model,
-  transport: {
-    baseURL,
-    apiKey,
-  },
+  baseURL,
+  apiKey,
   defaults: {
     mode: "strict",
     selfHeal: false,

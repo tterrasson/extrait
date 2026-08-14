@@ -61,7 +61,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -121,7 +121,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
     const result = await adapter.stream!(
@@ -164,7 +164,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -194,7 +194,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -222,7 +222,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -253,7 +253,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -278,7 +278,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -329,7 +329,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -378,7 +378,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -428,7 +428,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -464,7 +464,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -503,7 +503,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -540,7 +540,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -563,7 +563,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -586,7 +586,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -609,7 +609,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -627,7 +627,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -642,7 +642,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -653,7 +653,7 @@ describe("openai-compatible streaming", () => {
     const fetcher = (async () => sseResponse(["not-json", "[DONE]"])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -666,7 +666,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -738,7 +738,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -809,7 +809,7 @@ describe("openai-compatible streaming", () => {
       ]);
     }) as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({ baseURL: "https://example.com", model: "gpt-test", fetcher });
+    const adapter = createOpenAICompatibleAdapter({ baseURL: "https://example.com", model: "test-model", fetcher });
 
     const chunks: LLMStreamChunk[] = [];
     await adapter.stream!(
@@ -876,7 +876,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -926,7 +926,7 @@ describe("openai-compatible streaming", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -957,7 +957,7 @@ describe("openai-compatible streaming", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1017,7 +1017,7 @@ describe("openai-compatible streaming", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1064,7 +1064,7 @@ describe("openai-compatible streaming", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1137,7 +1137,7 @@ describe("openai-compatible streaming", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1199,7 +1199,7 @@ describe("openai-compatible streaming", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1243,7 +1243,7 @@ describe("openai-compatible text extraction", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
     const result = await adapter.complete({ prompt: "test" });
@@ -1266,7 +1266,7 @@ describe("openai-compatible text extraction", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1291,7 +1291,7 @@ describe("openai-compatible text extraction", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1317,7 +1317,7 @@ describe("openai-compatible text extraction", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1344,7 +1344,7 @@ describe("openai-compatible text extraction", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1364,7 +1364,7 @@ describe("openai-compatible text extraction", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1389,7 +1389,7 @@ describe("openai-compatible text extraction", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1417,7 +1417,7 @@ describe("openai-compatible text extraction", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1439,7 +1439,7 @@ describe("openai-compatible text extraction", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1457,7 +1457,7 @@ describe("openai-compatible text extraction", () => {
     const adapter = createResponsesAdapter({
       baseURL: "https://example.com",
       path: "/v1/responses",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1471,7 +1471,7 @@ describe("openai-compatible text extraction", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -1498,7 +1498,7 @@ describe("openai-compatible text extraction", () => {
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
-      model: "gpt-test",
+      model: "test-model",
       fetcher,
     });
 

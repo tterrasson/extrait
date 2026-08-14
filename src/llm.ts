@@ -2,6 +2,7 @@ import type { z } from "zod";
 import {
   createModelAdapter,
   createDefaultProviderRegistry,
+  type BuiltinProviderKind,
   type ModelAdapterConfig,
   type ProviderRegistry
 } from "./providers/registry";
@@ -41,9 +42,9 @@ interface LLMClientDefaults {
   timeout?: StructuredTimeoutOptions;
 }
 
-export interface CreateLLMOptions extends ModelAdapterConfig {
+export type CreateLLMOptions<TProvider extends string = BuiltinProviderKind> = ModelAdapterConfig<TProvider> & {
   defaults?: LLMClientDefaults;
-}
+};
 
 export interface LLMClient {
   adapter: LLMAdapter;
@@ -62,8 +63,8 @@ export interface LLMClient {
   embed(input: string | string[], options?: Omit<EmbeddingRequest, "input">): Promise<EmbeddingResult>;
 }
 
-export function createLLM(
-  config: CreateLLMOptions,
+export function createLLM<TProvider extends string>(
+  config: CreateLLMOptions<TProvider>,
   registry: ProviderRegistry = createDefaultProviderRegistry(),
 ): LLMClient {
   const adapter = createModelAdapter(config, registry);

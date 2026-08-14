@@ -75,7 +75,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -105,7 +105,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -140,7 +140,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -183,7 +183,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -222,7 +222,7 @@ describe("anthropic-compatible MCP tools", () => {
   test("rejects system turns after non-system messages", async () => {
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher: (async () => jsonResponse({})) as unknown as typeof fetch,
     });
 
@@ -245,7 +245,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -288,7 +288,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -333,7 +333,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -383,7 +383,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -415,7 +415,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       defaultMaxTokens: 321,
       fetcher,
     });
@@ -441,7 +441,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -472,7 +472,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -510,7 +510,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       defaultMaxTokens: -10,
       fetcher,
     });
@@ -535,7 +535,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       defaultMaxToolRounds: 0,
       fetcher,
     });
@@ -578,7 +578,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -613,7 +613,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -655,7 +655,7 @@ describe("anthropic-compatible MCP tools", () => {
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -686,7 +686,7 @@ describe("anthropic-compatible pass-through reasoning", () => {
     })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -704,7 +704,7 @@ describe("anthropic-compatible pass-through reasoning", () => {
     })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -719,7 +719,7 @@ describe("anthropic-compatible pass-through reasoning", () => {
     const fetcher = (async () => jsonResponse({ content: [], stop_reason: "end_turn" })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 
@@ -738,7 +738,7 @@ describe("anthropic-compatible max_tokens resolution", () => {
     }) as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       defaultBody: { max_tokens: 4096 },
       fetcher,
     });
@@ -756,7 +756,7 @@ describe("anthropic-compatible max_tokens resolution", () => {
     }) as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       defaultBody: { max_tokens: 4096 },
       fetcher,
     });
@@ -776,7 +776,7 @@ describe("anthropic-compatible conversation history normalization", () => {
     }) as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
-      model: "claude-test",
+      model: "test-model",
       fetcher,
     });
 

@@ -45,8 +45,8 @@ describe("providers/utils buildURL", () => {
   });
 
   test("keeps root-based providers unchanged", () => {
-    expect(buildURL("https://api.openai.com", "/v1/chat/completions")).toBe(
-      "https://api.openai.com/v1/chat/completions",
+    expect(buildURL("https://example.com", "/v1/chat/completions")).toBe(
+      "https://example.com/v1/chat/completions",
     );
   });
 

@@ -10,6 +10,7 @@
  */
 
 import { conversation, createLLM } from "@/index";
+import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"
@@ -19,8 +20,9 @@ const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
   provider,
-  model: process.env.LLM_MODEL ?? "gpt-4o-mini",
-  transport: { baseURL: process.env.LLM_BASE_URL, apiKey: process.env.LLM_API_KEY },
+  model: process.env.LLM_MODEL ?? "my-model-id",
+  baseURL: requireBaseURL(),
+  apiKey: process.env.LLM_API_KEY,
   defaults: { debug: debugEnabled },
 });
 

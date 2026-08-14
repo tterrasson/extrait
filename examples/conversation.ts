@@ -12,6 +12,7 @@
 
 import { z } from "zod";
 import { conversation, createLLM, loadImages, prompt, s, StructuredParseError } from "@/index";
+import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
   | "openai-compatible"
@@ -21,8 +22,9 @@ const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
   provider,
-  model: process.env.LLM_MODEL ?? "gpt-4o-mini",
-  transport: { baseURL: process.env.LLM_BASE_URL, apiKey: process.env.LLM_API_KEY },
+  model: process.env.LLM_MODEL ?? "my-model-id",
+  baseURL: requireBaseURL(),
+  apiKey: process.env.LLM_API_KEY,
   defaults: { mode: "loose", selfHeal: 1, debug: debugEnabled },
 });
 
@@ -58,7 +60,7 @@ try {
 
 // --- Example 2: prompt() builder with inline image content ---
 //
-// Requires a vision-capable model (e.g. gpt-4o, claude-3-5-sonnet).
+// Requires a vision-capable model.
 // Pass an image path as argument: bun run dev conversation <path-to-image>
 
 console.log("\n=== Example 2: prompt() builder with LLMMessageContent ===\n");
