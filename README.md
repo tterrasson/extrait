@@ -800,46 +800,6 @@ These environment variables are used across the examples and common client setup
   `reasoning` (normalized reasoning). `parseSource` (the internal source used by
   parsing and self-heal) is only printed when `debug.verbose` is enabled.
 
-## Migration 0.8 → 0.9
-
-`resizeImage()` and the `ImageSize` type are gone, along with the optional `sharp` peer dependency: `extrait` no longer processes images, it only transports them. `images()` now accepts URLs, raw bytes and `{ base64, mimeType }`, and the new `loadImages()` handles file paths and blobs.
-
-```typescript
-// Before
-const img = await resizeImage(path, "mid");
-...images(img)
-
-// After — no resizing
-...(await loadImages(path))
-
-// After — resizing on your side
-import sharp from "sharp";
-const buf = await sharp(path).resize(512, 512, { fit: "inside", withoutEnlargement: true }).toBuffer();
-...images(buf)
-```
-
-`{ base64, mimeType }` inputs, including `ConversationEntry.images`, keep working unchanged.
-
-`baseURL` is now required and lives at the top level of the config, next to `apiKey`. Both were removed from `transport`, which is now reserved for advanced settings (`path`, `headers`, `defaultBody`, `fetcher`, …). The `https://api.openai.com` / `https://api.anthropic.com` defaults are gone, so a misconfigured client throws instead of calling a vendor endpoint.
-
-```typescript
-// Before
-createLLM({
-  provider: "openai-compatible",
-  model: "local-model",
-  transport: { baseURL: "http://localhost:1234/v1", apiKey, headers },
-});
-
-// After
-createLLM({
-  provider: "openai-compatible",
-  model: "local-model",
-  baseURL: "http://localhost:1234/v1",
-  apiKey,
-  transport: { headers },
-});
-```
-
 ## Testing
 
 Run the test suite with Bun.
