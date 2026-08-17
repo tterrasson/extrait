@@ -17,7 +17,7 @@ High-level LLM text generation and structured JSON extraction with validation, r
 - Streaming support
 - MCP tools
 - Vector embeddings (OpenAI-compatible + Voyage AI)
-- Multimodal images from paths, URLs, bytes or blobs
+- Pass-through multimodal images from paths, URLs, bytes, data URLs, or blobs
 
 ## Installation
 
@@ -412,66 +412,70 @@ Some Responses-dialect servers (e.g. llama.cpp) also require the Chat Completion
 
 ### Images (multimodal)
 
-Two functions build the content blocks that spread into a message:
+`extrait` transports images to vision-capable models without decoding, resizing, recompressing, or otherwise transforming their pixel data. It exposes two helpers that produce `LLMImageContent[]` blocks ready to spread into a user or assistant message:
 
 | | Accepts | I/O |
 |---|---|---|
-| `images(...)` | data URL, `http(s)` URL, `URL`, `Uint8Array` / `ArrayBuffer` / `Buffer`, `{ base64, mimeType }` | none — synchronous |
-| `await loadImages(...)` | everything above **plus** file paths, `file:` URLs and `Blob` / `File` | reads files and blobs |
+| `images(source)` | data or `http(s)` URL, remote/data `URL` object, `Uint8Array`, `ArrayBuffer`, `Buffer`, or `{ base64, mimeType }` | Synchronous; no I/O |
+| `await loadImages(source)` | Everything accepted by `images()`, plus file paths, `file:` URLs, `Blob`, and `File` | Reads local files and blobs |
 
-Both take a single source or an array, and always return an `LLMImageContent[]`.
+Both helpers accept one source or an array of sources and preserve their order.
 
 ```typescript
 import { loadImages, prompt } from "extrait";
 
-const content = await loadImages("photo.png");
+const imageContent = await loadImages("photo.png");
 
-const result = await llm.structured(Schema,
+const result = await llm.structured(
+  Schema,
   prompt()
     .system`You are a vision assistant.`
-    .user([{ type: "text", text: "Describe this image." }, ...content])
+    .user([
+      { type: "text", text: "Describe this image." },
+      ...imageContent,
+    ]),
 );
 ```
 
-```typescript
-import { images, loadImages } from "extrait";
-
-// No I/O needed — synchronous
-images("https://example.com/photo.png");          // remote URL, passed through as-is
-images("data:image/png;base64,iVBORw0KG...");     // data URL, passed through byte for byte
-images(await sharp(path).resize(512).toBuffer()); // raw bytes, mime type sniffed
-images({ base64, mimeType: "image/png" });        // explicit pair
-
-// Needs I/O
-await loadImages(["a.png", "b.jpg"]);             // file paths
-await loadImages(new Blob([bytes]));              // Blob / File
-
-// Mix freely — order is preserved
-await loadImages(["local.png", "https://example.com/remote.jpg"]);
-```
-
-**How a `string` is resolved**, in order:
-
-1. starts with `data:` → used as-is;
-2. starts with `http://` or `https://` → forwarded to the provider as-is (`extrait` does not fetch it — some models reject remote URLs);
-3. otherwise → treated as a **file path**, so it requires `loadImages()`. Passing one to `images()` throws an explicit error.
-
-A bare base64 string is not accepted: it is indistinguishable from a path. Pass `{ base64, mimeType }`.
-
-**Mime type detection**, in order: the explicit `mimeType` → magic bytes (PNG, JPEG, WebP, GIF, AVIF/HEIC, BMP) → file extension → error. `sniffMimeType(bytes)` is exported if you need it on its own.
-
-Providers commonly cap images around 5 MB and 8000 px. Since nothing is resized for you, resize upstream when it matters:
+Use `images()` when the source is already available in memory or remotely:
 
 ```typescript
-import sharp from "sharp";
 import { images } from "extrait";
 
-const buf = await sharp("photo.png")
-  .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-  .toBuffer();
-
-const content = images(buf);
+const remote = images("https://example.com/photo.png");
+const encoded = images("data:image/png;base64,iVBORw0KG...");
+const fromBytes = images(imageBytes);
+const explicit = images({ base64, mimeType: "image/png" });
+const multiple = images([firstImageBytes, secondImageBytes]);
 ```
+
+Use `loadImages()` when a source must be read asynchronously:
+
+```typescript
+import { loadImages } from "extrait";
+
+const local = await loadImages("photo.png");
+const fromFileURL = await loadImages(new URL("file:///tmp/photo.png"));
+const fromBlob = await loadImages(new Blob([imageBytes], { type: "image/png" }));
+
+const mixed = await loadImages([
+  "first.png",
+  "https://example.com/second.jpg",
+  { base64, mimeType: "image/webp" },
+]);
+```
+
+String sources are resolved as follows:
+
+1. `data:` URLs are passed through unchanged.
+2. `http://` and `https://` URLs are passed through unchanged; `extrait` does not fetch them.
+3. Other strings are treated as local file paths and must be passed to `loadImages()`.
+
+A bare base64 string is ambiguous and is therefore treated as a file path. Use a data URL or `{ base64, mimeType }` instead.
+
+Raw bytes are wrapped in a base64 data URL. Their MIME type is detected from the file signature for PNG, JPEG, GIF, WebP, AVIF, HEIC, and BMP. For local files, the extension is used as a fallback. A `Blob` or `{ base64, mimeType }` can provide the MIME type explicitly. The `sniffMimeType(bytes)` helper is also exported for direct use.
+
+Remote and data URLs keep their original representation. Local files, blobs, and raw bytes are only read and wrapped as data URLs; pixel data is never processed. Make sure the source already meets the selected provider's supported formats and size limits.
 
 See [examples/image-analysis.ts](examples/image-analysis.ts).
 
