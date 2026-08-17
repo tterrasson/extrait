@@ -26,6 +26,25 @@ function buildPayload(totalChars: number): string {
   return `${out}]}`;
 }
 
+// A single long text field: the preview must walk the open string once overall,
+// not re-scan it on every chunk.
+function buildLongStringPayload(totalChars: number): string {
+  const body = "lorem ipsum dolor sit amet ".repeat(Math.ceil(totalChars / 27));
+  return `{"content":"${body.slice(0, totalChars)}","done":true}`;
+}
+
+// One flat array of scalars: the worst case for the snapshot copy, which
+// duplicates every element of the still-open array on each recomputation.
+function buildFlatArrayPayload(totalChars: number): string {
+  let out = '{"values":[';
+  let id = 0;
+  while (out.length < totalChars) {
+    out += `${id > 0 ? "," : ""}${id}`;
+    id += 1;
+  }
+  return `${out}]}`;
+}
+
 interface BenchResult {
   wallMs: number;
   peakHeapBytes: number;
@@ -54,10 +73,25 @@ const SCHEMA = z.object({
   items: z.array(z.object({ id: z.number(), label: z.string() })),
 });
 
-type Mode = "generate" | "structured" | "structured+dataInterval0";
+const LONG_STRING_SCHEMA = z.object({ content: z.string(), done: z.boolean() });
+
+const FLAT_ARRAY_SCHEMA = z.object({ values: z.array(z.number()) });
+
+type Mode =
+  | "generate"
+  | "structured"
+  | "structured+dataInterval0"
+  | "structured+longString"
+  | "structured+flatArray0";
 
 async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
-  const payload = buildPayload(chunks * CHUNK_SIZE);
+  const longString = mode === "structured+longString";
+  const flatArray = mode === "structured+flatArray0";
+  const payload = longString
+    ? buildLongStringPayload(chunks * CHUNK_SIZE)
+    : flatArray
+      ? buildFlatArrayPayload(chunks * CHUNK_SIZE)
+      : buildPayload(chunks * CHUNK_SIZE);
   let peakHeapBytes = 0;
   let events = 0;
   const sampleHeap = (): void => {
@@ -69,7 +103,7 @@ async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
   const adapter = makeAdapter(payload, sampleHeap);
   const stream = {
     enabled: true,
-    ...(mode === "structured+dataInterval0" ? { dataInterval: 0 } : {}),
+    ...(mode === "structured+dataInterval0" || longString || flatArray ? { dataInterval: 0 } : {}),
     onData: () => {
       events += 1;
     },
@@ -79,6 +113,10 @@ async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
   const startedAt = performance.now();
   if (mode === "generate") {
     await generate(adapter, "bench", { stream });
+  } else if (longString) {
+    await structured(adapter, LONG_STRING_SCHEMA, "bench", { stream });
+  } else if (flatArray) {
+    await structured(adapter, FLAT_ARRAY_SCHEMA, "bench", { stream });
   } else {
     await structured(adapter, SCHEMA, "bench", { stream });
   }
@@ -88,7 +126,13 @@ async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
 }
 
 const rows: string[] = [];
-for (const mode of ["generate", "structured", "structured+dataInterval0"] as const) {
+for (const mode of [
+  "generate",
+  "structured",
+  "structured+dataInterval0",
+  "structured+longString",
+  "structured+flatArray0",
+] as const) {
   for (const chunks of CHUNK_COUNTS) {
     const result = await runScenario(mode, chunks);
     const row = `| ${mode} | ${chunks} | ${(chunks * CHUNK_SIZE / 1000).toFixed(0)} ko | ${result.wallMs.toFixed(0)} ms | ${(result.peakHeapBytes / 1024 / 1024).toFixed(1)} Mo | ${result.events} |`;

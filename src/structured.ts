@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { resolveSchemaInstruction, formatPrompt, withFormat } from "./format";
 import { formatZodIssues, parseLLMOutput } from "./parse";
-import { parseStreamingStructuredData } from "./structured-streaming";
+import { createStreamingStructuredParser } from "./structured-streaming";
 import {
   aggregateUsage,
   applyOutdentToOptionalPrompt,
@@ -877,23 +877,26 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
   };
 }
 
-// Below this size, repairing+parsing the whole accumulation per event is cheap
-// enough that the preview stays exact; above it, the default coalesces to a
-// UI-frame-scale interval so the per-chunk cost stops growing with the output.
-const AUTO_DATA_INTERVAL_EXACT_MAX_CHARS = 2_048;
+// Parsing itself is incremental, but each preview still copies the containers
+// that are open, which grows with the size of the one being filled. Below this
+// size that copy is free; above it the default coalesces to a UI-frame-scale
+// interval so a long array does not pay for it on every chunk. The worst case
+// (bench:stream, structured+flatArray0) prices a whole exact-mode stream at
+// ~3 ms up to this size; the quadratic term only bites tens of kilobytes in.
+const AUTO_DATA_INTERVAL_EXACT_MAX_CHARS = 8_192;
 const AUTO_DATA_INTERVAL_MS = 25;
 
 async function callModel(
   adapter: LLMAdapter,
   options: StructuredModelCallOptions,
 ): Promise<ModelCallResult> {
-  // stream.dataInterval coalesces the expensive repair+parse of the partial
-  // JSON preview: between recomputations the last parsed value is reused, so
-  // `snapshot.data` may lag behind `snapshot.text` by up to that many ms. The
-  // terminal (done) snapshot always reparses. When unset, the interval is
-  // adaptive: exact (reparse on every event) while the accumulated text stays
-  // small, coalesced once reparsing the whole accumulation gets expensive.
+  // stream.dataInterval coalesces the preview: between recomputations the last
+  // value is reused, so `snapshot.data` may lag behind `snapshot.text` by up to
+  // that many ms. The terminal (done) snapshot always recomputes. When unset,
+  // the interval is adaptive, exact on every event while the output stays
+  // small, coalesced above AUTO_DATA_INTERVAL_EXACT_MAX_CHARS.
   const dataInterval = options.stream.dataInterval;
+  const parsePreview = createStreamingStructuredParser();
   let coalescedData: unknown = null;
   let coalescedDataAt: number | undefined;
 
@@ -917,7 +920,7 @@ async function callModel(
         coalescedDataAt === undefined ||
         now - coalescedDataAt >= interval
       ) {
-        coalescedData = parseStreamingStructuredData(normalized.text) ?? null;
+        coalescedData = parsePreview.update(normalized.text) ?? null;
         coalescedDataAt = now;
       }
       return {
