@@ -490,7 +490,7 @@ describe("generate", () => {
     expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true);
   });
 
-  test("request.signal takes precedence over timeout.request", async () => {
+  test("request.signal and timeout.request both abort the call", async () => {
     const controller = new AbortController();
     let receivedSignal: AbortSignal | undefined;
 
@@ -503,10 +503,36 @@ describe("generate", () => {
 
     await generate(model, "one", {
       request: { signal: controller.signal },
-      timeout: { request: 1_000 },
+      timeout: { request: 60_000 },
     });
 
-    expect(receivedSignal).toBe(controller.signal);
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    expect(receivedSignal).not.toBe(controller.signal);
+    expect(receivedSignal?.aborted).toBe(false);
+    controller.abort(new Error("caller aborted"));
+    expect(receivedSignal?.aborted).toBe(true);
+  });
+
+  test("timeout.request still fires when the caller provided a signal", async () => {
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+
+    const model: LLMAdapter = {
+      async complete(request: LLMRequest): Promise<LLMResponse> {
+        receivedSignal = request.signal;
+        return { text: "done", finishReason: "stop" };
+      },
+    };
+
+    await generate(model, "one", {
+      request: { signal: controller.signal },
+      timeout: { request: 5 },
+    });
+
+    await Bun.sleep(30);
+    expect(receivedSignal?.aborted).toBe(true);
+    expect((receivedSignal?.reason as Error | undefined)?.name).toBe("TimeoutError");
+    expect(controller.signal.aborted).toBe(false);
   });
 
   test("applies timeout.tool to MCP clients passed through generate", async () => {

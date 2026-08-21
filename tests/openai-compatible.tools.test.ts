@@ -533,7 +533,7 @@ describe("openai-compatible MCP tools", () => {
       reasoningEffort: "max",
     });
 
-    expect(requests[0]?.reasoning).toEqual({ effort: "max" });
+    expect(requests[0]?.reasoning).toEqual({ effort: "max", summary: "auto" });
   });
 
   test("surfaces unknown MCP tool as tool error and continues", async () => {

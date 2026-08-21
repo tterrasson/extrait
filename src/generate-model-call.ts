@@ -15,15 +15,32 @@ import {
 import type { ModelCallOptions, ModelCallResult } from "./generate-shared";
 import { emitDebugRequest, emitDebugResponse } from "./generate-debug";
 
+/**
+ * Folds the caller's cancellation signal and the configured per-request timeout
+ * into the single signal the adapter runs under.
+ *
+ * Both matter, and they are not interchangeable: the caller's signal ends a call
+ * nobody is waiting for any more, the timeout ends one the provider never
+ * answers. Honoring only the caller's — as skipping the timeout whenever a
+ * signal is present would — leaves a stalled upstream holding the call forever,
+ * which is precisely the case the timeout exists for.
+ */
+function withRequestTimeout(
+  signal: AbortSignal | undefined,
+  timeoutMs: number | undefined,
+): AbortSignal | undefined {
+  if (timeoutMs === undefined) {
+    return signal;
+  }
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 export async function callModel<TSnapshot, TTraceEvent>(
   adapter: LLMAdapter,
   options: ModelCallOptions<TSnapshot, TTraceEvent>,
 ): Promise<ModelCallResult> {
-  const requestSignal =
-    options.request?.signal ??
-    (options.timeout?.request !== undefined
-      ? AbortSignal.timeout(options.timeout.request)
-      : undefined);
+  const requestSignal = withRequestTimeout(options.request?.signal, options.timeout?.request);
 
   const requestPayload: LLMRequest = {
     prompt: options.prompt,

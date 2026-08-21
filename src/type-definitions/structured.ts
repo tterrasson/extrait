@@ -62,7 +62,10 @@ export interface StructuredSelfHealOptions {
 export type StructuredSelfHealInput = boolean | number | StructuredSelfHealOptions;
 
 export interface StructuredTimeoutOptions {
-  /** Timeout in ms for each LLM HTTP request. Creates an AbortSignal.timeout internally if no signal is already provided. */
+  /**
+   * Timeout in ms for each LLM HTTP request. Applied on top of `request.signal`
+   * when the caller provides one: the call ends at whichever comes first.
+   */
   request?: number;
   /** Timeout in ms for each MCP tool call. */
   tool?: number;

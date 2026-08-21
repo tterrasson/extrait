@@ -63,7 +63,7 @@ describe("openai-compatible Responses contract", () => {
       instructions: "Be brief",
       temperature: 0.2,
       max_output_tokens: 20,
-      reasoning: { effort: "max" },
+      reasoning: { effort: "max", summary: "auto" },
       top_logprobs: 3,
       include: ["message.output_text.logprobs"],
     });
@@ -289,6 +289,28 @@ describe("openai-compatible Responses contract", () => {
       include: ["message.output_text.logprobs"],
       stream: true,
     });
+  });
+
+  test("keeps an explicitly configured reasoning summary, null and undefined included", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse({ status: "completed", output_text: "ok" });
+    }) as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "test", reasoningEffort: "low", body: { reasoning: { summary: "detailed" } } });
+    await adapter.complete({ prompt: "test", reasoningEffort: "low", body: { reasoning: { summary: null } } });
+    await adapter.complete({ prompt: "test", reasoningEffort: "low", body: { reasoning: { summary: undefined } } });
+
+    expect(bodies[0]?.reasoning).toEqual({ effort: "low", summary: "detailed" });
+    expect(bodies[1]?.reasoning).toEqual({ effort: "low", summary: null });
+    // `undefined` never survives JSON serialization: the field leaves the payload.
+    expect(bodies[2]?.reasoning).toEqual({ effort: "low" });
   });
 
   test("streams parallel tool-call arguments by output item id", async () => {
