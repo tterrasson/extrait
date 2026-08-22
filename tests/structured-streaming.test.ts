@@ -75,6 +75,84 @@ function randomString(random: () => number): string {
   return out;
 }
 
+/** Applies a handful of random corruptions to a document. */
+function corrupt(raw: string, random: () => number): string {
+  const noise = ["{", "}", "[", "]", '"', ":", ",", "\\", "e", "-", " ", "u"];
+  let out = raw;
+  const edits = 1 + Math.floor(random() * 5);
+  for (let edit = 0; edit < edits && out.length > 1; edit += 1) {
+    const at = Math.floor(random() * out.length);
+    const roll = random();
+    if (roll < 0.4) {
+      out = out.slice(0, at) + out.slice(at + 1);
+    } else if (roll < 0.8) {
+      out = out.slice(0, at) + noise[Math.floor(random() * noise.length)] + out.slice(at);
+    } else {
+      out = out.slice(0, at) + out.slice(at, at + 3) + out.slice(at);
+    }
+  }
+  return out;
+}
+
+/**
+ * Describes how `previous` fails to be a less complete rendering of `next`, or
+ * null when it is one: containers only grow, keys keep their order, strings
+ * only gain characters. A slot still waiting for its value shows null, which
+ * refines anything.
+ */
+function refinementProblem(previous: unknown, next: unknown, path = "$"): string | null {
+  if (previous === null) {
+    return null;
+  }
+  if (typeof previous !== "object") {
+    if (typeof next !== typeof previous) {
+      return `${path}: ${typeof previous} became ${typeof next}`;
+    }
+    if (typeof previous === "string" && !(next as string).startsWith(previous)) {
+      return `${path}: ${JSON.stringify(previous)} is not a prefix of ${JSON.stringify(next)}`;
+    }
+    // A number is still being read digit by digit, so only its type is stable.
+    if (typeof previous === "boolean" && previous !== next) {
+      return `${path}: ${previous} became ${String(next)}`;
+    }
+    return null;
+  }
+  if (Array.isArray(previous)) {
+    if (!Array.isArray(next)) {
+      return `${path}: array became ${typeof next}`;
+    }
+    if (previous.length > next.length) {
+      return `${path}: array shrank from ${previous.length} to ${next.length}`;
+    }
+    for (const [index, item] of previous.entries()) {
+      const problem = refinementProblem(item, next[index], `${path}[${index}]`);
+      if (problem) {
+        return problem;
+      }
+    }
+    return null;
+  }
+  if (typeof next !== "object" || next === null || Array.isArray(next)) {
+    return `${path}: object became ${JSON.stringify(next)}`;
+  }
+  const previousKeys = Object.keys(previous);
+  const nextKeys = Object.keys(next);
+  for (const [index, key] of previousKeys.entries()) {
+    if (nextKeys[index] !== key) {
+      return `${path}: keys [${previousKeys.join(", ")}] are not the head of [${nextKeys.join(", ")}]`;
+    }
+    const problem = refinementProblem(
+      (previous as Record<string, unknown>)[key],
+      (next as Record<string, unknown>)[key],
+      `${path}.${key}`,
+    );
+    if (problem) {
+      return problem;
+    }
+  }
+  return null;
+}
+
 describe("streaming preview parser", () => {
   test("renders values as they arrive", () => {
     const previews = previewAtEveryPrefix('{"sentiment": "POSITIVE", "score": 0.8}');
@@ -194,6 +272,58 @@ describe("streaming preview parser", () => {
     const second = parser.update('{"a": {"x": 1}, "b": [1, 2, 3') as { a: unknown };
     expect(second.a).toBe(first.a);
   });
+
+  test("holds a field it already rendered when the tail stops parsing", () => {
+    // The value was withdrawn before each resume, so a stall right where it
+    // stood used to erase a field the caller had already been shown.
+    const parser = createStreamingStructuredParser();
+    parser.update('{"a": 1, "b": 2');
+    expect(parser.update('{"a": 1, "b": 2x, "c": 3}')).toEqual({ a: 1, b: 2 });
+  });
+
+  test("holds a string it already rendered when the model goes off the rails", () => {
+    const parser = createStreamingStructuredParser();
+    parser.update('{"summary": "une réponse longue');
+    expect(parser.update('{"summary": "une réponse longue et utile", ?}')).toEqual({
+      summary: "une réponse longue et utile",
+    });
+  });
+
+  test("moves the root search past a bracket that is not JSON", () => {
+    // A checklist in the prose opens a root that stalls on its first value.
+    const previews = previewAtEveryPrefix('- [x] plan arrêté\n{"real": 1}');
+    expect(previews.at(-1)).toEqual({ real: 1 });
+  });
+
+  test("stops moving the root search after a run of decoy brackets", () => {
+    // Bounded on purpose: each drop rescans, so an unbounded budget would let
+    // `[[[[...` cost the length of the output over and over.
+    const previews = previewAtEveryPrefix(`${"[x] ".repeat(9)}{"real": 1}`);
+    expect(previews.at(-1)).toEqual([]);
+  });
+
+  test("renders a value the model dropped as null", () => {
+    expect(previewAtEveryPrefix('{"a": , "b": 1}').at(-1)).toEqual({ a: null, b: 1 });
+    expect(previewAtEveryPrefix('{"a": }').at(-1)).toEqual({ a: null });
+  });
+
+  test("decodes a string the strict parse rejects", () => {
+    // A raw newline and an undefined escape: JSON.parse refuses the whole
+    // string, which used to leak the source text, backslashes and all.
+    const raw = '{"a": "x\ny \\"q\\" \\p"}';
+    expect(previewAtEveryPrefix(raw).at(-1)).toEqual({ a: 'x\ny "q" p' });
+  });
+
+  test("never exposes a surrogate half", () => {
+    const raw = '{"e": "\\ud83d\\ude00!"}';
+    for (const preview of previewAtEveryPrefix(raw)) {
+      const value = (preview as { e?: string } | null)?.e;
+      if (typeof value === "string") {
+        expect(value).not.toMatch(/[\ud800-\udbff]$/);
+      }
+    }
+    expect(previewAtEveryPrefix(raw).at(-1)).toEqual({ e: "😀!" });
+  });
 });
 
 describe("streaming preview fuzz", () => {
@@ -259,20 +389,7 @@ describe("streaming preview fuzz", () => {
       if (typeof document !== "object" || document === null) {
         continue;
       }
-      let raw = JSON.stringify(document);
-      // Apply a handful of random corruptions.
-      const edits = 1 + Math.floor(random() * 5);
-      for (let edit = 0; edit < edits && raw.length > 1; edit += 1) {
-        const at = Math.floor(random() * raw.length);
-        const roll = random();
-        if (roll < 0.4) {
-          raw = raw.slice(0, at) + raw.slice(at + 1);
-        } else if (roll < 0.8) {
-          raw = raw.slice(0, at) + noise[Math.floor(random() * noise.length)] + raw.slice(at);
-        } else {
-          raw = raw.slice(0, at) + raw.slice(at, at + 3) + raw.slice(at);
-        }
-      }
+      const raw = corrupt(JSON.stringify(document), random);
       const parser = createStreamingStructuredParser();
       for (let cut = 0; cut <= raw.length; cut += 1) {
         // A hang inside resume() would surface as a test timeout.
@@ -327,6 +444,64 @@ describe("streaming preview fuzz", () => {
       const cut = Math.floor(random() * raw.length);
       const parser = createStreamingStructuredParser();
       expect(() => parser.update(raw.slice(0, cut))).not.toThrow();
+    }
+  });
+
+  test("a preview only ever refines the one before it", () => {
+    const random = makeRandom(0x9e11);
+    for (let iteration = 0; iteration < 200; iteration += 1) {
+      const document = randomJsonValue(random, 0);
+      if (typeof document !== "object" || document === null) {
+        continue;
+      }
+      const body = random() < 0.5 ? JSON.stringify(document) : JSON.stringify(document, null, 2);
+      const previews = previewAtEveryPrefix(`Voici la réponse:\n${body}\nVoilà.`);
+      for (let index = 1; index < previews.length; index += 1) {
+        expect(refinementProblem(previews[index - 1], previews[index])).toBeNull();
+      }
+      expect(previews.at(-1)).toEqual(document);
+    }
+  });
+
+  test("re-feeding text already seen does not shift the preview", () => {
+    // The done event recomputes on text every earlier event already covered.
+    const random = makeRandom(0x1d3e);
+    for (let iteration = 0; iteration < 100; iteration += 1) {
+      const document = randomJsonValue(random, 0);
+      if (typeof document !== "object" || document === null) {
+        continue;
+      }
+      const raw = corrupt(JSON.stringify(document), random);
+      const parser = createStreamingStructuredParser();
+      for (let cut = 0; cut <= raw.length; cut += 1) {
+        const text = raw.slice(0, cut);
+        expect(parser.update(text)).toEqual(parser.update(text) as never);
+      }
+    }
+  });
+
+  test("an escape cut at any boundary never leaks source syntax", () => {
+    const bodies = [
+      'a\\"b',
+      "C:\\\\tmp",
+      "\\u00e9\\u00e8",
+      "\\ud83d\\ude00 ok",
+      "\\\\\\u00e9",
+      "tab\\there",
+      "trailing\\\\",
+    ];
+    for (const body of bodies) {
+      const raw = `{"s": "${body}", "n": 1}`;
+      const expected = JSON.parse(raw) as { s: string; n: number };
+      const previews = previewAtEveryPrefix(raw);
+      for (const preview of previews) {
+        const shown = (preview as { s?: unknown } | null)?.s;
+        if (typeof shown === "string") {
+          expect(expected.s.startsWith(shown)).toBe(true);
+          expect(shown).not.toMatch(/[\ud800-\udbff]$/);
+        }
+      }
+      expect(previews.at(-1)).toEqual(expected);
     }
   });
 });

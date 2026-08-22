@@ -5,23 +5,22 @@
 // built in place and only the still-open ones are copied on read, which keeps
 // each snapshot immutable while completed subtrees keep their identity.
 //
+// Rendering is deliberately hysteretic: a value already shown survives a stall
+// further along, so on malformed text the preview reflects what the parser
+// managed to render and not the accumulated text alone.
+//
 // This drives the preview only. The authoritative parse of the final output
 // runs through `parseLLMOutput`, so anything the preview cannot render (or
 // renders approximately) is still parsed strictly at the end.
 
 type Frame =
   | { kind: "object"; value: Record<string, unknown>; key: string | null }
-  | { kind: "array"; value: unknown[] };
+  // `slot` is the index the value being read will fill. Writing there instead
+  // of pushing is what makes a value that grows across events idempotent: the
+  // rendering of a partial value is overwritten, never stacked.
+  | { kind: "array"; value: unknown[]; slot: number };
 
 type Mode = "value" | "afterValue" | "key" | "colon";
-
-// Slot holding a value that may still grow (an unterminated string, a literal
-// with no delimiter yet). It is withdrawn before each resume and re-derived.
-type PendingSlot =
-  | { kind: "root" }
-  | { kind: "array"; target: unknown[] }
-  | { kind: "object"; target: Record<string, unknown>; key: string }
-  | null;
 
 const CHAR_TAB = 9;
 const CHAR_NEWLINE = 10;
@@ -42,6 +41,32 @@ const CHAR_LOWER_T = 116;
 const CHAR_LOWER_F = 102;
 const CHAR_LOWER_N = 110;
 
+const HIGH_SURROGATE_START = 0xd800;
+const HIGH_SURROGATE_END = 0xdbff;
+
+// A bracket in the prose can look like the payload (`- [x] done`). When such a
+// root turns out not to be JSON at all, the search moves past it rather than
+// leaving the preview dead for the rest of the stream. The number of candidates
+// dropped is capped, so a run of `[[[[` cannot make the rescan quadratic. Prose
+// that happens to be valid JSON (`[1]`, `- [ ] plan`) is indistinguishable from
+// the payload here and still wins; the authoritative parse ranks candidates.
+const MAX_DROPPED_ROOTS = 8;
+
+// Longest head of an unterminated literal worth rendering: past `-` plus 17
+// significant digits, an exponent and a sign, a double holds nothing more.
+const MAX_PARTIAL_LITERAL = 32;
+
+const ESCAPES: Record<string, string | undefined> = {
+  '"': '"',
+  "\\": "\\",
+  "/": "/",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+};
+
 export interface StreamingStructuredParser {
   /** Feeds the accumulated visible text; returns the preview, or null. */
   update(visibleText: string): unknown | null;
@@ -51,12 +76,12 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
   let text = "";
 
   // Root search. Only a bracket found outside a string counts, so a decoy like
-  // `"draft: {not the payload}"` never starts a parse. The result never changes
-  // once set, which is what lets the parse below run forward-only.
+  // `"draft: {not the payload}"` never starts a parse.
   let rootStart = -1;
   let scanPos = 0;
   let scanInString = false;
   let scanEscaped = false;
+  let droppedRoots = 0;
 
   let activeStart = -1;
   let pos = 0;
@@ -65,7 +90,12 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
   let root: unknown;
   let rooted = false;
   let complete = false;
-  let pending: PendingSlot = null;
+  // Whether this root ever rendered a leaf. One that stalls without having
+  // shown a single value is the one worth trading for another candidate.
+  let rendered = false;
+  // Set once the search has moved past the active root, which then stays on
+  // screen only until a better candidate arrives.
+  let abandoned = false;
   // Set on syntax the parser cannot advance past; the preview then holds its
   // last good state instead of flickering.
   let stalled = false;
@@ -77,9 +107,9 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
   let openStringScan = 0;
   let openStringHasEscape = false;
 
-  function resetScanner(): void {
+  function resetScanner(from: number): void {
     rootStart = -1;
-    scanPos = 0;
+    scanPos = from;
     scanInString = false;
     scanEscaped = false;
   }
@@ -92,7 +122,8 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
     root = undefined;
     rooted = false;
     complete = false;
-    pending = null;
+    rendered = false;
+    abandoned = false;
     stalled = false;
     openStringAt = -1;
     openStringScan = 0;
@@ -125,44 +156,54 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
     );
   }
 
-  function withdrawPending(): void {
-    if (!pending) {
-      return;
-    }
-    if (pending.kind === "array") {
-      pending.target.pop();
-    } else if (pending.kind === "object") {
-      delete pending.target[pending.key];
-    } else {
-      root = undefined;
-      rooted = false;
-    }
-    pending = null;
-  }
-
-  function assign(value: unknown, isPending: boolean): void {
+  /**
+   * Writes into the slot the value being read occupies. Re-reading a value that
+   * has grown since the last event overwrites that slot, so nothing has to be
+   * withdrawn first and a value already shown survives a stall further along.
+   */
+  function assign(value: unknown): void {
     const frame = stack[stack.length - 1];
     if (!frame) {
       root = value;
       rooted = true;
-      if (isPending) {
-        pending = { kind: "root" };
-      }
       return;
     }
     if (frame.kind === "array") {
-      frame.value.push(value);
-      if (isPending) {
-        pending = { kind: "array", target: frame.value };
-      }
+      frame.value[frame.slot] = value;
       return;
     }
-    if (frame.key === null) {
+    if (frame.key !== null) {
+      frame.value[frame.key] = value;
+    }
+  }
+
+  /**
+   * Empties that slot: a partial value that stopped rendering must not leave a
+   * stale guess behind. An object keeps its key visible as null.
+   */
+  function holdSlot(): void {
+    const frame = stack[stack.length - 1];
+    if (!frame) {
       return;
     }
-    frame.value[frame.key] = value;
-    if (isPending) {
-      pending = { kind: "object", target: frame.value, key: frame.key };
+    if (frame.kind === "array") {
+      frame.value.length = frame.slot;
+      return;
+    }
+    if (frame.key !== null) {
+      frame.value[frame.key] = null;
+    }
+  }
+
+  /** The value in the slot is final: move on to the next one. */
+  function closeSlot(): void {
+    const frame = stack[stack.length - 1];
+    if (frame?.kind === "array") {
+      frame.slot += 1;
+    }
+    mode = "afterValue";
+    if (stack.length === 0) {
+      complete = true;
     }
   }
 
@@ -202,18 +243,56 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
     return -1;
   }
 
+  /**
+   * Unescapes a body the strict decode rejected — a raw control character, an
+   * escape JSON does not define. An undefined escape renders as its own
+   * character, which is what the repairing parse settles on too.
+   */
+  function decodeLoosely(body: string): string {
+    let out = "";
+    for (let index = 0; index < body.length; index += 1) {
+      const char = body[index] as string;
+      if (char !== "\\") {
+        out += char;
+        continue;
+      }
+      const next = body[index + 1];
+      if (next === undefined) {
+        break;
+      }
+      if (next === "u") {
+        const hex = body.slice(index + 2, index + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          out += String.fromCharCode(Number.parseInt(hex, 16));
+          index += 5;
+          continue;
+        }
+      }
+      out += ESCAPES[next] ?? next;
+      index += 1;
+    }
+    return out;
+  }
+
+  /** `raw` always carries its two quotes. */
   function decodeString(raw: string): string {
     try {
       return JSON.parse(raw) as string;
     } catch {
-      return raw.slice(1, raw.endsWith('"') ? -1 : undefined);
+      return decodeLoosely(raw.slice(1, -1));
     }
+  }
+
+  /** Drops a surrogate whose other half has not arrived yet. */
+  function trimLoneSurrogate(value: string): string {
+    const last = value.charCodeAt(value.length - 1);
+    return last >= HIGH_SURROGATE_START && last <= HIGH_SURROGATE_END ? value.slice(0, -1) : value;
   }
 
   /** Renders an open string, dropping a half-written escape at its tail. */
   function decodePartialString(start: number): string {
     if (!openStringHasEscape) {
-      return text.slice(start + 1);
+      return trimLoneSurrogate(text.slice(start + 1));
     }
     let body = text.slice(start + 1);
     const trailingBackslashes = /\\*$/.exec(body)?.[0].length ?? 0;
@@ -225,7 +304,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
     if (partialUnicode && (partialUnicode[1]?.length ?? 0) % 2 === 0) {
       body = body.slice(0, -(partialUnicode[2]?.length ?? 0));
     }
-    return decodeString(`"${body}"`);
+    return trimLoneSurrogate(decodeString(`"${body}"`));
   }
 
   function parseScalar(token: string): { ok: boolean; value: unknown } {
@@ -259,16 +338,8 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
   }
 
   function openContainer(frame: Frame): void {
-    assign(frame.value, false);
+    assign(frame.value);
     stack.push(frame);
-  }
-
-  function closeContainer(): void {
-    stack.pop();
-    mode = "afterValue";
-    if (stack.length === 0) {
-      complete = true;
-    }
   }
 
   /** Closes the top container if it has the given kind, otherwise stalls. */
@@ -278,24 +349,16 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       return false;
     }
     pos += 1;
-    closeContainer();
+    stack.pop();
+    closeSlot();
     return true;
   }
 
   function commitValue(value: unknown, end: number): void {
-    assign(value, false);
+    assign(value);
     pos = end;
-    mode = "afterValue";
-    if (stack.length === 0) {
-      complete = true;
-    }
-  }
-
-  /** Keeps a keyed slot visible as null while its value has not arrived. */
-  function holdObjectSlot(): void {
-    if (stack[stack.length - 1]?.kind === "object") {
-      assign(null, true);
-    }
+    rendered = true;
+    closeSlot();
   }
 
   /** One step in "value" mode; false when parsing must pause. */
@@ -308,17 +371,25 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
     }
     if (code === CHAR_OPEN_BRACKET) {
       pos += 1;
-      openContainer({ kind: "array", value: [] });
+      openContainer({ kind: "array", value: [], slot: 0 });
       mode = "value";
       return true;
     }
     if (code === CHAR_CLOSE_BRACKET) {
       return tryClose("array");
     }
+    // The value never came (`{"a": , ...}`): leave the slot empty and let the
+    // delimiter be read where it belongs.
+    if (code === CHAR_COMMA || code === CHAR_CLOSE_BRACE) {
+      holdSlot();
+      mode = "afterValue";
+      return true;
+    }
     if (code === CHAR_QUOTE) {
       const end = findStringEnd(pos);
       if (end < 0) {
-        assign(decodePartialString(pos), true);
+        assign(decodePartialString(pos));
+        rendered = true;
         return false;
       }
       commitValue(decodeString(text.slice(pos, end)), end);
@@ -330,12 +401,15 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       end += 1;
     }
     if (end >= text.length) {
-      // No delimiter yet, so the literal may still grow.
-      const partial = parsePartialScalar(text.slice(pos));
+      // No delimiter yet, so the literal may still grow. Only the head of it
+      // can carry a renderable value, and reading no further keeps a literal
+      // that never terminates from costing its length on every event.
+      const partial = parsePartialScalar(text.slice(pos, pos + MAX_PARTIAL_LITERAL));
       if (partial.ok) {
-        assign(partial.value, true);
+        assign(partial.value);
+        rendered = true;
       } else {
-        holdObjectSlot();
+        holdSlot();
       }
       return false;
     }
@@ -385,14 +459,10 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
 
   /** One step in "afterValue" mode; false when parsing must pause. */
   function stepAfterValue(code: number): boolean {
+    const frame = stack[stack.length - 1];
     if (code === CHAR_COMMA) {
       pos += 1;
-      const frame = stack[stack.length - 1];
-      if (!frame) {
-        complete = true;
-        return false;
-      }
-      mode = frame.kind === "object" ? "key" : "value";
+      mode = frame?.kind === "array" ? "value" : "key";
       return true;
     }
     if (code === CHAR_CLOSE_BRACE) {
@@ -402,7 +472,6 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       return tryClose("array");
     }
     // A dropped comma is the common model slip; infer it rather than stall.
-    const frame = stack[stack.length - 1];
     if (frame?.kind === "object" && code === CHAR_QUOTE) {
       mode = "key";
       return true;
@@ -419,7 +488,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
     while (!complete && !stalled) {
       if (!skipWhitespace()) {
         if (mode === "value" || mode === "colon") {
-          holdObjectSlot();
+          holdSlot();
         }
         return;
       }
@@ -456,7 +525,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       if (frame.kind === "array") {
         const copy = frame.value.slice();
         if (hasChild) {
-          copy[copy.length - 1] = child;
+          copy[frame.slot] = child;
         }
         child = copy;
       } else {
@@ -473,29 +542,49 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
 
   function advanceScanner(): void {
     while (rootStart < 0 && scanPos < text.length) {
-      const char = text[scanPos];
+      const code = text.charCodeAt(scanPos);
       scanPos += 1;
       if (scanInString) {
         if (scanEscaped) {
           scanEscaped = false;
-          continue;
-        }
-        if (char === "\\") {
+        } else if (code === CHAR_BACKSLASH) {
           scanEscaped = true;
-          continue;
-        }
-        if (char === '"') {
+        } else if (code === CHAR_QUOTE) {
           scanInString = false;
         }
         continue;
       }
-      if (char === '"') {
+      if (code === CHAR_QUOTE) {
         scanInString = true;
         continue;
       }
-      if (char === "{" || char === "[") {
+      if (code === CHAR_OPEN_BRACE || code === CHAR_OPEN_BRACKET) {
         rootStart = scanPos - 1;
       }
+    }
+  }
+
+  /**
+   * Moves the root search past a bracket that turned out not to open JSON. Only
+   * a root that stalled without ever rendering a value is dropped, so a preview
+   * the caller has already seen is never traded away, and the dropped root
+   * keeps being shown until a better candidate actually arrives.
+   */
+  function dropDecoyRoot(): void {
+    while (stalled && !rendered && droppedRoots < MAX_DROPPED_ROOTS) {
+      if (!abandoned) {
+        droppedRoots += 1;
+        abandoned = true;
+        resetScanner(activeStart + 1);
+      }
+      advanceScanner();
+      if (rootStart < 0) {
+        // Nothing better in sight; the scanner picks up where it stopped on the
+        // next event, without rewinding or spending the budget again.
+        return;
+      }
+      resetParser(rootStart);
+      resume();
     }
   }
 
@@ -518,7 +607,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
   return {
     update(visibleText: string): unknown | null {
       if (!extendsPreviousText(visibleText)) {
-        resetScanner();
+        resetScanner(0);
         resetParser(-1);
         text = "";
       }
@@ -526,15 +615,13 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       text = visibleText;
       advanceScanner();
 
-      if (rootStart < 0) {
-        return null;
-      }
-      if (rootStart !== activeStart) {
+      if (rootStart >= 0 && rootStart !== activeStart) {
         resetParser(rootStart);
       }
-
-      withdrawPending();
-      resume();
+      if (activeStart >= 0) {
+        resume();
+        dropDecoyRoot();
+      }
 
       if (!rooted || typeof root !== "object" || root === null) {
         return null;
