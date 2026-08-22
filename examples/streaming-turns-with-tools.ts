@@ -10,7 +10,7 @@
  * Usage: bun run dev streaming-turns-with-tools
  */
 
-import { createLLM, createMCPClient, type ReasoningBlock, type StreamTurnTransition } from "@/index";
+import { createLLM, createMCPClient, type LLMReasoningEffort, type StreamTurnTransition } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
@@ -22,6 +22,9 @@ const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
 const apiKey = process.env.LLM_API_KEY;
 const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
+// Reasoning is opt-in: without an effort the Responses API is never asked for a
+// summary and the example streams no thinking blocks at all.
+const reasoningEffort = (process.env.LLM_REASONING_EFFORT ?? "medium") as LLMReasoningEffort;
 
 if (!apiKey) {
   console.error("Missing LLM_API_KEY in environment.");
@@ -65,6 +68,7 @@ const useColor = process.env.NO_COLOR !== "1";
 console.log(bold("Streaming turns with tools"));
 console.log(dim(`Provider: ${provider}`));
 console.log(dim(`Model: ${model}`));
+console.log(dim(`Reasoning effort: ${reasoningEffort}`));
 console.log(`\n${bold("Visible stream")}\n`);
 
 try {
@@ -79,6 +83,7 @@ try {
     {
       request: {
         temperature: 0,
+        reasoningEffort,
         mcpClients: [calculatorMCP],
         maxToolRounds: 6,
         toolDebug: debugEnabled,

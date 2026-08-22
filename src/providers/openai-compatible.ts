@@ -101,7 +101,9 @@ function buildResponsesBody(
     model: options.model,
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
     ...(request.systemPrompt !== undefined ? { instructions: request.systemPrompt } : {}),
-    ...(effort ? { reasoning: withResponsesReasoningSummary({ ...bodyReasoning, effort }) } : {}),
+    ...(bodyReasoning || effort
+      ? { reasoning: withResponsesReasoningSummary({ ...bodyReasoning, ...(effort ? { effort } : {}) }) }
+      : {}),
     ...(request.maxTokens !== undefined ? { max_output_tokens: request.maxTokens } : {}),
     ...(topLogprobs !== undefined
       ? { top_logprobs: topLogprobs, include: withResponsesLogprobsInclude(configuredInclude) }
@@ -112,11 +114,12 @@ function buildResponsesBody(
 
 /**
  * The Responses API returns reasoning items only for a request that asks for a
- * summary, so requesting an effort implies `summary: "auto"`: without it the
- * thinking the effort was enabled for never reaches the response at all. The
- * default keys off the presence of `summary`, not its value, so a caller keeps
- * every way out: another summary level, `null` to ask for none, or `undefined`
- * to drop the field from the payload for an endpoint that rejects it.
+ * summary, so any request that configures reasoning at all an effort, a raw
+ * `body.reasoning`, or both implies `summary: "auto"`: without it the
+ * thinking the request was enabling never reaches the response. The default
+ * keys off the presence of `summary`, not its value, so a caller keeps every
+ * way out: another summary level, `null` to ask for none, or `undefined` to
+ * drop the field from the payload for an endpoint that rejects it.
  */
 function withResponsesReasoningSummary(reasoning: Record<string, unknown>): Record<string, unknown> {
   // Effort `none` produces no reasoning at all, so there is nothing to summarize

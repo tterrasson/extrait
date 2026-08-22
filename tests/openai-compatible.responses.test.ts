@@ -313,6 +313,27 @@ describe("openai-compatible Responses contract", () => {
     expect(bodies[2]?.reasoning).toEqual({ effort: "low" });
   });
 
+  test("defaults the summary for a raw body reasoning config with no effort", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse({ status: "completed", output_text: "ok" });
+    }) as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "test", body: { reasoning: {} } });
+    await adapter.complete({ prompt: "test", body: { reasoning: { effort: "none" } } });
+    await adapter.complete({ prompt: "test", body: { reasoning: { summary: "detailed" } } });
+
+    expect(bodies[0]?.reasoning).toEqual({ summary: "auto" });
+    expect(bodies[1]?.reasoning).toEqual({ effort: "none" });
+    expect(bodies[2]?.reasoning).toEqual({ summary: "detailed" });
+  });
+
   test("omits the reasoning summary default at effort none", async () => {
     const bodies: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {
