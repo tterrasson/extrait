@@ -31,8 +31,6 @@ export interface OpenAICompatibleAdapterOptions {
   fetcher?: typeof fetch;
 }
 
-export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-
 export async function embedOpenAI(
   options: OpenAICompatibleAdapterOptions,
   fetcher: typeof fetch,
@@ -182,10 +180,6 @@ export function buildHeaders(options: OpenAICompatibleAdapterOptions): HTTPHeade
     ...(options.apiKey ? { authorization: `Bearer ${options.apiKey}` } : {}),
     ...options.headers,
   };
-}
-
-export function toOpenAIReasoningEffort(value: LLMRequest["reasoningEffort"]): OpenAIReasoningEffort | undefined {
-  return value;
 }
 
 export function normalizeLogprobEntries(value: unknown): LLMTokenLogprob[] | undefined {

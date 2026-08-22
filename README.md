@@ -375,7 +375,25 @@ const result = await llm.generate(
 );
 ```
 
-On `openai-compatible`, this is sent as `reasoning: { effort }`; on `openai-compatible-legacy`, as `reasoning_effort`. OpenAI effort values, including the distinct `xhigh` and `max` levels, are forwarded as-is. On `anthropic-compatible`, `minimal` maps to `low`, `none` disables thinking, and supported effort values are sent as `output_config.effort` while auto-enabling `thinking: { type: "adaptive" }`; the thinking content comes back in `result.reasoning`.
+`reasoningEffort` is one provider-independent scale, ordered from least to most:
+`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Each adapter maps it
+onto its own vendor scale, and sends it as `reasoning: { effort }` on
+`openai-compatible`, `reasoning_effort` on `openai-compatible-legacy`, and
+`output_config.effort` on `anthropic-compatible`.
+
+| `reasoningEffort` | `openai-compatible` / `-legacy` | `anthropic-compatible` |
+| --- | --- | --- |
+| `none` | `none` | thinking disabled, no `effort` |
+| `minimal` | `minimal` | `low` |
+| `low` / `medium` / `high` / `xhigh` | unchanged | unchanged |
+| `max` | `xhigh` | `max` |
+
+OpenAI's scale tops out at `xhigh`, so `max` lands there: it is the same ceiling
+under the other vendor's name. Anthropic treats `xhigh` and `max` as different
+levels, so both are preserved.
+
+Any effort other than `none` also auto-enables `thinking: { type: "adaptive" }`
+on `anthropic-compatible`; the thinking content comes back in `result.reasoning`.
 
 For existing history or multi-turn conversations, pass `messages` directly:
 
@@ -393,7 +411,7 @@ Use `llm.adapter.complete(...)` or `llm.adapter.stream(...)` only when you need 
 
 ### Token Logprobs
 
-Set `request.topLogprobs` (0-20) to get token-level probabilities on `openai-compatible` and `openai-compatible-legacy`. The result exposes `logprobs.content` — one entry per generated token, each with its chosen token, logprob, and the requested number of alternatives.
+Set `request.topLogprobs` (0-20) to get token-level probabilities on `openai-compatible` and `openai-compatible-legacy`. The result exposes `logprobs.content`, one entry per generated token, each with its chosen token, logprob, and the requested number of alternatives.
 
 ```typescript
 const result = await llm.generate(prompt`Answer with one word: yes or no?`, {
@@ -610,7 +628,7 @@ try {
 
 ### Embeddings
 
-Generate vector embeddings using `llm.embed()`. It always returns `number[][]` — one vector per input string.
+Generate vector embeddings using `llm.embed()`. It always returns `number[][]`, one vector per input string.
 
 ```typescript
 // Create a dedicated embedder client (recommended)
@@ -627,7 +645,7 @@ const vector: number[] = embeddings[0];
 
 // Multiple strings in one request
 const { embeddings } = await embedder.embed(["text one", "text two", "text three"]);
-// embeddings[0], embeddings[1], embeddings[2] — one vector each
+// embeddings[0], embeddings[1], embeddings[2]: one vector each
 
 // Optional: override model or request extra options per call
 const { embeddings } = await embedder.embed("Hello", {

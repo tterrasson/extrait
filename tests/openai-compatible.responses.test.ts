@@ -63,7 +63,7 @@ describe("openai-compatible Responses contract", () => {
       instructions: "Be brief",
       temperature: 0.2,
       max_output_tokens: 20,
-      reasoning: { effort: "max", summary: "auto" },
+      reasoning: { effort: "xhigh", summary: "auto" },
       top_logprobs: 3,
       include: ["message.output_text.logprobs"],
     });
@@ -311,6 +311,23 @@ describe("openai-compatible Responses contract", () => {
     expect(bodies[1]?.reasoning).toEqual({ effort: "low", summary: null });
     // `undefined` never survives JSON serialization: the field leaves the payload.
     expect(bodies[2]?.reasoning).toEqual({ effort: "low" });
+  });
+
+  test("omits the reasoning summary default at effort none", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse({ status: "completed", output_text: "ok" });
+    }) as typeof fetch;
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "test", reasoningEffort: "none" });
+
+    expect(bodies[0]?.reasoning).toEqual({ effort: "none" });
   });
 
   test("streams parallel tool-call arguments by output item id", async () => {
@@ -619,12 +636,12 @@ describe("openai-compatible-legacy contract", () => {
       logprobs: true,
       top_logprobs: 4,
       max_completion_tokens: 32,
-      reasoning_effort: "max",
+      reasoning_effort: "xhigh",
     });
     expect(body).not.toHaveProperty("max_tokens");
   });
 
-  test("keeps xhigh and max as distinct reasoning effort values", async () => {
+  test("collapses max onto xhigh, OpenAI's top effort level", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
@@ -640,7 +657,7 @@ describe("openai-compatible-legacy contract", () => {
     await adapter.complete({ prompt: "test", reasoningEffort: "max" });
 
     expect(requests[0]?.reasoning_effort).toBe("xhigh");
-    expect(requests[1]?.reasoning_effort).toBe("max");
+    expect(requests[1]?.reasoning_effort).toBe("xhigh");
   });
 
   test("returns Chat Completions refusal content as text", async () => {

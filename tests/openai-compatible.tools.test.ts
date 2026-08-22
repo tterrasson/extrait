@@ -266,7 +266,7 @@ describe("openai-compatible MCP tools", () => {
       reasoningEffort: "max",
     });
 
-    expect(requests[0]?.reasoning_effort).toBe("max");
+    expect(requests[0]?.reasoning_effort).toBe("xhigh");
   });
 
   test("forwards minimal and none reasoning_effort values as-is", async () => {
@@ -533,7 +533,7 @@ describe("openai-compatible MCP tools", () => {
       reasoningEffort: "max",
     });
 
-    expect(requests[0]?.reasoning).toEqual({ effort: "max", summary: "auto" });
+    expect(requests[0]?.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
   });
 
   test("surfaces unknown MCP tool as tool error and continues", async () => {

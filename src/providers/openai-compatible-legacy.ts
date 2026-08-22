@@ -40,9 +40,9 @@ import {
   pushReasoningBlock,
   sendOpenAIJsonRequest,
   sendOpenAIRequest,
-  toOpenAIReasoningEffort,
   validateTopLogprobs,
 } from "./openai-compatible-common";
+import { toOpenAIReasoningEffort } from "./reasoning-effort";
 import type { OpenAICompatibleAdapterOptions } from "./openai-compatible-common";
 
 export type OpenAICompatibleLegacyAdapterOptions = OpenAICompatibleAdapterOptions;
@@ -189,14 +189,13 @@ function buildChatCompletionsBody(
   overrides: Record<string, unknown>,
 ): Record<string, unknown> {
   const topLogprobs = validateTopLogprobs(request.topLogprobs);
+  const effort = toOpenAIReasoningEffort(request.reasoningEffort);
   return cleanUndefined({
     ...options.defaultBody,
     ...request.body,
     model: options.model,
     ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-    ...(request.reasoningEffort
-      ? { reasoning_effort: toOpenAIReasoningEffort(request.reasoningEffort) }
-      : {}),
+    ...(effort ? { reasoning_effort: effort } : {}),
     ...(request.maxTokens !== undefined
       ? { max_tokens: undefined, max_completion_tokens: request.maxTokens }
       : {}),

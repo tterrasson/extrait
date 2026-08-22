@@ -12,6 +12,7 @@ import type {
   LLMUsage,
   ReasoningBlock,
 } from "../types";
+import { toAnthropicReasoningEffort } from "./reasoning-effort";
 import { consumeSSE } from "./stream-utils";
 import {
   executeMCPToolCalls,
@@ -554,11 +555,15 @@ function buildAnthropicRequestBody(
   const reasoningEffort = request.reasoningEffort;
   const anthropicEffort = toAnthropicReasoningEffort(reasoningEffort);
   const outputConfigWithoutEffort = omitRecordKey(bodyOutputConfig, "effort");
-  const thinking = reasoningEffort === "none"
-    ? { type: "disabled" }
-    : anthropicEffort
-      ? (hasExplicitThinking ? bodyThinking : { type: "adaptive" })
-      : bodyThinking;
+  // An explicit `thinking` in the body always wins: it is the escape hatch for
+  // an endpoint whose thinking shape we do not model.
+  const thinking = hasExplicitThinking
+    ? bodyThinking
+    : reasoningEffort === "none"
+      ? { type: "disabled" }
+      : anthropicEffort
+        ? { type: "adaptive" }
+        : undefined;
 
   return cleanUndefined({
     ...body,
@@ -575,15 +580,6 @@ function buildAnthropicRequestBody(
         : bodyOutputConfig,
     thinking,
   });
-}
-
-function toAnthropicReasoningEffort(
-  effort: LLMRequest["reasoningEffort"],
-): Exclude<LLMRequest["reasoningEffort"], "none" | "minimal"> | "low" | undefined {
-  if (effort === "none" || effort === undefined) {
-    return undefined;
-  }
-  return effort === "minimal" ? "low" : effort;
 }
 
 function omitRecordKey(

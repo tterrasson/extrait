@@ -497,6 +497,55 @@ describe("anthropic-compatible MCP tools", () => {
     });
   });
 
+  test("lets an explicit body.thinking survive reasoning effort none", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
+
+    await adapter.complete({
+      prompt: "hello",
+      reasoningEffort: "none",
+      body: { thinking: { type: "adaptive" } },
+    });
+
+    expect(requests[0]?.thinking).toEqual({ type: "adaptive" });
+    expect(requests[0]?.output_config).toBeUndefined();
+  });
+
+  test("keeps xhigh and max as distinct Anthropic effort levels", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetcher = (async (_input, init) => {
+      requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse({
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+      });
+    }) as typeof fetch;
+
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
+
+    await adapter.complete({ prompt: "hello", reasoningEffort: "xhigh" });
+    await adapter.complete({ prompt: "hello again", reasoningEffort: "max" });
+
+    expect(requests[0]?.output_config).toEqual({ effort: "xhigh" });
+    expect(requests[1]?.output_config).toEqual({ effort: "max" });
+  });
+
   test("falls back to library default max tokens when adapter default is invalid", async () => {
     const requests: Record<string, unknown>[] = [];
     const fetcher = (async (_input, init) => {

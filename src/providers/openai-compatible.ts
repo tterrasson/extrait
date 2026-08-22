@@ -42,9 +42,9 @@ import {
   pushReasoningBlock,
   sendOpenAIJsonRequest,
   sendOpenAIRequest,
-  toOpenAIReasoningEffort,
   validateTopLogprobs,
 } from "./openai-compatible-common";
+import { toOpenAIReasoningEffort } from "./reasoning-effort";
 import type { OpenAICompatibleAdapterOptions } from "./openai-compatible-common";
 
 interface OpenAIResponsesMCPState {
@@ -119,7 +119,12 @@ function buildResponsesBody(
  * to drop the field from the payload for an endpoint that rejects it.
  */
 function withResponsesReasoningSummary(reasoning: Record<string, unknown>): Record<string, unknown> {
-  return "summary" in reasoning ? reasoning : { ...reasoning, summary: "auto" };
+  // Effort `none` produces no reasoning at all, so there is nothing to summarize
+  // and asking for one is a contradiction some endpoints reject.
+  if (reasoning.effort === "none" || "summary" in reasoning) {
+    return reasoning;
+  }
+  return { ...reasoning, summary: "auto" };
 }
 
 const RESPONSES_LOGPROBS_INCLUDE = "message.output_text.logprobs";

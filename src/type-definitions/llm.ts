@@ -73,6 +73,12 @@ export interface LLMMessage {
   [key: string]: unknown;
 }
 
+/**
+ * Provider-independent reasoning effort, ordered from least to most. Each
+ * adapter maps this onto its own vendor scale (see `providers/reasoning-effort`):
+ * OpenAI has no `max` and receives `xhigh` for it; Anthropic has neither `none`
+ * nor `minimal` and receives disabled thinking and `low` respectively.
+ */
 export type LLMReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface LLMRequest {

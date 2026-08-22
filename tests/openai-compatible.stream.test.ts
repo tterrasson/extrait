@@ -83,7 +83,7 @@ describe("openai-compatible streaming", () => {
     expect(result.usage?.inputTokens).toBe(5);
     expect(result.usage?.outputTokens).toBe(2);
     expect(chunks.length).toBe(3);
-    expect(requests[0]?.reasoning_effort).toBe("max");
+    expect(requests[0]?.reasoning_effort).toBe("xhigh");
     expect(requests[0]?.stream_options).toEqual({ include_usage: true });
   });
 
