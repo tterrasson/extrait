@@ -127,6 +127,15 @@ export function toFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/**
+ * Adds one call's usage to a running total, as used across tool rounds and
+ * retry attempts.
+ *
+ * Everything billable sums, but `contextTokens` is a *maximum*: the rounds of
+ * one request each re-send the same growing conversation, so summing their
+ * prompts would say a 40k conversation cost 400k of context window. The high
+ * water mark is what stays comparable to the model's window.
+ */
 export function mergeUsage(base: LLMUsage | undefined, next: LLMUsage | undefined): LLMUsage | undefined {
   if (!base && !next) {
     return undefined;
@@ -136,10 +145,14 @@ export function mergeUsage(base: LLMUsage | undefined, next: LLMUsage | undefine
   const outputTokens = addOptional(base?.outputTokens, next?.outputTokens);
   const totalTokens = addOptional(base?.totalTokens, next?.totalTokens);
   const cost = addOptional(base?.cost, next?.cost);
+  const contextTokens = maxContextTokens(base, next);
 
   const merged: LLMUsage = {};
   if (inputTokens !== undefined) {
     merged.inputTokens = inputTokens;
+  }
+  if (contextTokens !== undefined) {
+    merged.contextTokens = contextTokens;
   }
   if (outputTokens !== undefined) {
     merged.outputTokens = outputTokens;
@@ -164,6 +177,13 @@ export function preferLatestUsage(base: LLMUsage | undefined, next: LLMUsage | u
   if (base?.inputTokens !== undefined || next?.inputTokens !== undefined) {
     merged.inputTokens = next?.inputTokens ?? base?.inputTokens;
   }
+  // Chunks of one call all describe the same prompt, so the latest reading is
+  // also the context of that call - but a partial chunk may report less than an
+  // earlier one, and context occupancy must never be under-read.
+  const contextTokens = maxContextTokens(base, next);
+  if (contextTokens !== undefined) {
+    merged.contextTokens = contextTokens;
+  }
   if (base?.outputTokens !== undefined || next?.outputTokens !== undefined) {
     merged.outputTokens = next?.outputTokens ?? base?.outputTokens;
   }
@@ -175,6 +195,23 @@ export function preferLatestUsage(base: LLMUsage | undefined, next: LLMUsage | u
   }
 
   return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+/**
+ * The context each side stands for, whichever is larger. A usage that never
+ * went through a merge has no `contextTokens` of its own: its whole prompt was
+ * one call, so `inputTokens` is exactly that call's context.
+ */
+function maxContextTokens(base: LLMUsage | undefined, next: LLMUsage | undefined): number | undefined {
+  const a = base?.contextTokens ?? base?.inputTokens;
+  const b = next?.contextTokens ?? next?.inputTokens;
+  if (a === undefined) {
+    return b;
+  }
+  if (b === undefined) {
+    return a;
+  }
+  return Math.max(a, b);
 }
 
 function addOptional(a: number | undefined, b: number | undefined): number | undefined {

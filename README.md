@@ -539,10 +539,11 @@ Successful `generate()` calls return normalized text/reasoning plus request meta
   reasoning: string,
   attempts: GenerateAttempt[],
   usage?: {
-    inputTokens?: number,
+    inputTokens?: number,      // billed prompt tokens, summed over every call (tool rounds included)
     outputTokens?: number,
     totalTokens?: number,
     cost?: number,
+    contextTokens?: number,    // largest single prompt: context occupancy, comparable to the window
   },
   finishReason?: string,
   logprobs?: LLMLogprobs,          // when request.topLogprobs is set
@@ -573,10 +574,11 @@ Successful `structured()` calls return validated data plus normalized text/reaso
   json: unknown | null,         // Parsed JSON before validation
   attempts: StructuredAttempt<T>[], // One entry per parse / self-heal attempt
   usage?: {
-    inputTokens?: number,
+    inputTokens?: number,      // billed prompt tokens, summed over every call (tool rounds included)
     outputTokens?: number,
     totalTokens?: number,
     cost?: number,
+    contextTokens?: number,    // largest single prompt: context occupancy, comparable to the window
   },
   finishReason?: string,        // provider vocabulary: "completed" (Responses), "stop" (Chat Completions), "end_turn" (Anthropic)
   logprobs?: LLMLogprobs,          // when request.topLogprobs is set

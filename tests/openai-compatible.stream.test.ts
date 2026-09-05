@@ -202,6 +202,7 @@ describe("openai-compatible streaming", () => {
 
     expect(result.usage).toEqual({
       inputTokens: 5,
+      contextTokens: 5,
       outputTokens: 2,
       totalTokens: 7,
     });
@@ -769,8 +770,11 @@ describe("openai-compatible streaming", () => {
       name: "add",
       clientId: "calc",
     });
+    // Two rounds of 4 and 3 prompt tokens: billed input sums, context is the
+    // largest single prompt.
     expect(result.usage).toEqual({
       inputTokens: 7,
+      contextTokens: 4,
       outputTokens: 3,
       totalTokens: 10,
     });
@@ -1073,6 +1077,7 @@ describe("openai-compatible streaming", () => {
     expect(result.text).toBe("done");
     expect(result.usage).toEqual({
       inputTokens: 2,
+      contextTokens: 2,
       outputTokens: 3,
       totalTokens: 5,
     });
@@ -1165,6 +1170,7 @@ describe("openai-compatible streaming", () => {
     });
     expect(result.usage).toEqual({
       inputTokens: 5,
+      contextTokens: 4,
       outputTokens: 3,
       totalTokens: 8,
     });

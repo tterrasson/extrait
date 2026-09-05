@@ -1080,7 +1080,7 @@ function buildOpenAIStreamToolCalls(state: Map<number, OpenAIStreamToolCallState
       id: entry.id ?? "",
       type: entry.type ?? "function",
       name: entry.name,
-      arguments: entry.argumentsText.length > 0 ? entry.argumentsText : {},
+      arguments: entry.argumentsText,
     }));
 }
 

@@ -306,7 +306,9 @@ describe("anthropic-compatible MCP tools", () => {
     expect(out.text).toBe("10");
     expect(out.toolCalls?.[0]).toMatchObject({ id: "toolu_sum", name: "sum", output: 10 });
     expect(out.toolExecutions?.[0]).toMatchObject({ callId: "toolu_sum", clientId: "calculator", handledLocally: true });
-    expect(out.usage).toEqual({ inputTokens: 11, outputTokens: 4, totalTokens: 15 });
+    // Rounds of 8 and 3 prompt tokens: billed input sums to 11, but only 8 of
+    // them were ever in the window at once.
+    expect(out.usage).toEqual({ inputTokens: 11, contextTokens: 8, outputTokens: 4, totalTokens: 15 });
 
     const second = requests[1];
     expect(requests[0]?.system).toBe("You are helpful.");

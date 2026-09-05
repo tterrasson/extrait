@@ -114,6 +114,7 @@ describe("anthropic-compatible streaming", () => {
 
     expect(result.usage).toEqual({
       inputTokens: 10,
+      contextTokens: 10,
       outputTokens: 2,
     });
   });
@@ -266,8 +267,11 @@ describe("anthropic-compatible streaming", () => {
       name: "add",
       clientId: "calc",
     });
+    // Only the first round reported a prompt, so it is both the sum and the
+    // high-water mark of the context.
     expect(result.usage).toEqual({
       inputTokens: 4,
+      contextTokens: 4,
       outputTokens: 3,
     });
     expect(chunks.some((chunk) => chunk.finishReason === "tool_use")).toBe(true);

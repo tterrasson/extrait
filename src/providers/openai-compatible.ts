@@ -900,7 +900,7 @@ function pickResponsesStreamFinishReason(payload: Record<string, unknown>): stri
     return "failed";
   }
   if (eventType === "response.incomplete") {
-    return "incomplete";
+    return pickResponsesFinishReason(isRecord(payload.response) ? payload.response : payload);
   }
 
   const status = pickString(payload.status)
@@ -1014,7 +1014,7 @@ function buildResponsesStreamToolCalls(state: Map<string, OpenAIResponsesStreamT
     id: entry.id ?? entry.key,
     type: entry.type === "function_call" ? "function" : (entry.type ?? "function"),
     name: entry.name,
-    arguments: entry.argumentsText.length > 0 ? entry.argumentsText : {},
+    arguments: entry.argumentsText,
   }));
 }
 
@@ -1110,6 +1110,11 @@ function pickResponsesReasoning(payload: Record<string, unknown>): string {
 
 function pickResponsesFinishReason(payload: Record<string, unknown>): string | undefined {
   const reason = payload.status;
+  if (reason === "incomplete" && isRecord(payload.incomplete_details)) {
+    const detail = payload.incomplete_details.reason;
+    if (detail === "max_output_tokens") return "length";
+    if (detail === "content_filter") return "content_filter";
+  }
   if (typeof reason === "string" && reason.length > 0) {
     return reason;
   }

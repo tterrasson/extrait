@@ -106,10 +106,23 @@ export interface LLMRequest {
 }
 
 export interface LLMUsage {
+  /**
+   * Prompt tokens billed, summed over every provider call the request made:
+   * each tool round re-sends the whole conversation, so this grows far past
+   * what any single call actually put in the context window. It answers "what
+   * did this cost", not "how full is the window" - see {@link LLMUsage.contextTokens}.
+   */
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
   cost?: number;
+  /**
+   * The largest prompt any single provider call in this request carried, i.e.
+   * the high-water mark of context occupancy. Unlike `inputTokens` it is a
+   * maximum rather than a sum, so it stays comparable to the model's context
+   * window across tool rounds and retries.
+   */
+  contextTokens?: number;
 }
 
 /** One alternative token considered at a position, with its log probability. */

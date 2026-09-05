@@ -194,7 +194,7 @@ describe("generate", () => {
         via: "stream",
         text: "Hello",
         reasoning: "plan",
-        usage: { inputTokens: 7, outputTokens: 4, totalTokens: 11 },
+        usage: { inputTokens: 7, contextTokens: 7, outputTokens: 4, totalTokens: 11 },
         finishReason: "stop",
       },
     ]);
@@ -224,7 +224,7 @@ describe("generate", () => {
         delta: { text: "", reasoning: "" },
         snapshot: { text: "Hello", reasoning: "plan" },
         done: true,
-        usage: { inputTokens: 7, outputTokens: 4, totalTokens: 11 },
+        usage: { inputTokens: 7, contextTokens: 7, outputTokens: 4, totalTokens: 11 },
         finishReason: "stop",
       },
     ]);

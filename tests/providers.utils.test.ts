@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildURL,
   cleanUndefined,
+  mergeUsage,
   normalizeBaseURL,
   preferLatestUsage,
   readErrorBody,
@@ -134,7 +135,7 @@ describe("providers/utils preferLatestUsage", () => {
         { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
         { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
       ),
-    ).toEqual({ inputTokens: 10, outputTokens: 2, totalTokens: 12 });
+    ).toEqual({ inputTokens: 10, contextTokens: 10, outputTokens: 2, totalTokens: 12 });
   });
 
   test("preserves older fields when the newer snapshot is partial", () => {
@@ -143,6 +144,38 @@ describe("providers/utils preferLatestUsage", () => {
         { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
         { outputTokens: 2 },
       ),
-    ).toEqual({ inputTokens: 10, outputTokens: 2, totalTokens: 11 });
+    ).toEqual({ inputTokens: 10, contextTokens: 10, outputTokens: 2, totalTokens: 11 });
+  });
+
+  test("never lets a partial chunk shrink the context reading", () => {
+    expect(
+      preferLatestUsage({ inputTokens: 4000 }, { inputTokens: 0, outputTokens: 12 })?.contextTokens,
+    ).toBe(4000);
+  });
+});
+
+describe("providers/utils usage context tokens", () => {
+  test("keeps the largest round prompt while input tokens sum", () => {
+    const round1 = { inputTokens: 1000, outputTokens: 50 };
+    const round2 = { inputTokens: 1800, outputTokens: 70 };
+    const round3 = { inputTokens: 2600, outputTokens: 90 };
+
+    const merged = mergeUsage(mergeUsage(round1, round2), round3);
+
+    expect(merged).toEqual({
+      inputTokens: 5400,
+      contextTokens: 2600,
+      outputTokens: 210,
+    });
+  });
+
+  test("carries an already-merged context through further merges", () => {
+    expect(
+      mergeUsage({ inputTokens: 5400, contextTokens: 2600 }, { inputTokens: 900 })?.contextTokens,
+    ).toBe(2600);
+  });
+
+  test("is left undefined when no side reports tokens", () => {
+    expect(mergeUsage({ cost: 0.5 }, { cost: 0.25 })).toEqual({ cost: 0.75 });
   });
 });
