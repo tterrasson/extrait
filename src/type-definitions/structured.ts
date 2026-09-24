@@ -94,6 +94,14 @@ export interface StructuredStreamEvent<T = unknown> {
   delta: StructuredStreamDelta;
   snapshot: StructuredStreamSnapshot<T>;
   done: boolean;
+  /**
+   * Present when, for a field, the deltas stopped adding up: text already
+   * reported was withdrawn (a late `<think>` tag hid it, or the final response
+   * differs from the streamed chunks). That field's delta is then the whole
+   * stable value and replaces what the deltas built:
+   * `view = event.resync?.text ? event.delta.text : view + event.delta.text`.
+   */
+  resync?: { text: boolean; reasoning: boolean };
   usage?: LLMUsage;
   finishReason?: string;
   turnIndex?: number;

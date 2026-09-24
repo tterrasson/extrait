@@ -9,9 +9,10 @@ import { preferLatestUsage as preferLatestStreamUsage } from "./providers/utils"
 import {
   appendReasoningBlock,
   normalizeModelOutput,
-  toStreamDataFingerprint,
-  withoutTrailingThinkTagPrefix,
+  normalizeReasoningBlocks,
+  sameToolCalls,
 } from "./generate-output";
+import { createStreamNormalizer, type StreamNormalizerUpdate } from "./stream-normalizer";
 import type { ModelCallOptions, ModelCallResult } from "./generate-shared";
 import { emitDebugRequest, emitDebugResponse } from "./generate-debug";
 
@@ -91,87 +92,73 @@ export async function callModel<TSnapshot, TTraceEvent>(
   if (options.stream.enabled && adapter.stream) {
     let latestUsage: LLMUsage | undefined;
     let latestFinishReason: string | undefined;
+    // Raw accumulators, only read once the stream ends.
     let streamedProviderText = "";
     let streamedDedicatedReasoning = "";
     let currentTurnIndex: number | undefined;
     let currentToolCalls: LLMToolCall[] | undefined;
     let streamedReasoningBlocks: ReasoningBlock[] | undefined;
     let emittedOnce = false;
-    let lastEmittedText: string | undefined;
-    let lastEmittedReasoning: string | undefined;
     let lastEmittedReasoningBlocks: ReasoningBlock[] | undefined;
     let lastEmittedTurnIndex: number | undefined;
-    let lastEmittedToolCallsFingerprint: string | undefined;
-    let previousSnapshotText = "";
-    let previousSnapshotReasoning = "";
+    let lastEmittedToolCalls: LLMToolCall[] | undefined;
+    let normalizedBlocksSource: ReasoningBlock[] | undefined;
+    let normalizedBlocks: ReasoningBlock[] | undefined;
+
+    // Reads each chunk once: the snapshot strings it hands out are only copied
+    // if the consumer reads them, so a consumer of deltas alone stays linear.
+    const normalizer = createStreamNormalizer();
 
     const emitStreamingData = (
+      update: StreamNormalizerUpdate,
       done: boolean,
       usage?: LLMUsage,
       finishReason?: string,
     ): void => {
-      const normalized = normalizeModelOutput(
-        streamedProviderText,
-        streamedDedicatedReasoning,
-        streamedReasoningBlocks,
-      );
       // Dedup on the rendered output (not on the raw accumulators): chunks that
       // grow the input but render to an identical snapshot — e.g. `<think>`
-      // then `</think>` — must not emit twice. `toolCalls` is the only field
-      // still serialized; it stays small. Everything else the snapshot exposes
-      // is a deterministic function of these source fields.
-      const toolCallsFingerprint = currentToolCalls
-        ? toStreamDataFingerprint(currentToolCalls)
-        : undefined;
+      // then `</think>` — must not emit twice. Everything else the snapshot
+      // exposes is a deterministic function of these source fields.
       if (
         !done &&
         emittedOnce &&
-        normalized.text === lastEmittedText &&
-        normalized.reasoning === lastEmittedReasoning &&
+        !update.changed.text &&
+        !update.changed.reasoning &&
         streamedReasoningBlocks === lastEmittedReasoningBlocks &&
         currentTurnIndex === lastEmittedTurnIndex &&
-        toolCallsFingerprint === lastEmittedToolCallsFingerprint
+        sameToolCalls(currentToolCalls, lastEmittedToolCalls)
       ) {
         return;
       }
-      const snapshot = options.buildSnapshot(normalized, { done });
 
-      // Withhold a trailing partial `<think>`/`</think>` fragment while more
-      // chunks may still arrive; the final (done) emit releases it in full.
-      const stableText = done ? normalized.text : withoutTrailingThinkTagPrefix(normalized.text);
-      const stableReasoning = done
-        ? normalized.reasoning
-        : withoutTrailingThinkTagPrefix(normalized.reasoning);
-
-      const delta = {
-        text: stableText.startsWith(previousSnapshotText)
-          ? stableText.slice(previousSnapshotText.length)
-          : "",
-        reasoning: stableReasoning.startsWith(previousSnapshotReasoning)
-          ? stableReasoning.slice(previousSnapshotReasoning.length)
-          : "",
-      };
+      if (streamedReasoningBlocks !== normalizedBlocksSource) {
+        normalizedBlocksSource = streamedReasoningBlocks;
+        normalizedBlocks = normalizeReasoningBlocks(streamedReasoningBlocks);
+      }
 
       emittedOnce = true;
-      lastEmittedText = normalized.text;
-      lastEmittedReasoning = normalized.reasoning;
       lastEmittedReasoningBlocks = streamedReasoningBlocks;
       lastEmittedTurnIndex = currentTurnIndex;
-      lastEmittedToolCallsFingerprint = toolCallsFingerprint;
-      previousSnapshotText = stableText;
-      previousSnapshotReasoning = stableReasoning;
-      options.stream.onData?.({
-        delta,
-        snapshot,
-        done,
-        usage,
-        finishReason,
-        turnIndex: currentTurnIndex,
-        toolCalls: currentToolCalls,
-      });
+      lastEmittedToolCalls = currentToolCalls;
 
-      if (options.stream.to === "stdout" && delta.text) {
-        process.stdout.write(delta.text);
+      if (options.stream.onData) {
+        options.stream.onData({
+          delta: update.delta,
+          snapshot: options.buildSnapshot(
+            { text: update.text, reasoning: update.reasoning, reasoningBlocks: normalizedBlocks },
+            { done, textExtends: update.textExtends },
+          ),
+          done,
+          usage,
+          finishReason,
+          turnIndex: currentTurnIndex,
+          toolCalls: currentToolCalls,
+          ...(update.resync.text || update.resync.reasoning ? { resync: update.resync } : {}),
+        });
+      }
+
+      if (options.stream.to === "stdout" && update.delta.text) {
+        process.stdout.write(update.delta.text);
       }
 
       options.observe?.(
@@ -191,8 +178,6 @@ export async function callModel<TSnapshot, TTraceEvent>(
         return;
       }
 
-      streamedProviderText += delta;
-
       options.observe?.(
         options.buildEvent({
           stage: "llm.stream.delta",
@@ -203,7 +188,8 @@ export async function callModel<TSnapshot, TTraceEvent>(
         }),
       );
 
-      emitStreamingData(false);
+      streamedProviderText += delta;
+      emitStreamingData(normalizer.push({ text: delta }), false);
     };
 
     const handleReasoningDelta = (delta: string): void => {
@@ -212,7 +198,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
       }
 
       streamedDedicatedReasoning += delta;
-      emitStreamingData(false);
+      emitStreamingData(normalizer.push({ reasoning: delta }), false);
     };
 
     const streamRequestPayload: LLMRequest = {
@@ -249,24 +235,20 @@ export async function callModel<TSnapshot, TTraceEvent>(
         }
 
         if (!chunk.textDelta && !chunk.reasoningDelta && (chunk.turnIndex !== undefined || chunk.toolCalls)) {
-          emitStreamingData(false, chunk.usage, chunk.finishReason);
+          emitStreamingData(normalizer.push({}), false, chunk.usage, chunk.finishReason);
         }
       },
     });
 
-    streamedProviderText =
-      typeof response.text === "string" ? response.text : streamedProviderText;
-    streamedDedicatedReasoning =
-      typeof response.reasoning === "string" ? response.reasoning : streamedDedicatedReasoning;
     streamedReasoningBlocks = response.reasoningBlocks ?? streamedReasoningBlocks;
-    const finalNormalized = normalizeModelOutput(
-      streamedProviderText,
-      streamedDedicatedReasoning,
-      streamedReasoningBlocks,
-    );
     const usage = preferLatestStreamUsage(latestUsage, response.usage);
     const finishReason = response.finishReason ?? latestFinishReason;
-    emitStreamingData(true, usage, finishReason);
+    // The final response is authoritative over the accumulated chunks.
+    const finalText = typeof response.text === "string" ? response.text : streamedProviderText;
+    const finalReasoning =
+      typeof response.reasoning === "string" ? response.reasoning : streamedDedicatedReasoning;
+    emitStreamingData(normalizer.finish({ text: finalText, reasoning: finalReasoning }), true, usage, finishReason);
+    const finalNormalized = normalizeModelOutput(finalText, finalReasoning, streamedReasoningBlocks);
 
     options.observe?.(
       options.buildEvent({
@@ -316,7 +298,7 @@ export async function callModel<TSnapshot, TTraceEvent>(
   if (options.stream.enabled) {
     options.stream.onData?.({
       delta: { text: normalized.text, reasoning: normalized.reasoning },
-      snapshot: options.buildSnapshot(normalized, { done: true }),
+      snapshot: options.buildSnapshot(normalized, { done: true, textExtends: false }),
       done: true,
       usage: response.usage,
       finishReason: response.finishReason,

@@ -12,7 +12,6 @@ import type {
   EmbeddingRequest,
   EmbeddingResult,
   GenerateCallOptions,
-  GenerateOptions,
   GenerateResult,
   LLMAdapter,
   LLMRequest,
@@ -59,7 +58,6 @@ export interface LLMClient {
     prompt: StructuredPromptBuilder,
     options?: GenerateCallOptions,
   ): Promise<GenerateResult>;
-  generate(options: GenerateOptions): Promise<GenerateResult>;
   embed(input: string | string[], options?: Omit<EmbeddingRequest, "input">): Promise<EmbeddingResult>;
 }
 
@@ -85,19 +83,10 @@ export function createLLM<TProvider extends string>(
     },
 
     async generate(
-      promptOrOptions: StructuredPromptBuilder | GenerateOptions,
+      prompt: StructuredPromptBuilder,
       options?: GenerateCallOptions,
     ): Promise<GenerateResult> {
-      if (isGenerateOptions(promptOrOptions)) {
-        const merged = {
-          ...mergeGenerateOptions(defaults, promptOrOptions),
-          prompt: promptOrOptions.prompt,
-        };
-        return generate(adapter, merged);
-      }
-
-      const merged = mergeGenerateOptions(defaults, options);
-      return generate(adapter, promptOrOptions, merged);
+      return generate(adapter, prompt, mergeGenerateOptions(defaults, options));
     },
 
     async embed(input: string | string[], options: Omit<EmbeddingRequest, "input"> = {}): Promise<EmbeddingResult> {
@@ -140,7 +129,7 @@ function mergeStructuredOptions<TSchema extends z.ZodTypeAny>(
 
 function mergeGenerateOptions(
   defaults: LLMClientDefaults | undefined,
-  overrides: GenerateCallOptions | GenerateOptions | undefined,
+  overrides: GenerateCallOptions | undefined,
 ): GenerateCallOptions {
   if (!defaults && !overrides) {
     return {};
@@ -158,10 +147,6 @@ function mergeGenerateOptions(
     timeout: mergeObjectLike(defaults?.timeout, overrides?.timeout),
     observe: overrides?.observe ?? (defaults?.observe as GenerateCallOptions["observe"] | undefined),
   };
-}
-
-function isGenerateOptions(value: StructuredPromptBuilder | GenerateOptions): value is GenerateOptions {
-  return typeof value === "object" && value !== null && "prompt" in value;
 }
 
 function mergeObjectLike<TValue>(defaults: TValue | undefined, overrides: TValue | undefined): TValue | undefined {

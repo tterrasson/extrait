@@ -41,6 +41,7 @@ export interface NormalizedStreamConfig<TSnapshot> {
     finishReason?: string;
     turnIndex?: number;
     toolCalls?: LLMToolCall[];
+    resync?: { text: boolean; reasoning: boolean };
   }) => void;
   onTurnTransition?: (transition: StreamTurnTransition) => void;
   to?: "stdout";
@@ -53,6 +54,8 @@ export interface NormalizedDebugConfig {
   verbose: boolean;
   logger: (line: string) => void;
 }
+
+export type StreamSnapshotSource = Pick<NormalizedModelOutput, "text" | "reasoning" | "reasoningBlocks">;
 
 export interface NormalizedModelOutput {
   text: string;
@@ -74,7 +77,12 @@ export interface ModelCallOptions<TSnapshot, TTraceEvent> {
     message: string;
     details?: unknown;
   }) => TTraceEvent;
-  buildSnapshot: (input: NormalizedModelOutput, meta: { done: boolean }) => TSnapshot;
+  /**
+   * `textExtends` tells whether `input.text` starts with the text of the
+   * previous call, so a consumer resuming on the text can skip checking it.
+   * Only called when the stream has an `onData` consumer.
+   */
+  buildSnapshot: (input: StreamSnapshotSource, meta: { done: boolean; textExtends: boolean }) => TSnapshot;
   debug: NormalizedDebugConfig;
   debugLabel: string;
   attempt: number;
@@ -272,7 +280,6 @@ export {
   composeParseSource,
   mergeUsage,
   normalizeModelOutput,
-  toStreamDataFingerprint,
 } from "./generate-output";
 export type { DebugRequestInput, DebugResponseInput } from "./generate-debug";
 export { emitDebugRequest, emitDebugResponse } from "./generate-debug";

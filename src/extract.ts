@@ -46,7 +46,7 @@ export function extractJsonCandidates(
   const candidates: ExtractionCandidate[] = [];
 
   candidates.push(...extractFromMarkdown(extractionInput, acceptArrays));
-  candidates.push(...scanBalancedSegments(extractionInput, acceptArrays));
+  candidates.push(...scanAllBalancedSegments(extractionInput, acceptArrays));
 
   if (candidates.length === 0 && extractionInput.trim()) {
     const content = extractionInput.trim();
@@ -170,10 +170,35 @@ function extractFromMarkdown(
   });
 }
 
+/**
+ * Quotes in the prose around the payload are read as JSON strings, which keeps
+ * a quoted decoy such as `"see {x}"` from being taken for the payload. An
+ * unbalanced one, though (`a 12" pizza`), would swallow everything after it.
+ * Ending inside such a string is the tell: the text is scanned again with
+ * quotes outside any bracket ignored, and the segments only that pass finds are
+ * added. Ranking and validation pick the payload among them.
+ */
+function scanAllBalancedSegments(input: string, acceptArrays: boolean): ExtractionCandidate[] {
+  const quoteAware = scanBalancedSegments(input, acceptArrays, true);
+  if (!quoteAware.unterminatedString) {
+    return quoteAware.results;
+  }
+
+  const seen = new Set(quoteAware.results.map((candidate) => `${candidate.start}:${candidate.end}`));
+  const results = [...quoteAware.results];
+  for (const candidate of scanBalancedSegments(input, acceptArrays, false).results) {
+    if (!seen.has(`${candidate.start}:${candidate.end}`)) {
+      results.push({ ...candidate, id: `scan:${results.length}` });
+    }
+  }
+  return results;
+}
+
 function scanBalancedSegments(
   input: string,
   acceptArrays: boolean,
-): ExtractionCandidate[] {
+  topLevelQuotes: boolean,
+): { results: ExtractionCandidate[]; unterminatedString: boolean } {
   const results: ExtractionCandidate[] = [];
   const stack: StackItem[] = [];
 
@@ -206,8 +231,11 @@ function scanBalancedSegments(
       continue;
     }
 
-    const allowSingleQuoted = stack.length > 0;
-    if (char === '"' || (allowSingleQuoted && (char === "'" || char === "`"))) {
+    const insideContainer = stack.length > 0;
+    if (
+      (char === '"' && (insideContainer || topLevelQuotes)) ||
+      (insideContainer && (char === "'" || char === "`"))
+    ) {
       inString = true;
       quote = char;
       continue;
@@ -258,5 +286,5 @@ function scanBalancedSegments(
     });
   }
 
-  return results;
+  return { results, unterminatedString: inString && stack.length === 0 };
 }

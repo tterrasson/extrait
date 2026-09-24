@@ -886,6 +886,15 @@ async function executeAttempt<TSchema extends z.ZodTypeAny>(
 const AUTO_DATA_INTERVAL_EXACT_MAX_CHARS = 8_192;
 const AUTO_DATA_INTERVAL_MS = 25;
 
+/** The text one preview is parsed from, parsed on first read. */
+interface PreviewSource {
+  text: string;
+  /** Texts of the same epoch extend one another. */
+  epoch: number;
+  parsed: boolean;
+  data: unknown;
+}
+
 async function callModel(
   adapter: LLMAdapter,
   options: StructuredModelCallOptions,
@@ -895,10 +904,25 @@ async function callModel(
   // that many ms. The terminal (done) snapshot always recomputes. When unset,
   // the interval is adaptive, exact on every event while the output stays
   // small, coalesced above AUTO_DATA_INTERVAL_EXACT_MAX_CHARS.
+  //
+  // `snapshot.data` is parsed when first read, not when the event is built: a
+  // consumer that only reads deltas never pays for the preview. Read in event
+  // order, it matches parsing every event eagerly.
   const dataInterval = options.stream.dataInterval;
   const parsePreview = createStreamingStructuredParser();
-  let coalescedData: unknown = null;
-  let coalescedDataAt: number | undefined;
+  let latestSource: PreviewSource | undefined;
+  let latestSourceAt: number | undefined;
+  let textEpoch = 0;
+  let parsedEpoch = 0;
+
+  const readPreview = (source: PreviewSource): unknown => {
+    if (!source.parsed) {
+      source.data = parsePreview.update(source.text, source.epoch === parsedEpoch) ?? null;
+      source.parsed = true;
+      parsedEpoch = source.epoch;
+    }
+    return source.data;
+  };
 
   return callModelShared(adapter, {
     ...options,
@@ -910,24 +934,31 @@ async function callModel(
       details,
     }),
     buildSnapshot: (normalized, meta) => {
+      if (!meta.textExtends) {
+        textEpoch += 1;
+      }
       const interval =
         dataInterval ??
         (normalized.text.length <= AUTO_DATA_INTERVAL_EXACT_MAX_CHARS ? 0 : AUTO_DATA_INTERVAL_MS);
       const now = performance.now();
       if (
+        !latestSource ||
         meta.done ||
         interval <= 0 ||
-        coalescedDataAt === undefined ||
-        now - coalescedDataAt >= interval
+        latestSourceAt === undefined ||
+        now - latestSourceAt >= interval
       ) {
-        coalescedData = parsePreview.update(normalized.text) ?? null;
-        coalescedDataAt = now;
+        latestSource = { text: normalized.text, epoch: textEpoch, parsed: false, data: null };
+        latestSourceAt = now;
       }
+      const source = latestSource;
       return {
         text: normalized.text,
         reasoning: normalized.reasoning,
         ...(normalized.reasoningBlocks ? { reasoningBlocks: normalized.reasoningBlocks } : {}),
-        data: coalescedData,
+        get data(): unknown {
+          return readPreview(source);
+        },
       };
     },
     debugLabel: "structured",

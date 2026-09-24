@@ -1,6 +1,5 @@
 import type {
   StructuredDebugOptions,
-  StructuredPromptBuilder,
   StructuredTimeoutOptions,
 } from "./structured";
 
@@ -30,10 +29,15 @@ export interface MCPCallToolParams {
   _meta?: Record<string, unknown>;
 }
 
+export interface MCPCallToolOptions {
+  /** The request's signal: aborted when the caller cancels or the request times out. */
+  signal?: AbortSignal;
+}
+
 export interface MCPToolClient {
   id: string;
   listTools(params?: { cursor?: string }): Promise<MCPListToolsResult>;
-  callTool(params: MCPCallToolParams): Promise<unknown>;
+  callTool(params: MCPCallToolParams, options?: MCPCallToolOptions): Promise<unknown>;
   close?(): Promise<void>;
 }
 
@@ -284,6 +288,14 @@ export interface GenerateStreamEvent {
   delta: GenerateStreamDelta;
   snapshot: GenerateStreamSnapshot;
   done: boolean;
+  /**
+   * Present when, for a field, the deltas stopped adding up: text already
+   * reported was withdrawn (a late `<think>` tag hid it, or the final response
+   * differs from the streamed chunks). That field's delta is then the whole
+   * stable value and replaces what the deltas built:
+   * `view = event.resync?.text ? event.delta.text : view + event.delta.text`.
+   */
+  resync?: { text: boolean; reasoning: boolean };
   usage?: LLMUsage;
   finishReason?: string;
   turnIndex?: number;
@@ -307,10 +319,6 @@ export interface GenerateCallOptions {
   systemPrompt?: string;
   request?: Omit<LLMRequest, "prompt" | "systemPrompt" | "messages">;
   timeout?: StructuredTimeoutOptions;
-}
-
-export interface GenerateOptions extends GenerateCallOptions {
-  prompt: StructuredPromptBuilder;
 }
 
 export interface GenerateAttempt {

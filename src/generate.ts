@@ -12,42 +12,37 @@ import {
 import type {
   GenerateAttempt,
   GenerateCallOptions,
-  GenerateOptions,
   GenerateResult,
   LLMAdapter,
   LLMMessage,
   StructuredPromptBuilder,
 } from "./types";
 
+/**
+ * Generates free-form text. `prompt` is a string, a `prompt\`...\`` template, a
+ * `prompt()` builder, a `{ prompt?, systemPrompt?, messages? }` payload, or a
+ * function of the context returning one of those; `options` configure the call.
+ */
 export async function generate(
   adapter: LLMAdapter,
   prompt: StructuredPromptBuilder,
-  options?: GenerateCallOptions,
-): Promise<GenerateResult>;
-export async function generate(
-  adapter: LLMAdapter,
-  options: GenerateOptions,
-): Promise<GenerateResult>;
-export async function generate(
-  adapter: LLMAdapter,
-  promptOrOptions: StructuredPromptBuilder | GenerateOptions,
-  callOptions?: GenerateCallOptions,
+  options: GenerateCallOptions = {},
 ): Promise<GenerateResult> {
-  const normalized = normalizeGenerateInput(promptOrOptions, callOptions);
-  const useOutdent = normalized.outdent ?? true;
-  const streamConfig = normalizeStreamConfig(normalized.stream);
-  const debugConfig = normalizeDebugConfig(normalized.debug);
-  const resolvedPrompt = applyPromptOutdent(resolvePrompt(normalized.prompt, { mode: "loose" }), useOutdent);
-  const resolvedSystemPrompt = applyOutdentToOptionalPrompt(normalized.systemPrompt, useOutdent);
+  assertGeneratePrompt(prompt);
+  const useOutdent = options.outdent ?? true;
+  const streamConfig = normalizeStreamConfig(options.stream);
+  const debugConfig = normalizeDebugConfig(options.debug);
+  const resolvedPrompt = applyPromptOutdent(resolvePrompt(prompt, { mode: "loose" }), useOutdent);
+  const resolvedSystemPrompt = applyOutdentToOptionalPrompt(options.systemPrompt, useOutdent);
   const preparedPrompt = prepareGeneratePromptPayload(resolvedPrompt, resolvedSystemPrompt);
 
   const resolvedRequest =
-    normalized.timeout?.tool !== undefined && normalized.request?.mcpClients !== undefined
+    options.timeout?.tool !== undefined && options.request?.mcpClients !== undefined
       ? {
-          ...normalized.request,
-          mcpClients: applyToolTimeout(normalized.request.mcpClients, normalized.timeout.tool),
+          ...options.request,
+          mcpClients: applyToolTimeout(options.request.mcpClients, options.timeout.tool),
         }
-      : normalized.request;
+      : options.request;
 
   const response = await callModel(adapter, {
     prompt: preparedPrompt.prompt,
@@ -55,7 +50,7 @@ export async function generate(
     systemPrompt: preparedPrompt.systemPrompt,
     request: resolvedRequest,
     stream: streamConfig,
-    observe: normalized.observe,
+    observe: options.observe,
     buildEvent: ({ stage, message, details }) => ({
       stage,
       attempt: 1,
@@ -72,7 +67,7 @@ export async function generate(
     attempt: 1,
     selfHeal: false,
     selfHealEnabled: false,
-    timeout: normalized.timeout,
+    timeout: options.timeout,
   });
 
   const attempt: GenerateAttempt = {
@@ -87,7 +82,7 @@ export async function generate(
   };
   const attempts = [attempt];
 
-  normalized.observe?.({
+  options.observe?.({
     stage: "result",
     attempt: 1,
     message: "Text generation completed.",
@@ -108,26 +103,32 @@ export async function generate(
   };
 }
 
-function normalizeGenerateInput(
-  promptOrOptions: StructuredPromptBuilder | GenerateOptions,
-  callOptions?: GenerateCallOptions,
-): GenerateOptions {
-  if (isGenerateOptions(promptOrOptions)) {
-    return promptOrOptions;
+// Keys of the former single-object `generate({ prompt, ...options })` form.
+const LEGACY_OPTION_KEYS = ["stream", "request", "debug", "observe", "outdent", "timeout"] as const;
+
+/**
+ * `generate()` used to also accept one object mixing the prompt and the
+ * options, which could not be told apart from a prompt payload: a payload's
+ * `messages` were dropped, and an options object is now a payload whose options
+ * would be. Both shapes are rejected with the way out instead.
+ */
+function assertGeneratePrompt(prompt: StructuredPromptBuilder): void {
+  if (!prompt) {
+    throw new Error("Missing prompt in generate(prompt, options?) call.");
+  }
+  if (typeof prompt !== "object" || "resolvePrompt" in prompt) {
+    return;
   }
 
-  if (!promptOrOptions) {
-    throw new Error("Missing prompt in generate(adapter, prompt, options?) call.");
+  const record = prompt as Record<string, unknown>;
+  const legacyKeys = LEGACY_OPTION_KEYS.filter((key) => key in record);
+  if ((record.prompt !== undefined && typeof record.prompt !== "string") || legacyKeys.length > 0) {
+    throw new TypeError(
+      "generate() takes the prompt and the options as two arguments: " +
+        "generate(prompt, options). The single-object form generate({ prompt, ...options }) was removed" +
+        (legacyKeys.length > 0 ? ` (found option ${legacyKeys.map((key) => `"${key}"`).join(", ")} in the prompt).` : "."),
+    );
   }
-
-  return {
-    ...callOptions,
-    prompt: promptOrOptions,
-  };
-}
-
-function isGenerateOptions(value: StructuredPromptBuilder | GenerateOptions): value is GenerateOptions {
-  return typeof value === "object" && value !== null && "prompt" in value;
 }
 
 function prepareGeneratePromptPayload(

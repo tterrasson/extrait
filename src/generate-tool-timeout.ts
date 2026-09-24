@@ -5,7 +5,7 @@ export function withToolTimeout(client: MCPToolClient, toolTimeoutMs: number): M
     id: client.id,
     listTools: client.listTools.bind(client),
     close: client.close?.bind(client),
-    async callTool(params) {
+    async callTool(params, options) {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(
@@ -14,7 +14,7 @@ export function withToolTimeout(client: MCPToolClient, toolTimeoutMs: number): M
         );
       });
       try {
-        return await Promise.race([client.callTool(params), timeoutPromise]);
+        return await Promise.race([client.callTool(params, options), timeoutPromise]);
       } finally {
         clearTimeout(timeoutId);
       }

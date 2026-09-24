@@ -1,6 +1,6 @@
 import { scanThinkBlocks, stripThinkTags } from "./think";
 import { mergeUsage } from "./providers/utils";
-import type { LLMUsage, ReasoningBlock, StreamTurnTransition, ThinkBlock } from "./types";
+import type { LLMToolCall, LLMUsage, ReasoningBlock, StreamTurnTransition, ThinkBlock } from "./types";
 import type { NormalizedModelOutput } from "./generate-shared";
 
 export { mergeUsage } from "./providers/utils";
@@ -32,7 +32,7 @@ export function normalizeModelOutput(
   };
 }
 
-function normalizeReasoningBlocks(blocks: ReasoningBlock[] | undefined): ReasoningBlock[] | undefined {
+export function normalizeReasoningBlocks(blocks: ReasoningBlock[] | undefined): ReasoningBlock[] | undefined {
   if (!Array.isArray(blocks)) {
     return undefined;
   }
@@ -138,10 +138,43 @@ function stripThinkBlocks(text: string, thinkBlocks: ThinkBlock[]): string {
   return output;
 }
 
-export function toStreamDataFingerprint(value: unknown): string {
+/**
+ * Whether two tool-call snapshots are the same. Adapters build a new snapshot
+ * on every chunk, and while arguments stream in they only grow, so comparing
+ * field by field settles on a length mismatch where serializing both would
+ * cost the whole arguments on every chunk.
+ */
+export function sameToolCalls(a: LLMToolCall[] | undefined, b: LLMToolCall[] | undefined): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b || a.length !== b.length) {
+    return false;
+  }
+
+  return a.every((call, index) => {
+    const other = b[index] as LLMToolCall;
+    return (
+      call.id === other.id &&
+      call.type === other.type &&
+      call.name === other.name &&
+      call.error === other.error &&
+      sameJSONValue(call.arguments, other.arguments) &&
+      sameJSONValue(call.output, other.output)
+    );
+  });
+}
+
+function sameJSONValue(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(a) === JSON.stringify(b);
   } catch {
-    return "__unserializable__";
+    return false;
   }
 }

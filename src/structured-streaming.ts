@@ -67,9 +67,26 @@ const ESCAPES: Record<string, string | undefined> = {
   t: "\t",
 };
 
+/**
+ * Assigning `obj["__proto__"]` would swap the object's prototype instead of
+ * storing the key, letting model output graft inherited properties onto the
+ * preview. `JSON.parse` keeps it as an own property; so does this.
+ */
+function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
+  if (key === "__proto__") {
+    Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true });
+    return;
+  }
+  target[key] = value;
+}
+
 export interface StreamingStructuredParser {
-  /** Feeds the accumulated visible text; returns the preview, or null. */
-  update(visibleText: string): unknown | null;
+  /**
+   * Feeds the accumulated visible text; returns the preview, or null. Pass
+   * `extendsPrevious` when the caller already knows the text starts with the
+   * previous one, sparing the check of everything consumed so far.
+   */
+  update(visibleText: string, extendsPrevious?: boolean): unknown | null;
 }
 
 export function createStreamingStructuredParser(): StreamingStructuredParser {
@@ -173,7 +190,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       return;
     }
     if (frame.key !== null) {
-      frame.value[frame.key] = value;
+      setOwn(frame.value, frame.key, value);
     }
   }
 
@@ -191,7 +208,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       return;
     }
     if (frame.key !== null) {
-      frame.value[frame.key] = null;
+      setOwn(frame.value, frame.key, null);
     }
   }
 
@@ -531,7 +548,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
       } else {
         const copy = { ...frame.value };
         if (hasChild && frame.key !== null) {
-          copy[frame.key] = child;
+          setOwn(copy, frame.key, child);
         }
         child = copy;
       }
@@ -605,8 +622,8 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
   }
 
   return {
-    update(visibleText: string): unknown | null {
-      if (!extendsPreviousText(visibleText)) {
+    update(visibleText: string, extendsPrevious = false): unknown | null {
+      if (!(extendsPrevious && visibleText.length >= text.length) && !extendsPreviousText(visibleText)) {
         resetScanner(0);
         resetParser(-1);
         text = "";
