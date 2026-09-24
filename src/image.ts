@@ -32,6 +32,8 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
 
 const SUPPORTED_EXTENSIONS = Object.keys(IMAGE_MIME_TYPES).join(", ");
 
+const MAX_FTYP_BOX_BYTES = 1024;
+
 /**
  * Detects an image mime type from its magic bytes.
  * Returns `undefined` when the format is not recognized.
@@ -63,10 +65,12 @@ export function sniffMimeType(bytes: Uint8Array): string | undefined {
   if (ascii(4, 8) === "ftyp") {
     // Major brand at 8..12, minor version at 12..16, then the compatible brands.
     // `mif1` alone proves nothing: an AVIF may declare it as major brand and list
-    // `avif` among the compatible ones, so every brand is inspected.
+    // `avif` among the compatible ones, so every brand is inspected. Real boxes
+    // list a handful of brands; the cap keeps a forged size from walking the file.
     const boxSize = Math.min(
       (at(0) << 24) | (at(1) << 16) | (at(2) << 8) | at(3),
       bytes.length,
+      MAX_FTYP_BOX_BYTES,
     );
     const brands = [ascii(8, 12)];
     for (let offset = 16; offset + 4 <= boxSize; offset += 4) {
