@@ -79,7 +79,9 @@ const FLAT_ARRAY_SCHEMA = z.object({ values: z.array(z.number()) });
 
 type Mode =
   | "generate"
+  | "generate+deltas"
   | "structured"
+  | "structured+deltas"
   | "structured+dataInterval0"
   | "structured+longString"
   | "structured+flatArray0";
@@ -87,6 +89,9 @@ type Mode =
 async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
   const longString = mode === "structured+longString";
   const flatArray = mode === "structured+flatArray0";
+  // The `+deltas` consumers only read deltas; the others read the snapshot on
+  // every event (`data` for structured, `text` for generate) like a live view.
+  const deltasOnly = mode.endsWith("+deltas");
   const payload = longString
     ? buildLongStringPayload(chunks * CHUNK_SIZE)
     : flatArray
@@ -94,6 +99,7 @@ async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
       : buildPayload(chunks * CHUNK_SIZE);
   let peakHeapBytes = 0;
   let events = 0;
+  let checksum = 0;
   const sampleHeap = (): void => {
     const used = process.memoryUsage().heapUsed;
     if (used > peakHeapBytes) {
@@ -104,14 +110,21 @@ async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
   const stream = {
     enabled: true,
     ...(mode === "structured+dataInterval0" || longString || flatArray ? { dataInterval: 0 } : {}),
-    onData: () => {
+    onData: (event: { delta: { text: string }; snapshot: { text: string; data?: unknown } }) => {
       events += 1;
+      if (deltasOnly) {
+        checksum += event.delta.text.length;
+      } else if ("data" in event.snapshot) {
+        checksum += event.snapshot.data === null ? 0 : 1;
+      } else {
+        checksum += event.snapshot.text.charCodeAt(event.snapshot.text.length - 1) || 0;
+      }
     },
   };
 
   Bun.gc(true);
   const startedAt = performance.now();
-  if (mode === "generate") {
+  if (mode === "generate" || mode === "generate+deltas") {
     await generate(adapter, "bench", { stream });
   } else if (longString) {
     await structured(adapter, LONG_STRING_SCHEMA, "bench", { stream });
@@ -122,13 +135,18 @@ async function runScenario(mode: Mode, chunks: number): Promise<BenchResult> {
   }
   const wallMs = performance.now() - startedAt;
   sampleHeap();
+  if (checksum < 0) {
+    console.log(checksum);
+  }
   return { wallMs, peakHeapBytes, events };
 }
 
 const rows: string[] = [];
 for (const mode of [
   "generate",
+  "generate+deltas",
   "structured",
+  "structured+deltas",
   "structured+dataInterval0",
   "structured+longString",
   "structured+flatArray0",
