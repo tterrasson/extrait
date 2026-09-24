@@ -104,19 +104,45 @@ describe("generate", () => {
     expect(result.attempts[0]?.logprobs).toEqual(logprobs);
   });
 
-  test("supports generate(adapter, { prompt, ...options }) with messages and merged system prompt", async () => {
+  test("rejects the removed single-object form with the way out", async () => {
+    const model = new MockAdapter({ text: "never" });
+    const legacy = generate as unknown as (adapter: MockAdapter, options: unknown) => Promise<unknown>;
+
+    await expect(legacy(model, { prompt: prompt().user`Question?`, systemPrompt: "x" })).rejects.toThrow(
+      /generate\(prompt, options\)/,
+    );
+    await expect(legacy(model, { prompt: "Question?", stream: true })).rejects.toThrow(/"stream"/);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  test("a payload keeps both its messages and its system prompt", async () => {
+    const model = new MockAdapter({ text: "ok" });
+
+    await generate(model, {
+      systemPrompt: "Payload system.",
+      messages: [{ role: "user", content: "Question?" }],
+    });
+
+    expect(model.requests[0]?.messages).toEqual([
+      { role: "system", content: "Payload system." },
+      { role: "user", content: "Question?" },
+    ]);
+  });
+
+  test("merges the system prompt option with the prompt's own system messages", async () => {
     const model = new MockAdapter({
       text: "Answer",
       reasoning: "plan",
       finishReason: "stop",
     });
 
-    const result = await generate(model, {
-      prompt: prompt()
+    const result = await generate(
+      model,
+      prompt()
         .system`You are concise.`
         .user`Question?`,
-      systemPrompt: "Be accurate.",
-    });
+      { systemPrompt: "Be accurate." },
+    );
 
     expect(result.text).toBe("Answer");
     expect(result.reasoning).toBe("plan");

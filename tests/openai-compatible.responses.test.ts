@@ -105,7 +105,7 @@ describe("openai-compatible Responses contract", () => {
     }]);
   });
 
-  test("uses input content parts for assistant history and preserves text beside tool calls", async () => {
+  test("uses output_text parts for assistant history and preserves text beside tool calls", async () => {
     let body: Record<string, unknown> = {};
     const fetcher = (async (_input, init) => {
       body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -137,7 +137,7 @@ describe("openai-compatible Responses contract", () => {
       { role: "user", content: "Compute" },
       {
         role: "assistant",
-        content: [{ type: "input_text", text: "I will calculate it." }],
+        content: [{ type: "output_text", text: "I will calculate it." }],
       },
       { type: "function_call", call_id: "call_1", name: "sum", arguments: "{\"a\":1,\"b\":2}" },
       { type: "function_call_output", call_id: "call_1", output: "3" },

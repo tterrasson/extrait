@@ -528,7 +528,7 @@ describe("createLLM", () => {
     });
   });
 
-  test("generate object overload keeps prompt while merging shared defaults", async () => {
+  test("generate merges shared defaults with the call options", async () => {
     const registry = createProviderRegistry();
     const requests: Array<{
       prompt?: string;
@@ -569,10 +569,7 @@ describe("createLLM", () => {
       registry,
     );
 
-    const result = await llm.generate({
-      prompt: "Answer plainly",
-      systemPrompt: "call system",
-    });
+    const result = await llm.generate("Answer plainly", { systemPrompt: "call system" });
 
     expect(result.text).toBe("object overload");
     expect(requests[0]).toEqual({
