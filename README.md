@@ -275,8 +275,9 @@ In `stream.onData`, the event is split into two layers:
 - `event.snapshot.text` is the full visible text accumulated so far.
 - `event.snapshot.reasoning` is the full normalized reasoning accumulated so far.
 - `event.snapshot.data` is the best structured JSON snapshot that can be parsed from the stream so far. It may stay unchanged while `event.delta.text` continues to grow.
+- `event.resync` is set in the rare case where text already delivered by a delta is withdrawn (e.g. a `<think>` tag split across chunks in an unexpected case, or a final response that differs from the streamed chunks). For each flagged field, the delta is then the whole stable value and replaces what the previous deltas built: `view = event.resync?.text ? event.delta.text : view + event.delta.text`. Folded this way, the deltas always rebuild the output exactly.
 
-Recomputing `event.snapshot.data` means repairing and parsing the whole accumulated text, which gets expensive on long generations. By default this is adaptive: while the accumulated text is small (≤ 2 KB) every event reparses, then recomputations are coalesced to at most every 25 ms, events in between reuse the last parsed value, so `snapshot.data` can briefly lag behind `snapshot.text`. The final `done` event always reparses the complete output. Set `stream.dataInterval` (ms) to pick the interval yourself, or `0` to reparse on every event regardless of size:
+Recomputing `event.snapshot.data` means repairing and parsing the whole accumulated text, which gets expensive on long generations. It is only done when `snapshot.data` is read, so a consumer that never reads it never pays for it. By default this is adaptive: while the accumulated text is small (≤ 8 KB) every event reparses, then recomputations are coalesced to at most every 25 ms, events in between reuse the last parsed value, so `snapshot.data` can briefly lag behind `snapshot.text`. The final `done` event always reparses the complete output. Set `stream.dataInterval` (ms) to pick the interval yourself, or `0` to reparse on every event regardless of size:
 
 ```typescript
 stream: {
@@ -291,6 +292,8 @@ Typical usage is:
 - optionally render `event.delta.reasoning` in a separate reasoning panel
 - use `event.snapshot.data` to drive partial structured UI state
 - use `event.snapshot.text` / `event.snapshot.reasoning` when you need the full accumulated state instead of only the latest increment
+
+The stream is processed incrementally: each chunk is read once, and deltas never re-read the accumulated output. The snapshot strings are handed out without being copied, so a consumer that only reads `delta` stays linear however long the output grows. Reading `snapshot.text` (or comparing it) on every event costs its full length each time: keep a snapshot read for when you need it (e.g. the `done` event), and render from deltas in between.
 
 You can also pass provider request options through `request`:
 
@@ -310,7 +313,9 @@ const result = await llm.structured(
 
 ### Making Text Calls
 
-`generate()` is the high-level API for non-structured generation. It accepts the same prompt shapes as `structured()`, but does not inject any schema or parse the output.
+`generate()` is the high-level API for non-structured generation. It accepts the same prompt shapes as `structured()`, but does not inject any schema or parse the output. The call is always `generate(prompt, options?)`: the prompt, possibly a `{ prompt?, systemPrompt?, messages? }` payload, comes first, and the options second.
+
+> The former single-object form `generate({ prompt, ...options })` was removed: it could not be told apart from a prompt payload, whose `messages` it silently dropped. Calling it now throws; move the options to the second argument, e.g. `llm.generate({ messages }, { stream })`.
 
 ```typescript
 // Simple prompt
@@ -327,11 +332,9 @@ const result = await llm.generate(
 
 // Raw messages payload
 const result = await llm.generate({
-  prompt: {
-    messages: [
-      { role: "user", content: "Say hello in one sentence." },
-    ],
-  },
+  messages: [
+    { role: "user", content: "Say hello in one sentence." },
+  ],
 });
 ```
 
@@ -404,10 +407,27 @@ const messages = conversation("You are a helpful assistant.", [
   { role: "user", text: "How long does light take to reach Earth from the Sun?" },
 ]);
 
-const result = await llm.generate({ prompt: { messages } });
+const result = await llm.generate({ messages });
 ```
 
 Use `llm.adapter.complete(...)` or `llm.adapter.stream(...)` only when you need the raw low-level provider interface.
+
+When streaming through the adapter directly, `createStreamNormalizer()` does what `generate()` does with the raw chunks, incrementally: it hides `<think>` blocks, merges them with the dedicated reasoning, and returns stable deltas (a trailing fragment that may still become a tag is held back until it is decided):
+
+```typescript
+import { createStreamNormalizer } from "extrait";
+
+const normalizer = createStreamNormalizer();
+const response = await llm.adapter.stream!(request, {
+  onChunk: (chunk) => {
+    const { delta } = normalizer.push({ text: chunk.textDelta, reasoning: chunk.reasoningDelta });
+    ui.appendText(delta.text);
+    ui.appendReasoning(delta.reasoning);
+  },
+});
+// The final response is authoritative; this releases anything still held back.
+const { delta, text, reasoning } = normalizer.finish({ text: response.text, reasoning: response.reasoning });
+```
 
 ### Token Logprobs
 
@@ -511,11 +531,13 @@ const messages = conversation("You are a helpful assistant.", [
 ]);
 
 // High-level text generation
-const response = await llm.generate({ prompt: { messages } });
+const response = await llm.generate({ messages });
 
 // Or to structured extraction
 const result = await llm.structured(Schema, { messages });
 ```
+
+Consecutive `tool_call` entries are one assistant turn of parallel calls: they are merged into a single assistant message, together with the assistant text entry right before them, which is the shape providers require before the matching `tool_result` entries.
 
 Entries with `images` produce multimodal content automatically:
 
@@ -752,7 +774,9 @@ type MCPCallToolParams = {
 };
 ```
 
-MCP toolsets may change between tool rounds. Providers call `listTools()` before each round, so a client can expose additional tools after a previous `callTool()` result, or remove tools that are no longer available.
+MCP toolsets may change between tool rounds. Providers call `listTools()` before each round, so a client can expose additional tools after a previous `callTool()` result, or remove tools that are no longer available. A `listTools()` pagination that never ends (a repeated cursor, or more than 100 pages) fails the request instead of hanging it.
+
+`callTool(params, { signal })` receives the request's abort signal: once the caller aborts (or the request times out), the remaining calls of the round are not started, and clients created with `createMCPClient()` cancel the in-flight call on the server.
 
 Use `transformToolCallParams()` when you need to attach MCP-specific metadata, override the final remote tool name, or otherwise change the full request passed to `client.callTool()`. This hook is exported as `LLMToolCallParamsTransformer`.
 
