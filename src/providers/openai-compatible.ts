@@ -644,6 +644,9 @@ function toResponsesMessage(message: LLMMessage): Record<string, unknown> {
     return { ...message };
   }
 
+  // The Responses API types content by direction: what the model said earlier
+  // is `output_text`, and an assistant turn rejects `input_text` outright.
+  const textType = message.role === "assistant" ? "output_text" : "input_text";
   return {
     ...message,
     content: message.content.map((part) => {
@@ -651,7 +654,7 @@ function toResponsesMessage(message: LLMMessage): Record<string, unknown> {
         return { type: "input_image", image_url: part.image_url.url };
       }
       return {
-        type: "input_text",
+        type: textType,
         text: part.text,
       };
     }),
@@ -715,8 +718,10 @@ function withPickedResponsesLogprobs(
 }
 
 function pickResponsesStreamLogprobs(payload: Record<string, unknown>): LLMLogprobs | undefined {
+  // Only deltas: `response.output_text.done` repeats the logprobs of every
+  // token of its part, so reading it too would count each token twice.
   const eventType = pickString(payload.type) ?? "";
-  if (!eventType.includes("output_text")) return undefined;
+  if (!eventType.includes("output_text.delta")) return undefined;
   const content = normalizeLogprobEntries(payload.logprobs);
   return content ? { content } : undefined;
 }

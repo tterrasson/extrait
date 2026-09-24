@@ -632,7 +632,10 @@ function toAnthropicInput(
     if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
       const parts: unknown[] = [];
       parts.push(...toAnthropicMessageContent(message.content));
-      for (const tc of message.tool_calls as LLMToolCallRef[]) {
+      for (const tc of message.tool_calls as Array<Partial<LLMToolCallRef>>) {
+        if (!isRecord(tc) || !isRecord(tc.function)) {
+          continue;
+        }
         const input = parseToolArguments(tc.function.arguments);
         parts.push({ type: "tool_use", id: tc.id, name: tc.function.name, input: isRecord(input) ? input : {} });
       }
@@ -641,16 +644,21 @@ function toAnthropicInput(
     }
 
     if (message.role === "tool") {
-      normalizedMessages.push({
-        role: "user",
-        content: [{
-          type: "tool_result",
-          tool_use_id: message.tool_call_id,
-          content: Array.isArray(message.content)
-            ? toAnthropicMessageContent(message.content)
-            : message.content,
-        }],
-      });
+      const toolResult = {
+        type: "tool_result",
+        tool_use_id: message.tool_call_id,
+        content: Array.isArray(message.content)
+          ? toAnthropicMessageContent(message.content)
+          : message.content,
+      };
+      // The results of one assistant turn's parallel calls belong in a single
+      // user turn; strict implementations reject consecutive user messages.
+      const previous = normalizedMessages.at(-1);
+      if (previous?.role === "user" && isToolResultContent(previous.content)) {
+        previous.content.push(toolResult);
+      } else {
+        normalizedMessages.push({ role: "user", content: [toolResult] });
+      }
       continue;
     }
 
@@ -670,6 +678,11 @@ function toAnthropicInput(
     systemPrompt: systemParts.length > 0 ? systemParts.join("\n\n") : undefined,
     messages: normalizedMessages,
   };
+}
+
+function isToolResultContent(content: unknown): content is Array<Record<string, unknown>> {
+  return Array.isArray(content) && content.length > 0
+    && content.every((part) => isRecord(part) && part.type === "tool_result");
 }
 
 function toAnthropicMessageContent(content: LLMMessage["content"]): Array<Record<string, unknown>> {
@@ -1040,10 +1053,27 @@ function extractUsageObject(value: unknown): LLMUsage | undefined {
   }
 
   return {
-    inputTokens: toFiniteNumber(value.input_tokens ?? value.prompt_tokens),
+    inputTokens: sumPromptTokens(value),
     outputTokens: toFiniteNumber(value.output_tokens ?? value.completion_tokens),
     totalTokens: toFiniteNumber(value.total_tokens),
   };
+}
+
+/**
+ * Anthropic's `input_tokens` only counts the prompt after the last cache
+ * breakpoint; the cached prefix is reported apart, as written and read. The
+ * whole prompt is their sum, which is what `inputTokens` means for every other
+ * provider (OpenAI's `prompt_tokens` includes its cached tokens) and what
+ * `contextTokens` needs to measure the window.
+ */
+function sumPromptTokens(usage: Record<string, unknown>): number | undefined {
+  const uncached = toFiniteNumber(usage.input_tokens ?? usage.prompt_tokens);
+  const cacheWrite = toFiniteNumber(usage.cache_creation_input_tokens);
+  const cacheRead = toFiniteNumber(usage.cache_read_input_tokens);
+  if (uncached === undefined && cacheWrite === undefined && cacheRead === undefined) {
+    return undefined;
+  }
+  return (uncached ?? 0) + (cacheWrite ?? 0) + (cacheRead ?? 0);
 }
 
 function toAnthropicTools(tools: Array<Record<string, unknown>> | undefined): Array<Record<string, unknown>> | undefined {

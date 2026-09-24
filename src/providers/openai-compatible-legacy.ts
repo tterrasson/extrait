@@ -808,6 +808,9 @@ const NATIVE_TOOL_CALL_CLOSE = "</tool_call>";
 class NativeToolCallStreamState {
   readonly calls: LLMToolCall[] = [];
   private pending = "";
+  // Where the search for the close tag of the block at the head of `pending`
+  // resumes, so a long block is scanned once rather than once per chunk.
+  private closeSearchFrom = 0;
 
   // Native `<tool_call>` markup is only intercepted when the request actually
   // declares tools; otherwise the state is a transparent pass-through so prose
@@ -852,14 +855,18 @@ class NativeToolCallStreamState {
         continue;
       }
 
-      const closeIndex = this.pending.indexOf(NATIVE_TOOL_CALL_CLOSE);
+      const closeIndex = this.pending.indexOf(NATIVE_TOOL_CALL_CLOSE, this.closeSearchFrom);
       if (closeIndex < 0) {
         if (flush) {
           textDelta += this.pending;
           this.pending = "";
+          this.closeSearchFrom = 0;
+        } else {
+          this.closeSearchFrom = Math.max(0, this.pending.length - NATIVE_TOOL_CALL_CLOSE.length + 1);
         }
         break;
       }
+      this.closeSearchFrom = 0;
 
       const blockEnd = closeIndex + NATIVE_TOOL_CALL_CLOSE.length;
       const call = parseNativeToolCallBlock(
@@ -1054,8 +1061,11 @@ function collectOpenAIStreamToolCalls(
       }
 
       const functionCall = isRecord(rawToolCall.function) ? rawToolCall.function : undefined;
+      // The name normally arrives once, but a few servers split it across
+      // deltas and others repeat it whole on every delta: append a fragment,
+      // never a repetition.
       const name = pickString(functionCall?.name);
-      if (name) {
+      if (name && name !== existing.name) {
         existing.name = `${existing.name ?? ""}${name}`;
       }
 
