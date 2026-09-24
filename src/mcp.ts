@@ -89,18 +89,21 @@ export function wrapMCPClient(options: WrapMCPClientOptions): ManagedMCPToolClie
         nextCursor: response.nextCursor,
       };
     },
-    async callTool(params) {
-      const callOptions =
-        options.toolCallTimeoutMs === undefined
+    async callTool(params, callOptions) {
+      // The SDK cancels the request server-side (notifications/cancelled) when
+      // the signal aborts, instead of leaving the tool running unobserved.
+      const requestOptions =
+        options.toolCallTimeoutMs === undefined && callOptions?.signal === undefined
           ? undefined
-          : { timeout: options.toolCallTimeoutMs };
+          : { timeout: options.toolCallTimeoutMs, signal: callOptions?.signal };
 
-      return options.client.callTool(params, undefined, callOptions);
+      return options.client.callTool(params, undefined, requestOptions);
     },
     async close() {
-      await options.client.close();
-      if (options.transport) {
-        await options.transport.close();
+      try {
+        await options.client.close();
+      } finally {
+        await options.transport?.close();
       }
     },
   };

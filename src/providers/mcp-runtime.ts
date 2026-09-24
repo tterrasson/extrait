@@ -51,6 +51,10 @@ export const MAX_TOOL_NAME_LENGTH = 64;
 // never eat the whole allowance and collapse every tool onto the same name.
 const MAX_TOOL_NAME_CLIENT_PREFIX_LENGTH = 20;
 
+// Tools are re-listed before every round, so a server whose `nextCursor` never
+// runs out would otherwise hang the request while its list grows without bound.
+const MAX_TOOL_LIST_PAGES = 100;
+
 export async function resolveMCPToolset(clients: MCPToolClient[] | undefined): Promise<ResolvedMCPToolset> {
   if (!Array.isArray(clients) || clients.length === 0) {
     return {
@@ -63,6 +67,7 @@ export async function resolveMCPToolset(clients: MCPToolClient[] | undefined): P
 
   for (const client of clients) {
     let cursor: string | undefined;
+    const seenCursors = new Set<string>();
 
     do {
       const page = await client.listTools(cursor ? { cursor } : undefined);
@@ -70,6 +75,14 @@ export async function resolveMCPToolset(clients: MCPToolClient[] | undefined): P
         listed.push({ client, tool });
       }
       cursor = page.nextCursor;
+      if (cursor && (seenCursors.has(cursor) || seenCursors.size >= MAX_TOOL_LIST_PAGES)) {
+        throw new Error(
+          `MCP client "${client.id}" kept returning a tools/list cursor after ${seenCursors.size + 1} page(s).`,
+        );
+      }
+      if (cursor) {
+        seenCursors.add(cursor);
+      }
     } while (cursor);
   }
 
@@ -126,7 +139,13 @@ export async function executeMCPToolCalls(
 ): Promise<ExecutedMCPToolCall[]> {
   const out: ExecutedMCPToolCall[] = [];
 
+  const signal = context.request.signal;
+
   for (const call of calls) {
+    // Tools can have side effects: once the caller has given up on the request,
+    // none of the remaining calls of the round may start.
+    signal?.throwIfAborted();
+
     const callId = call.id;
     const toolName = call.name;
     if (!callId || !toolName) {
@@ -216,7 +235,7 @@ export async function executeMCPToolCalls(
     const startedAtMs = Date.now();
 
     try {
-      const output = await tool.client.callTool(toolParams);
+      const output = await tool.client.callTool(toolParams, signal ? { signal } : undefined);
 
       const executionContext = {
         callId,
@@ -247,6 +266,12 @@ export async function executeMCPToolCalls(
       emitToolExecution(context.request, execution);
       out.push({ call: metadata, execution });
     } catch (error) {
+      // A cancelled request ends the loop; it is not a tool failure to report
+      // back to a model nobody is waiting on.
+      if (signal?.aborted) {
+        throw error;
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       metadata.error = message;
 
@@ -303,6 +328,12 @@ export interface ParsedToolArguments {
 export function parseToolArgumentsResult(value: unknown): ParsedToolArguments {
   if (typeof value !== "string") {
     return { value: value ?? {} };
+  }
+
+  // A call to a tool without parameters may stream no argument delta at all,
+  // which leaves an empty string rather than "{}".
+  if (value.trim().length === 0) {
+    return { value: {} };
   }
 
   try {
