@@ -1,4 +1,6 @@
 import type {
+  DecisionRequest,
+  DecisionResult,
   EmbeddingRequest,
   EmbeddingResult,
   LLMAdapter,
@@ -45,6 +47,7 @@ import {
   validateTopLogprobs,
 } from "./openai-compatible-common";
 import { toOpenAIReasoningEffort } from "./reasoning-effort";
+import { DEFAULT_DECISION_PATH, decideSystemOne } from "./systemone";
 import type { OpenAICompatibleAdapterOptions } from "./openai-compatible-common";
 
 interface OpenAIResponsesMCPState {
@@ -62,6 +65,7 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
   const fetcher = options.fetcher ?? fetch;
   const path = options.path ?? "/v1/responses";
   const embeddingPath = options.embeddingPath ?? "/v1/embeddings";
+  const decisionPath = options.decisionPath ?? DEFAULT_DECISION_PATH;
 
   return {
     provider: "openai-compatible",
@@ -81,6 +85,10 @@ export function createOpenAICompatibleAdapter(options: OpenAICompatibleAdapterOp
 
     async embed(request: EmbeddingRequest): Promise<EmbeddingResult> {
       return embedOpenAI(options, fetcher, embeddingPath, request);
+    },
+
+    async decide(request: DecisionRequest): Promise<DecisionResult> {
+      return decideSystemOne(options, fetcher, decisionPath, request);
     },
   };
 }

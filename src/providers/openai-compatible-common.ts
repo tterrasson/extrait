@@ -25,6 +25,8 @@ export interface OpenAICompatibleAdapterOptions {
   apiKey?: string;
   path?: string;
   embeddingPath?: string;
+  /** Decision-model endpoint (llama.cpp), defaults to `/v1/systemone`. */
+  decisionPath?: string;
   defaultMaxToolRounds?: number;
   headers?: HTTPHeaders;
   defaultBody?: Record<string, unknown>;

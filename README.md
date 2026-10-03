@@ -17,6 +17,7 @@ High-level LLM text generation and structured JSON extraction with validation, r
 - Streaming support
 - MCP tools
 - Vector embeddings (OpenAI-compatible + Voyage AI)
+- Decision models (llama.cpp `/v1/systemone`): typed choice, yes/no and score answers
 - Pass-through multimodal images from paths, URLs, bytes, data URLs, or blobs
 
 ## Installation
@@ -78,6 +79,7 @@ These examples cover the most common usage patterns in the repository.
 - [`examples/conversation.ts`](examples/conversation.ts) - Multi-turn prompts and multimodal content
 - [`examples/image-analysis.ts`](examples/image-analysis.ts) - Vision input with structured output
 - [`examples/embeddings.ts`](examples/embeddings.ts) - Embeddings and similarity workflows
+- [`examples/decision.ts`](examples/decision.ts) - Routing with a llama.cpp decision model
 
 ```bash
 bun run dev simple "Bun.js runtime"
@@ -103,6 +105,7 @@ const llm = createLLM({
   transport: {                             // optional advanced settings
     path: "/v1/responses",                 // optional provider endpoint override
     embeddingPath: "/v1/embeddings",       // optional embedding endpoint (openai-compatible only)
+    decisionPath: "/v1/systemone",         // optional decision-model endpoint (openai-compatible only)
     headers: { "x-trace-id": "docs-demo" }, // optional extra headers
     defaultBody: { user: "docs-demo" },    // optional provider body defaults
     version: "2023-06-01",                 // anthropic-compatible only
@@ -710,6 +713,94 @@ Requests default to `encoding_format: "float"`. If your endpoint rejects that va
 
 Calling `llm.embed()` on an `anthropic-compatible` adapter throws a descriptive error pointing to Voyage AI.
 
+### Decision Models
+
+[Decision models](https://huggingface.co/blog/ggml-org/decision-models-in-llamacpp) answer by scoring the options you give them instead of generating text: one pass over the input, a probability per option, no output tokens. `llm.decide()` calls llama.cpp's `POST /v1/systemone` endpoint (`openai-compatible` and `openai-compatible-legacy` providers).
+
+```typescript
+// llama serve -hf ggml-org/Kev-4B-GGUF
+const llm = createLLM({
+  provider: "openai-compatible",
+  model: "ggml-org/Kev-4B-GGUF",
+  baseURL: "http://localhost:8080",
+});
+
+const { answers } = await llm.decide(
+  "Customer message: I was charged twice for my order last week and nobody has replied.",
+  {
+    route: {
+      type: "choice",                     // pick one option
+      instructions: "Which team should handle this?",
+      criteria: {
+        billing: "payments, charges, refunds, invoices",
+        shipping: "delivery, tracking, lost or late parcels",
+        technical: "bugs, errors, login problems",
+      },
+    },
+    angry: {
+      type: "noul",                       // yes/no
+      instructions: "Is the customer angry?",
+    },
+    urgency: {
+      type: "score",                      // 2 to 10 levels, lowest first
+      instructions: "How urgent is this?",
+      criteria: ["can wait", "this week", "today", "right now"],
+    },
+  },
+);
+
+answers.route.choice;          // "billing" (typed as "billing" | "shipping" | "technical")
+answers.route.probabilities;   // { billing: 0.9049, shipping: 0.0275, technical: 0.0676 }
+answers.route.confidence;      // 0.8574
+answers.angry.noul;            // 0.8208 (probability of "yes")
+answers.urgency.score;         // 2.2821 (expected level, 0 = "can wait")
+answers.urgency.legend;        // { "0": "can wait", "1": "this week", "2": "today", "3": "right now" }
+
+if (answers.route.confidence < 0.5) {
+  // act on confident answers, send the rest to a human
+}
+```
+
+Choice options without descriptions can be given as a list: `criteria: ["invoice", "receipt", "other"]` is sent as `{ invoice: null, receipt: null, other: null }`.
+
+**Options:**
+
+```typescript
+await llm.decide(state, questions, {
+  images: await loadImages("./document.png"), // or data URLs; multimodal models only (e.g. OpenJev)
+  model: "ggml-org/OpenJev-GGUF",            // select a vision model in router mode
+  body: { /* pass-through fields */ },
+  signal: AbortSignal.timeout(5_000),
+});
+```
+
+`state` accepts plain text, JSON objects/arrays (including nested values), or chat messages (`LLMMessage[]`, e.g. from `conversation()`). The server renders JSON content as text; `image_url` parts inside messages are read as images too, and must contain data URLs. The top-level state cannot be `null`.
+
+Yes/no questions can describe both alternatives:
+
+```typescript
+await llm.decide({ message: "Please refund my order", order: { id: 4471 } }, {
+  refund: {
+    type: "noul",
+    instructions: "Is a refund requested?",
+    criteria: { true: "money back is asked", false: "no money back is asked" },
+  },
+});
+```
+
+Questions are checked before sending (at least one question, a non-empty `choice`, 2 to 10 `score` levels). Responses must match the question type, contain all expected probabilities and score labels, and keep probabilities/confidence within [0, 1] and scores within the requested scale. A choice must be one of the supplied options. Malformed answers throw instead of returning partial results. Calling `llm.decide()` on an `anthropic-compatible` adapter throws.
+
+**Result shape:**
+
+```typescript
+{
+  answers: { [key]: DecisionChoiceAnswer | DecisionNoulAnswer | DecisionScoreAnswer }; // typed per question
+  model: string;
+  usage?: { inputTokens?: number; outputTokens?: number };
+  raw?: unknown;           // full server response
+}
+```
+
 ### MCP Tools
 
 Attach MCP clients at request time to let the model call tools during structured generation.
@@ -830,6 +921,7 @@ Available examples:
 - `conversation` - Multi-turn conversation history and inline image messages ([conversation.ts](examples/conversation.ts))
 - `simulated-tools` - Inject fake tool calls/results into conversation context without real execution ([simulated-tools.ts](examples/simulated-tools.ts))
 - `embeddings` - Vector embeddings, cosine similarity, and semantic comparison ([embeddings.ts](examples/embeddings.ts))
+- `decision` - Ticket routing with a llama.cpp decision model ([decision.ts](examples/decision.ts))
 
 Pass arguments after the example name:
 ```bash
@@ -843,6 +935,7 @@ bun run dev simple "Bun.js runtime"
 bun run dev sentiment-analysis "I love this product."
 bun run dev multi-step-reasoning "Why is the sky blue?"
 bun run dev embeddings "the cat sat on the mat" "a feline rested on the rug"
+bun run dev decision "My parcel never arrived."
 ```
 
 ## Environment Variables

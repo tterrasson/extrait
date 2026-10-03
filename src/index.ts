@@ -89,8 +89,25 @@ export {
   type ProviderTransportConfig,
 } from "./providers/registry";
 
+export { DEFAULT_DECISION_PATH } from "./providers/systemone";
+
 export type {
   CandidateDiagnostics,
+  DecisionAnswer,
+  DecisionAnswerFor,
+  DecisionAnswers,
+  DecisionChoiceAnswer,
+  DecisionChoiceQuestion,
+  DecisionJSONValue,
+  DecisionNoulAnswer,
+  DecisionNoulQuestion,
+  DecisionQuestion,
+  DecisionQuestions,
+  DecisionRequest,
+  DecisionResult,
+  DecisionScoreAnswer,
+  DecisionScoreQuestion,
+  DecisionState,
   EmbeddingRequest,
   EmbeddingResult,
   LLMImageContent,

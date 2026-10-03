@@ -1,3 +1,4 @@
+import type { DecisionRequest, DecisionResult } from "./decision";
 import type {
   StructuredDebugOptions,
   StructuredTimeoutOptions,
@@ -202,6 +203,8 @@ export interface LLMAdapter {
   complete(request: LLMRequest): Promise<LLMResponse>;
   stream?(request: LLMRequest, callbacks?: LLMStreamCallbacks): Promise<LLMResponse>;
   embed?(request: EmbeddingRequest): Promise<EmbeddingResult>;
+  /** Scores the given options with a decision model (llama.cpp `/v1/systemone`). */
+  decide?(request: DecisionRequest): Promise<DecisionResult>;
 }
 
 export interface LLMToolCall {

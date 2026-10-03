@@ -9,6 +9,9 @@ import {
 import { generate } from "./generate";
 import { structured } from "./structured";
 import type {
+  DecisionQuestions,
+  DecisionRequest,
+  DecisionResult,
   EmbeddingRequest,
   EmbeddingResult,
   GenerateCallOptions,
@@ -59,6 +62,15 @@ export interface LLMClient {
     options?: GenerateCallOptions,
   ): Promise<GenerateResult>;
   embed(input: string | string[], options?: Omit<EmbeddingRequest, "input">): Promise<EmbeddingResult>;
+  /**
+   * Asks a decision model (llama.cpp `/v1/systemone`) to score the options of
+   * each question against `state`. Answers are typed after their question.
+   */
+  decide<const TQuestions extends DecisionQuestions>(
+    state: DecisionRequest["state"],
+    questions: TQuestions,
+    options?: Omit<DecisionRequest, "state" | "questions">,
+  ): Promise<DecisionResult<TQuestions>>;
 }
 
 export function createLLM<TProvider extends string>(
@@ -94,6 +106,19 @@ export function createLLM<TProvider extends string>(
         throw new Error(`Provider "${adapter.provider ?? "unknown"}" does not support embeddings.`);
       }
       return adapter.embed({ ...options, input });
+    },
+
+    async decide<const TQuestions extends DecisionQuestions>(
+      state: DecisionRequest["state"],
+      questions: TQuestions,
+      options: Omit<DecisionRequest, "state" | "questions"> = {},
+    ): Promise<DecisionResult<TQuestions>> {
+      if (!adapter.decide) {
+        throw new Error(
+          `Provider "${adapter.provider ?? "unknown"}" does not support decision models (/v1/systemone).`,
+        );
+      }
+      return (await adapter.decide({ ...options, state, questions })) as DecisionResult<TQuestions>;
     },
   };
 }

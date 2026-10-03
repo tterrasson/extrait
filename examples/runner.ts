@@ -21,7 +21,8 @@ const availableExamples = [
   "image-analysis",
   "conversation",
   "simulated-tools",
-  "embeddings"
+  "embeddings",
+  "decision"
 ] as const;
 
 const exampleName = process.argv[2] || "simple";

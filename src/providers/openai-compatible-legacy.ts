@@ -43,6 +43,7 @@ import {
   validateTopLogprobs,
 } from "./openai-compatible-common";
 import { toOpenAIReasoningEffort } from "./reasoning-effort";
+import { DEFAULT_DECISION_PATH, decideSystemOne } from "./systemone";
 import type { OpenAICompatibleAdapterOptions } from "./openai-compatible-common";
 
 export type OpenAICompatibleLegacyAdapterOptions = OpenAICompatibleAdapterOptions;
@@ -51,6 +52,7 @@ export function createOpenAICompatibleLegacyAdapter(options: OpenAICompatibleLeg
   const fetcher = options.fetcher ?? fetch;
   const path = options.path ?? "/v1/chat/completions";
   const embeddingPath = options.embeddingPath ?? "/v1/embeddings";
+  const decisionPath = options.decisionPath ?? DEFAULT_DECISION_PATH;
 
   return {
     provider: "openai-compatible-legacy",
@@ -67,6 +69,9 @@ export function createOpenAICompatibleLegacyAdapter(options: OpenAICompatibleLeg
     },
     embed(request) {
       return embedOpenAI(options, fetcher, embeddingPath, request);
+    },
+    decide(request) {
+      return decideSystemOne(options, fetcher, decisionPath, request);
     },
   };
 }

@@ -33,6 +33,8 @@ export interface ProviderTransportConfig {
   path?: string;
   /** Embedding endpoint override (openai-compatible providers only). */
   embeddingPath?: string;
+  /** Decision-model endpoint override, default `/v1/systemone` (openai-compatible providers only). */
+  decisionPath?: string;
   headers?: HTTPHeaders;
   defaultBody?: Record<string, unknown>;
   version?: string;
@@ -136,6 +138,7 @@ function buildProviderOptions(config: ResolvedModelAdapterConfig): unknown {
       apiKey: config.apiKey,
       path: transport.path,
       embeddingPath: transport.embeddingPath,
+      decisionPath: transport.decisionPath,
       headers: transport.headers,
       defaultBody: transport.defaultBody,
       defaultMaxToolRounds: transport.defaultMaxToolRounds,
@@ -152,6 +155,7 @@ function buildProviderOptions(config: ResolvedModelAdapterConfig): unknown {
       apiKey: config.apiKey,
       path: transport.path,
       embeddingPath: transport.embeddingPath,
+      decisionPath: transport.decisionPath,
       headers: transport.headers,
       defaultBody: transport.defaultBody,
       defaultMaxToolRounds: transport.defaultMaxToolRounds,
