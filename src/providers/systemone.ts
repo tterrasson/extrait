@@ -6,19 +6,8 @@ import type {
   DecisionResult,
   LLMImageContent,
 } from "../types";
-import {
-  buildHeaders,
-  pickUsage,
-  type OpenAICompatibleAdapterOptions,
-} from "./openai-compatible-common";
-import {
-  buildURL,
-  cleanUndefined,
-  isRecord,
-  pickString,
-  readErrorBody,
-  toFiniteNumber,
-} from "./utils";
+import { buildHeaders, pickUsage, type OpenAICompatibleAdapterOptions } from "./openai-compatible-common";
+import { buildURL, cleanUndefined, isRecord, pickString, readErrorBody, toFiniteNumber } from "./utils";
 
 export const DEFAULT_DECISION_PATH = "/v1/systemone";
 
@@ -61,7 +50,10 @@ export async function decideSystemOne(
 
   const rawAnswers = json.answers;
   const answers = Object.fromEntries(
-    Object.entries(request.questions).map(([key, question]) => [key, parseAnswer(key, question, rawAnswers[key])]),
+    Object.entries(request.questions).map(([key, question]) => [
+      key,
+      parseAnswer(key, question, rawAnswers[key]),
+    ]),
   );
 
   return {
@@ -103,7 +95,11 @@ function buildQuestionBody(key: string, question: DecisionQuestion): Record<stri
       return { type: "score", instructions: question.instructions, criteria: [...question.criteria] };
     }
     case "noul":
-      return cleanUndefined({ type: "noul", instructions: question.instructions, criteria: question.criteria });
+      return cleanUndefined({
+        type: "noul",
+        instructions: question.instructions,
+        criteria: question.criteria,
+      });
     default:
       throw new TypeError(
         `Question "${key}": unknown type "${(question as { type?: unknown }).type}" (expected choice, score or noul).`,
@@ -120,12 +116,16 @@ function parseAnswer(key: string, question: DecisionQuestion, value: unknown): D
     throw new Error(`Unexpected decision response: no answer for question "${key}"`);
   }
   if (value.type !== question.type) {
-    throw new Error(`Unexpected decision response: question "${key}" has type "${value.type}" (expected ${question.type})`);
+    throw new Error(
+      `Unexpected decision response: question "${key}" has type "${value.type}" (expected ${question.type})`,
+    );
   }
 
   switch (question.type) {
     case "choice": {
-      const options = Array.isArray(question.criteria) ? [...new Set(question.criteria)] : Object.keys(question.criteria);
+      const options = Array.isArray(question.criteria)
+        ? [...new Set(question.criteria)]
+        : Object.keys(question.criteria);
       const choice = requireString(key, value, "choice");
       if (!options.includes(choice)) {
         throw new Error(`Unexpected decision response: question "${key}" has unknown choice "${choice}"`);
@@ -140,13 +140,17 @@ function parseAnswer(key: string, question: DecisionQuestion, value: unknown): D
     case "score": {
       const levels = question.criteria.map((_, index) => String(index));
       requireKeys(key, "legend", value.legend, levels);
-      const legend = Object.fromEntries(levels.map((level, index) => {
-        const label = (value.legend as Record<string, unknown>)[level];
-        if (label !== question.criteria[index]) {
-          throw new Error(`Unexpected decision response: question "${key}" has an invalid legend for level "${level}"`);
-        }
-        return [level, label as string];
-      }));
+      const legend = Object.fromEntries(
+        levels.map((level, index) => {
+          const label = (value.legend as Record<string, unknown>)[level];
+          if (label !== question.criteria[index]) {
+            throw new Error(
+              `Unexpected decision response: question "${key}" has an invalid legend for level "${level}"`,
+            );
+          }
+          return [level, label as string];
+        }),
+      );
       return {
         type: "score",
         score: requireBoundedNumber(key, value, "score", levels.length - 1),
@@ -176,7 +180,12 @@ function requireNumber(key: string, value: Record<string, unknown>, field: strin
   return result;
 }
 
-function requireBoundedNumber(key: string, value: Record<string, unknown>, field: string, max: number): number {
+function requireBoundedNumber(
+  key: string,
+  value: Record<string, unknown>,
+  field: string,
+  max: number,
+): number {
   const number = requireNumber(key, value, field);
   if (number < 0 || number > max) {
     throw new Error(`Unexpected decision response: question "${key}" has "${field}" outside [0, ${max}]`);
@@ -184,14 +193,26 @@ function requireBoundedNumber(key: string, value: Record<string, unknown>, field
   return number;
 }
 
-function requireKeys(key: string, field: string, value: unknown, expected: readonly string[]): asserts value is Record<string, unknown> {
-  if (!isRecord(value) || Object.keys(value).length !== expected.length
-    || expected.some((name) => !Object.hasOwn(value, name))) {
+function requireKeys(
+  key: string,
+  field: string,
+  value: unknown,
+  expected: readonly string[],
+): asserts value is Record<string, unknown> {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== expected.length ||
+    expected.some((name) => !Object.hasOwn(value, name))
+  ) {
     throw new Error(`Unexpected decision response: question "${key}" has invalid "${field}" keys`);
   }
 }
 
-function requireProbabilities(key: string, value: unknown, expected: readonly string[]): Record<string, number> {
+function requireProbabilities(
+  key: string,
+  value: unknown,
+  expected: readonly string[],
+): Record<string, number> {
   requireKeys(key, "probabilities", value, expected);
   return Object.fromEntries(expected.map((name) => [name, requireBoundedNumber(key, value, name, 1)]));
 }

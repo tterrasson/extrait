@@ -136,13 +136,9 @@ describe("generate", () => {
       finishReason: "stop",
     });
 
-    const result = await generate(
-      model,
-      prompt()
-        .system`You are concise.`
-        .user`Question?`,
-      { systemPrompt: "Be accurate." },
-    );
+    const result = await generate(model, prompt().system`You are concise.`.user`Question?`, {
+      systemPrompt: "Be accurate.",
+    });
 
     expect(result.text).toBe("Answer");
     expect(result.reasoning).toBe("plan");
@@ -419,7 +415,7 @@ describe("generate", () => {
 
   test("normalizes inline think blocks and dedicated reasoning", async () => {
     const model = new MockAdapter({
-      text: '<think>draft</think>Hello',
+      text: "<think>draft</think>Hello",
       reasoning: "plan",
       finishReason: "stop",
     });

@@ -17,8 +17,7 @@ import { createLLM, type LLMTokenLogprob } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy";
+  "openai-compatible" | "openai-compatible-legacy";
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
 const apiKey = process.env.LLM_API_KEY;
@@ -31,8 +30,11 @@ if (!apiKey) {
 
 const args = process.argv.slice(3);
 const legacyLogprobs = args.includes("--legacy-logprobs");
-const input = args.filter((arg) => arg !== "--legacy-logprobs").join(" ").trim()
-  || "Answer with one word: yes or no?";
+const input =
+  args
+    .filter((arg) => arg !== "--legacy-logprobs")
+    .join(" ")
+    .trim() || "Answer with one word: yes or no?";
 const llm = createLLM({
   provider,
   model,

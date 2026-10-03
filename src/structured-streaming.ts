@@ -153,10 +153,7 @@ export function createStreamingStructuredParser(): StreamingStructuredParser {
 
   function isDelimiter(code: number): boolean {
     return (
-      isWhitespace(code) ||
-      code === CHAR_COMMA ||
-      code === CHAR_CLOSE_BRACE ||
-      code === CHAR_CLOSE_BRACKET
+      isWhitespace(code) || code === CHAR_COMMA || code === CHAR_CLOSE_BRACE || code === CHAR_CLOSE_BRACKET
     );
   }
 

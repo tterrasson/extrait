@@ -14,9 +14,7 @@ import { createLLM, prompt, s, StructuredParseError } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -44,9 +42,7 @@ const llm = createLLM({
 const SentimentSchema = s.schema(
   "SentimentStreaming",
   z.object({
-    sentiment: z
-      .enum(["positive", "negative", "neutral"])
-      .describe("Overall sentiment in lowercase"),
+    sentiment: z.enum(["positive", "negative", "neutral"]).describe("Overall sentiment in lowercase"),
     confidence: s.number().min(0).max(1).describe("Confidence between 0 and 1"),
   }),
 );

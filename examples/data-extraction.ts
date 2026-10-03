@@ -15,9 +15,7 @@ import { createLLM, prompt, s, StructuredParseError } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -52,16 +50,13 @@ const RecipeSchema = s.schema(
           item: s.string().describe("Ingredient name"),
           quantity: s.string().describe("Amount needed (e.g., '2 cups', '1 tsp')"),
           optional: s.boolean().default(false).describe("Whether this ingredient is optional"),
-        })
+        }),
       )
       .min(1)
       .describe("List of ingredients"),
-    steps: s
-      .array(s.string().min(1))
-      .min(1)
-      .describe("Cooking steps in order"),
+    steps: s.array(s.string().min(1)).min(1).describe("Cooking steps in order"),
     tags: s.array(s.string()).default([]).describe("Recipe tags (e.g., 'vegan', 'gluten-free')"),
-  })
+  }),
 );
 
 // Unstructured recipe text
@@ -121,7 +116,7 @@ try {
     `,
     {
       // Self-healing is enabled in defaults, will automatically retry if validation fails
-    }
+    },
   );
 
   console.log("\n✅ Successfully extracted recipe data!\n");

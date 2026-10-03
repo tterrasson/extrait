@@ -3,7 +3,9 @@ import type { LLMRequest, LLMToolDebugOptions, LLMToolExecution } from "../types
 export function formatToolExecutionDebugLine(execution: LLMToolExecution): string {
   const status = execution.error ? "error" : "ok";
   const scope = [execution.provider, execution.model].filter(Boolean).join("/") || "unknown";
-  const toolRef = execution.clientId ? `${execution.clientId}:${execution.name ?? "unknown"}` : execution.name ?? "unknown";
+  const toolRef = execution.clientId
+    ? `${execution.clientId}:${execution.name ?? "unknown"}`
+    : (execution.name ?? "unknown");
   const duration = typeof execution.durationMs === "number" ? ` ${execution.durationMs}ms` : "";
   const base = `[tool:mcp:${status}] ${scope} ${toolRef}#${execution.callId}${duration}`;
 
@@ -74,7 +76,9 @@ function formatToolExecutionRequestDebugLine(
   debug: Required<LLMToolDebugOptions>,
 ): string {
   const scope = [execution.provider, execution.model].filter(Boolean).join("/") || "unknown";
-  const toolRef = execution.clientId ? `${execution.clientId}:${execution.name ?? "unknown"}` : execution.name ?? "unknown";
+  const toolRef = execution.clientId
+    ? `${execution.clientId}:${execution.name ?? "unknown"}`
+    : (execution.name ?? "unknown");
   const payload = formatDebugPayload(execution.arguments, debug.pretty);
   return `[tool:mcp:request] ${scope} ${toolRef}#${execution.callId} arguments=${payload}`;
 }
@@ -84,7 +88,9 @@ function formatToolExecutionResultDebugLine(
   debug: Required<LLMToolDebugOptions>,
 ): string {
   const scope = [execution.provider, execution.model].filter(Boolean).join("/") || "unknown";
-  const toolRef = execution.clientId ? `${execution.clientId}:${execution.name ?? "unknown"}` : execution.name ?? "unknown";
+  const toolRef = execution.clientId
+    ? `${execution.clientId}:${execution.name ?? "unknown"}`
+    : (execution.name ?? "unknown");
   if (execution.error) {
     const payload = formatDebugPayload({ error: execution.error }, debug.pretty);
     return `[tool:mcp:result:error] ${scope} ${toolRef}#${execution.callId} output=${payload}`;

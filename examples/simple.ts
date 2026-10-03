@@ -15,9 +15,7 @@ import { createLLM, prompt, s, StructuredParseError } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -42,7 +40,7 @@ const SimpleSchema = s.schema(
     topic: s.string().min(1).describe("Main topic in 2 to 4 words."),
     description: s.string().min(1).describe("Short plain-English description."),
     tags: s.array(s.string()).default([]).describe("1 to 3 relevant keywords."),
-  })
+  }),
 );
 
 const userInput = process.argv.slice(3).join(" ").trim(); // Skip "bun", "examples/runner.ts", "simple"

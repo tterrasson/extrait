@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createLLM } from "@/llm";
 import { createProviderRegistry } from "@/providers/registry";
-import { DEFAULT_SCHEMA_INSTRUCTION} from "@/format";
+import { DEFAULT_SCHEMA_INSTRUCTION } from "@/format";
 import type { LLMReasoningEffort } from "@/types";
 
 describe("createLLM", () => {
@@ -10,21 +10,18 @@ describe("createLLM", () => {
     const registry = createProviderRegistry();
     const requests: string[] = [];
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete(request) {
-          requests.push(request.prompt ?? "");
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete(request) {
+        requests.push(request.prompt ?? "");
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -54,20 +51,17 @@ describe("createLLM", () => {
   test("merges with no defaults and no overrides", async () => {
     const registry = createProviderRegistry();
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete(request) {
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete(request) {
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -86,20 +80,17 @@ describe("createLLM", () => {
   test("defaults only (no per-call overrides)", async () => {
     const registry = createProviderRegistry();
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete(request) {
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete(request) {
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -121,20 +112,17 @@ describe("createLLM", () => {
   test("mergeObjectLike: override is non-plain overrides default object", async () => {
     const registry = createProviderRegistry();
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete(request) {
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete(request) {
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -163,29 +151,26 @@ describe("createLLM", () => {
     let completeCalls = 0;
     let streamCalls = 0;
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete() {
-          completeCalls += 1;
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-        async stream() {
-          streamCalls += 1;
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete() {
+        completeCalls += 1;
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+      async stream() {
+        streamCalls += 1;
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -220,29 +205,26 @@ describe("createLLM", () => {
     let completeCalls = 0;
     let streamCalls = 0;
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete() {
-          completeCalls += 1;
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-        async stream() {
-          streamCalls += 1;
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete() {
+        completeCalls += 1;
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+      async stream() {
+        streamCalls += 1;
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -270,20 +252,17 @@ describe("createLLM", () => {
     const registry = createProviderRegistry();
     const debugLogs: string[] = [];
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete() {
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete() {
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -322,21 +301,18 @@ describe("createLLM", () => {
     const registry = createProviderRegistry();
     const debugLogs: string[] = [];
 
-    registry.register(
-      "mock",
-      () => ({
-        provider: "mock",
-        model: "m1",
-        async complete() {
-          return {
-            text: '{"val": 7}',
-            reasoning: "plan",
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", () => ({
+      provider: "mock",
+      model: "m1",
+      async complete() {
+        return {
+          text: '{"val": 7}',
+          reasoning: "plan",
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -372,20 +348,17 @@ describe("createLLM", () => {
     const registry = createProviderRegistry();
     const debugLogs: string[] = [];
 
-    registry.register(
-      "mock",
-      (options: { text: string }) => ({
-        provider: "mock",
-        model: "m1",
-        async complete() {
-          return {
-            text: options.text,
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", (options: { text: string }) => ({
+      provider: "mock",
+      model: "m1",
+      async complete() {
+        return {
+          text: options.text,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -417,20 +390,17 @@ describe("createLLM", () => {
     const registry = createProviderRegistry();
     const debugLogs: string[] = [];
 
-    registry.register(
-      "mock",
-      () => ({
-        provider: "mock",
-        model: "m1",
-        async complete() {
-          return {
-            text: "<think>plan</think>{\"val\": 9}",
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", () => ({
+      provider: "mock",
+      model: "m1",
+      async complete() {
+        return {
+          text: '<think>plan</think>{"val": 9}',
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -454,7 +424,7 @@ describe("createLLM", () => {
     expect(result.data).toEqual({ val: 9 });
     const responseLog = debugLogs.find((line) => line.includes("[structured][response]")) ?? "";
     expect(responseLog).toContain("text:");
-    expect(responseLog).toContain("{\"val\": 9}");
+    expect(responseLog).toContain('{"val": 9}');
     expect(responseLog).toContain("reasoning:");
     expect(responseLog).toContain("plan");
     expect(responseLog).not.toContain("parseSource:");
@@ -470,26 +440,23 @@ describe("createLLM", () => {
       systemPrompt?: string;
     }> = [];
 
-    registry.register(
-      "mock",
-      () => ({
-        provider: "mock",
-        model: "m1",
-        async complete(request) {
-          requests.push({
-            prompt: request.prompt,
-            temperature: request.temperature,
-            reasoningEffort: request.reasoningEffort,
-            systemPrompt: request.systemPrompt,
-          });
-          return {
-            text: "hello",
-            finishReason: "stop",
-            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-          };
-        },
-      }),
-    );
+    registry.register("mock", () => ({
+      provider: "mock",
+      model: "m1",
+      async complete(request) {
+        requests.push({
+          prompt: request.prompt,
+          temperature: request.temperature,
+          reasoningEffort: request.reasoningEffort,
+          systemPrompt: request.systemPrompt,
+        });
+        return {
+          text: "hello",
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -536,24 +503,21 @@ describe("createLLM", () => {
       systemPrompt?: string;
     }> = [];
 
-    registry.register(
-      "mock",
-      () => ({
-        provider: "mock",
-        model: "m1",
-        async complete(request) {
-          requests.push({
-            prompt: request.prompt,
-            temperature: request.temperature,
-            systemPrompt: request.systemPrompt,
-          });
-          return {
-            text: "object overload",
-            finishReason: "stop",
-          };
-        },
-      }),
-    );
+    registry.register("mock", () => ({
+      provider: "mock",
+      model: "m1",
+      async complete(request) {
+        requests.push({
+          prompt: request.prompt,
+          temperature: request.temperature,
+          systemPrompt: request.systemPrompt,
+        });
+        return {
+          text: "object overload",
+          finishReason: "stop",
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -583,20 +547,17 @@ describe("createLLM", () => {
     const registry = createProviderRegistry();
     const requests: string[] = [];
 
-    registry.register(
-      "mock",
-      () => ({
-        provider: "mock",
-        model: "m1",
-        async complete(request) {
-          requests.push(request.prompt ?? "");
-          return {
-            text: "plain text",
-            finishReason: "stop",
-          };
-        },
-      }),
-    );
+    registry.register("mock", () => ({
+      provider: "mock",
+      model: "m1",
+      async complete(request) {
+        requests.push(request.prompt ?? "");
+        return {
+          text: "plain text",
+          finishReason: "stop",
+        };
+      },
+    }));
 
     const llm = createLLM(
       {
@@ -624,27 +585,24 @@ describe("createLLM", () => {
     let completeCalls = 0;
     let streamCalls = 0;
 
-    registry.register(
-      "mock",
-      () => ({
-        provider: "mock",
-        model: "m1",
-        async complete() {
-          completeCalls += 1;
-          return {
-            text: "plain text",
-            finishReason: "stop",
-          };
-        },
-        async stream() {
-          streamCalls += 1;
-          return {
-            text: "plain text",
-            finishReason: "stop",
-          };
-        },
-      }),
-    );
+    registry.register("mock", () => ({
+      provider: "mock",
+      model: "m1",
+      async complete() {
+        completeCalls += 1;
+        return {
+          text: "plain text",
+          finishReason: "stop",
+        };
+      },
+      async stream() {
+        streamCalls += 1;
+        return {
+          text: "plain text",
+          finishReason: "stop",
+        };
+      },
+    }));
 
     const llm = createLLM(
       {

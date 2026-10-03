@@ -26,9 +26,7 @@ if (!filePath) {
 }
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -50,7 +48,7 @@ const ImageAnalysisSchema = s.schema(
     colors: s.array(s.string()).describe("Dominant colors present."),
     objects: s.array(s.string()).describe("Main objects or subjects detected."),
     mood: s.string().describe("Overall mood or atmosphere of the image."),
-  })
+  }),
 );
 
 // Accepts a file path, a data URL, an http(s) URL, a Blob or raw bytes.

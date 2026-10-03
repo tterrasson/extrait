@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import {
-  DEFAULT_SCHEMA_INSTRUCTION,
-  formatPrompt,
-  resolveSchemaInstruction,
-  withFormat,
-} from "@/format";
+import { DEFAULT_SCHEMA_INSTRUCTION, formatPrompt, resolveSchemaInstruction, withFormat } from "@/format";
 
 describe("formatPrompt", () => {
   test("combines the schema format and the task", () => {

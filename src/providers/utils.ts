@@ -1,7 +1,11 @@
 import type { LLMUsage, ReasoningBlock } from "../types";
 import { stripThinkTags } from "../think";
 
-export function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, text: string | undefined): void {
+export function pushReasoningBlock(
+  blocks: ReasoningBlock[],
+  turnIndex: number,
+  text: string | undefined,
+): void {
   const clean = text ? stripThinkTags(text).trim() : undefined;
   if (!clean) {
     return;
@@ -11,7 +15,10 @@ export function pushReasoningBlock(blocks: ReasoningBlock[], turnIndex: number, 
 }
 
 export function joinReasoningBlocks(blocks: ReasoningBlock[]): string {
-  return blocks.map((block) => block.text).filter(Boolean).join("\n\n");
+  return blocks
+    .map((block) => block.text)
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function normalizeBaseURL(baseURL: string): string {
@@ -167,7 +174,10 @@ export function mergeUsage(base: LLMUsage | undefined, next: LLMUsage | undefine
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-export function preferLatestUsage(base: LLMUsage | undefined, next: LLMUsage | undefined): LLMUsage | undefined {
+export function preferLatestUsage(
+  base: LLMUsage | undefined,
+  next: LLMUsage | undefined,
+): LLMUsage | undefined {
   if (!base && !next) {
     return undefined;
   }

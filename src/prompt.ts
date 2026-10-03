@@ -3,7 +3,7 @@ import type {
   LLMMessageContent,
   StructuredPromptContext,
   StructuredPromptPayload,
-  StructuredPromptResolver
+  StructuredPromptResolver,
 } from "./types";
 import { createOutdent } from "./outdent";
 
@@ -16,11 +16,7 @@ function toPromptString(value: unknown): string {
     return value;
   }
 
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  ) {
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     return String(value);
   }
 
@@ -105,7 +101,10 @@ class PromptMessageBuilderImpl implements PromptMessageBuilder {
     return this.pushMessage("user", input, values);
   }
 
-  assistant(input: string | TemplateStringsArray | LLMMessageContent, ...values: unknown[]): PromptMessageBuilder {
+  assistant(
+    input: string | TemplateStringsArray | LLMMessageContent,
+    ...values: unknown[]
+  ): PromptMessageBuilder {
     return this.pushMessage("assistant", input, values);
   }
 
@@ -163,10 +162,7 @@ export function dedent(strings: TemplateStringsArray, ...values: unknown[]): str
 
 export function prompt(strings: TemplateStringsArray, ...values: unknown[]): string;
 export function prompt(): PromptMessageBuilder;
-export function prompt(
-  input?: TemplateStringsArray,
-  ...values: unknown[]
-): string | PromptMessageBuilder {
+export function prompt(input?: TemplateStringsArray, ...values: unknown[]): string | PromptMessageBuilder {
   if (isTemplateStringsArray(input)) {
     return renderPromptTemplate(input, values);
   }

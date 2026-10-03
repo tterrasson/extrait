@@ -104,8 +104,7 @@ const DEFAULT_SELF_HEAL_PROMPT_TEXT: ResolvedSelfHealPromptText = {
 export const DEFAULT_SELF_HEAL_FIX_INSTRUCTION = DEFAULT_SELF_HEAL_PROMPT_TEXT.fixInstruction;
 export const DEFAULT_SELF_HEAL_RETURN_INSTRUCTION = DEFAULT_SELF_HEAL_PROMPT_TEXT.returnInstruction;
 export const DEFAULT_SELF_HEAL_NO_ISSUES_MESSAGE = DEFAULT_SELF_HEAL_PROMPT_TEXT.noIssuesMessage;
-export const DEFAULT_SELF_HEAL_VALIDATION_LABEL =
-  DEFAULT_SELF_HEAL_PROMPT_TEXT.validationErrorsLabel;
+export const DEFAULT_SELF_HEAL_VALIDATION_LABEL = DEFAULT_SELF_HEAL_PROMPT_TEXT.validationErrorsLabel;
 export const DEFAULT_SELF_HEAL_RAW_OUTPUT_LABEL = DEFAULT_SELF_HEAL_PROMPT_TEXT.rawOutputLabel;
 export const DEFAULT_SELF_HEAL_CONTEXT_LABEL = DEFAULT_SELF_HEAL_PROMPT_TEXT.contextLabel;
 export const DEFAULT_SELF_HEAL_PROTOCOL = "extrait.self-heal.v2";
@@ -139,10 +138,7 @@ export function buildDefaultStructuredPrompt(
     options.objectInstruction,
     DEFAULT_STRUCTURED_OBJECT_INSTRUCTION,
   );
-  const styleInstruction = resolvePromptLine(
-    options.styleInstruction,
-    DEFAULT_STRUCTURED_STYLE_INSTRUCTION,
-  );
+  const styleInstruction = resolvePromptLine(options.styleInstruction, DEFAULT_STRUCTURED_STYLE_INSTRUCTION);
   return [task.trim(), "", objectInstruction, styleInstruction].join("\n");
 }
 
@@ -174,10 +170,7 @@ export function buildSelfHealPrompt(input: SelfHealPromptInput): string {
   const outputFormat = withFormat(input.schema, {
     schemaInstruction: input.schemaInstruction,
   });
-  const maxContextChars = normalizePositiveInt(
-    input.maxContextChars,
-    DEFAULT_SELF_HEAL_MAX_CONTEXT_CHARS,
-  );
+  const maxContextChars = normalizePositiveInt(input.maxContextChars, DEFAULT_SELF_HEAL_MAX_CONTEXT_CHARS);
   const selectedOutput = input.selectedOutput ?? input.rawOutput;
   const truncatedRawOutput = truncateForPrompt(input.rawOutput, maxContextChars);
   const truncatedSelectedOutput = truncateForPrompt(selectedOutput, maxContextChars);
@@ -266,21 +259,26 @@ export async function structured<TSchema extends z.ZodTypeAny>(
     reasoning: string;
     reasoningBlocks?: ReasoningBlock[];
     data: unknown | null;
-  }>(normalized.stream as {
-    enabled?: boolean;
-    onData?: (event: {
-      delta: { text: string; reasoning: string };
-      snapshot: {
-        text: string;
-        reasoning: string;
-        reasoningBlocks?: ReasoningBlock[];
-        data: unknown | null;
-      };
-      done: boolean;
-    }) => void;
-    onTurnTransition?: (transition: StreamTurnTransition) => void;
-    to?: "stdout";
-  } | boolean | undefined);
+  }>(
+    normalized.stream as
+      | {
+          enabled?: boolean;
+          onData?: (event: {
+            delta: { text: string; reasoning: string };
+            snapshot: {
+              text: string;
+              reasoning: string;
+              reasoningBlocks?: ReasoningBlock[];
+              data: unknown | null;
+            };
+            done: boolean;
+          }) => void;
+          onTurnTransition?: (transition: StreamTurnTransition) => void;
+          to?: "stdout";
+        }
+      | boolean
+      | undefined,
+  );
   const debugConfig = normalizeDebugConfig(normalized.debug);
   const attempts: StructuredAttempt<z.infer<TSchema>>[] = [];
   const useOutdent = normalized.outdent ?? true;
@@ -354,13 +352,11 @@ export async function structured<TSchema extends z.ZodTypeAny>(
       selectedOutput: selfHealSource.text,
       selectedInput: selfHealSource.kind,
       sanitizedOutput: previous.parsed.sanitizedRaw,
-      parserErrors: previous.parsed.errors
-        .slice(0, DEFAULT_SELF_HEAL_MAX_ERRORS)
-        .map((error) => ({
-          stage: error.stage,
-          message: error.message,
-          candidateId: error.candidateId,
-        })),
+      parserErrors: previous.parsed.errors.slice(0, DEFAULT_SELF_HEAL_MAX_ERRORS).map((error) => ({
+        stage: error.stage,
+        message: error.message,
+        candidateId: error.candidateId,
+      })),
       diagnostics: previous.parsed.diagnostics
         .slice(0, DEFAULT_SELF_HEAL_MAX_DIAGNOSTICS)
         .map((diagnostic) => ({
@@ -452,10 +448,16 @@ function prepareStructuredPromptPayload<TSchema extends z.ZodTypeAny>(
   if (Array.isArray(payload.messages) && payload.messages.length > 0) {
     const messages = payload.messages.map((message) => ({ ...message }));
     const mergedSystemPrompt = mergeSystemPrompts(payload.systemPrompt, systemPrompt);
-    const systemMessages = mergedSystemPrompt ? [{ role: "system" as const, content: mergedSystemPrompt }] : [];
+    const systemMessages = mergedSystemPrompt
+      ? [{ role: "system" as const, content: mergedSystemPrompt }]
+      : [];
 
     return {
-      messages: injectStructuredFormatIntoMessages([...systemMessages, ...messages], schema, schemaInstruction),
+      messages: injectStructuredFormatIntoMessages(
+        [...systemMessages, ...messages],
+        schema,
+        schemaInstruction,
+      ),
     };
   }
 
@@ -536,7 +538,8 @@ function injectStructuredFormatIntoMessages<TSchema extends z.ZodTypeAny>(
     );
   }
 
-  const content = typeof target?.content === "string" ? target.content.trim() : stringifyPromptContent(target?.content);
+  const content =
+    typeof target?.content === "string" ? target.content.trim() : stringifyPromptContent(target?.content);
   const formatted = shouldInjectFormat(content, schemaInstruction)
     ? formatPrompt(schema, content, { schemaInstruction })
     : content.trim();
@@ -636,10 +639,7 @@ function normalizeSelfHealConfig(
 
   const enabled = option.enabled ?? true;
   const stopOnNoProgress = option.stopOnNoProgress ?? DEFAULT_SELF_HEAL_STOP_ON_NO_PROGRESS;
-  const maxContextChars = normalizePositiveInt(
-    option.maxContextChars,
-    DEFAULT_SELF_HEAL_MAX_CONTEXT_CHARS,
-  );
+  const maxContextChars = normalizePositiveInt(option.maxContextChars, DEFAULT_SELF_HEAL_MAX_CONTEXT_CHARS);
   return {
     enabled,
     maxAttempts: enabled ? Math.max(1, option.maxAttempts ?? 1) : 0,
@@ -653,30 +653,19 @@ function resolvePromptLine(value: string | undefined, fallback: string): string 
   return trimmed && trimmed.length > 0 ? trimmed : fallback;
 }
 
-function resolveSelfHealPromptText(
-  text?: SelfHealPromptTextOptions,
-): ResolvedSelfHealPromptText {
+function resolveSelfHealPromptText(text?: SelfHealPromptTextOptions): ResolvedSelfHealPromptText {
   return {
-    fixInstruction: resolvePromptLine(
-      text?.fixInstruction,
-      DEFAULT_SELF_HEAL_PROMPT_TEXT.fixInstruction,
-    ),
+    fixInstruction: resolvePromptLine(text?.fixInstruction, DEFAULT_SELF_HEAL_PROMPT_TEXT.fixInstruction),
     returnInstruction: resolvePromptLine(
       text?.returnInstruction,
       DEFAULT_SELF_HEAL_PROMPT_TEXT.returnInstruction,
     ),
-    noIssuesMessage: resolvePromptLine(
-      text?.noIssuesMessage,
-      DEFAULT_SELF_HEAL_PROMPT_TEXT.noIssuesMessage,
-    ),
+    noIssuesMessage: resolvePromptLine(text?.noIssuesMessage, DEFAULT_SELF_HEAL_PROMPT_TEXT.noIssuesMessage),
     validationErrorsLabel: resolvePromptLine(
       text?.validationErrorsLabel,
       DEFAULT_SELF_HEAL_PROMPT_TEXT.validationErrorsLabel,
     ),
-    rawOutputLabel: resolvePromptLine(
-      text?.rawOutputLabel,
-      DEFAULT_SELF_HEAL_PROMPT_TEXT.rawOutputLabel,
-    ),
+    rawOutputLabel: resolvePromptLine(text?.rawOutputLabel, DEFAULT_SELF_HEAL_PROMPT_TEXT.rawOutputLabel),
     contextLabel: resolvePromptLine(text?.contextLabel, DEFAULT_SELF_HEAL_PROMPT_TEXT.contextLabel),
   };
 }
@@ -695,9 +684,10 @@ function normalizePositiveInt(value: number | undefined, fallback: number): numb
 const RE_SELF_HEAL_DELIMITER = /<(\/?)(raw_output|self_heal_context)>/gi;
 
 export function escapeSelfHealDelimiters(value: string): string {
-  return value.replace(RE_SELF_HEAL_DELIMITER, (_match, slash: string, tag: string) => (
-    `&lt;${slash}${tag}&gt;`
-  ));
+  return value.replace(
+    RE_SELF_HEAL_DELIMITER,
+    (_match, slash: string, tag: string) => `&lt;${slash}${tag}&gt;`,
+  );
 }
 
 function truncateForPrompt(value: string, maxChars: number): string {
@@ -733,9 +723,10 @@ function formatIssuePath(path: Array<string | number>): string {
   return out;
 }
 
-function resolveSelfHealSource<T>(
-  attempt: StructuredAttempt<T>,
-): { kind: "candidate" | "sanitized" | "raw"; text: string } {
+function resolveSelfHealSource<T>(attempt: StructuredAttempt<T>): {
+  kind: "candidate" | "sanitized" | "raw";
+  text: string;
+} {
   const candidate = attempt.parsed.candidate?.content?.trim();
   if (candidate) {
     return {
@@ -758,10 +749,7 @@ function resolveSelfHealSource<T>(
   };
 }
 
-function isSelfHealStalled<T>(
-  previous: StructuredAttempt<T>,
-  current: StructuredAttempt<T>,
-): boolean {
+function isSelfHealStalled<T>(previous: StructuredAttempt<T>, current: StructuredAttempt<T>): boolean {
   if (current.success) {
     return false;
   }
@@ -786,10 +774,7 @@ function buildSelfHealFailureFingerprint<T>(attempt: StructuredAttempt<T>): stri
     .sort()
     .join("|");
   const errors = attempt.parsed.errors
-    .map(
-      (error) =>
-        `${error.stage}:${error.candidateId ?? "-"}:${normalizeWhitespace(error.message)}`,
-    )
+    .map((error) => `${error.stage}:${error.candidateId ?? "-"}:${normalizeWhitespace(error.message)}`)
     .sort()
     .join("|");
   const source = normalizeWhitespace(resolveSelfHealSource(attempt).text).slice(0, 512);
@@ -895,10 +880,7 @@ interface PreviewSource {
   data: unknown;
 }
 
-async function callModel(
-  adapter: LLMAdapter,
-  options: StructuredModelCallOptions,
-): Promise<ModelCallResult> {
+async function callModel(adapter: LLMAdapter, options: StructuredModelCallOptions): Promise<ModelCallResult> {
   // stream.dataInterval coalesces the preview: between recomputations the last
   // value is reused, so `snapshot.data` may lag behind `snapshot.text` by up to
   // that many ms. The terminal (done) snapshot always recomputes. When unset,

@@ -167,7 +167,11 @@ describe("LLMClient.decide()", () => {
     const llm = createClient(fetcher);
 
     const result = await llm.decide("A file uploaded by a customer.", {
-      kind: { type: "choice", instructions: "What kind of document is this?", criteria: ["invoice", "receipt", "other"] },
+      kind: {
+        type: "choice",
+        instructions: "What kind of document is this?",
+        criteria: ["invoice", "receipt", "other"],
+      },
     });
 
     expect(calls[0]!.body.questions).toEqual({
@@ -233,18 +237,21 @@ describe("LLMClient.decide()", () => {
     false,
     0,
   ];
-  test.each(jsonStates.map((state) => ({ state })))("passes JSON state and noul descriptions through (%#)", async ({ state }) => {
-    const { calls, fetcher } = capturingFetcher({ answers: { refund: { type: "noul", noul: 1 } } });
-    const question = {
-      type: "noul" as const,
-      instructions: "Is a refund requested?",
-      criteria: { true: "money back is asked", false: "no money back is asked" },
-    };
-    const result = await createClient(fetcher).decide(state, { refund: question });
-    expect(calls[0]!.body.state).toEqual(state);
-    expect(calls[0]!.body.questions).toEqual({ refund: question });
-    expect(result.answers.refund.noul).toBe(1);
-  });
+  test.each(jsonStates.map((state) => ({ state })))(
+    "passes JSON state and noul descriptions through (%#)",
+    async ({ state }) => {
+      const { calls, fetcher } = capturingFetcher({ answers: { refund: { type: "noul", noul: 1 } } });
+      const question = {
+        type: "noul" as const,
+        instructions: "Is a refund requested?",
+        criteria: { true: "money back is asked", false: "no money back is asked" },
+      };
+      const result = await createClient(fetcher).decide(state, { refund: question });
+      expect(calls[0]!.body.state).toEqual(state);
+      expect(calls[0]!.body.questions).toEqual({ refund: question });
+      expect(result.answers.refund.noul).toBe(1);
+    },
+  );
 
   test("preserves prototype-like question and option names", async () => {
     const probabilities = JSON.parse('{"__proto__":0.7,"constructor":0.3}');
@@ -257,7 +264,12 @@ describe("LLMClient.decide()", () => {
     expect(Object.hasOwn(result.answers.__proto__.probabilities, "__proto__")).toBe(true);
     expect(Object.getPrototypeOf(result.answers.__proto__.probabilities)).toBe(Object.prototype);
     expect((calls[0]!.body.questions as Record<string, unknown>).__proto__).toEqual({
-      type: "choice", instructions: "?", criteria: Object.fromEntries([["__proto__", null], ["constructor", null]]),
+      type: "choice",
+      instructions: "?",
+      criteria: Object.fromEntries([
+        ["__proto__", null],
+        ["constructor", null],
+      ]),
     });
   });
 
@@ -266,10 +278,26 @@ describe("LLMClient.decide()", () => {
     ["route", { ...RESPONSE.answers.route, choice: "other" }, "unknown choice"],
     ["route", { ...RESPONSE.answers.route, probabilities: undefined }, 'invalid "probabilities" keys'],
     ["route", { ...RESPONSE.answers.route, probabilities: { billing: 1 } }, 'invalid "probabilities" keys'],
-    ["route", { ...RESPONSE.answers.route, probabilities: { ...RESPONSE.answers.route.probabilities, other: 0 } }, 'invalid "probabilities" keys'],
-    ["route", { ...RESPONSE.answers.route, probabilities: { billing: "0.9", shipping: 0.03, technical: 0.07 } }, 'no numeric "billing"'],
-    ["route", { ...RESPONSE.answers.route, probabilities: { billing: -0.1, shipping: 0.1, technical: 1 } }, '"billing" outside'],
-    ["route", { ...RESPONSE.answers.route, probabilities: { billing: 1.1, shipping: 0, technical: 0 } }, '"billing" outside'],
+    [
+      "route",
+      { ...RESPONSE.answers.route, probabilities: { ...RESPONSE.answers.route.probabilities, other: 0 } },
+      'invalid "probabilities" keys',
+    ],
+    [
+      "route",
+      { ...RESPONSE.answers.route, probabilities: { billing: "0.9", shipping: 0.03, technical: 0.07 } },
+      'no numeric "billing"',
+    ],
+    [
+      "route",
+      { ...RESPONSE.answers.route, probabilities: { billing: -0.1, shipping: 0.1, technical: 1 } },
+      '"billing" outside',
+    ],
+    [
+      "route",
+      { ...RESPONSE.answers.route, probabilities: { billing: 1.1, shipping: 0, technical: 0 } },
+      '"billing" outside',
+    ],
     ["route", { ...RESPONSE.answers.route, confidence: 42 }, '"confidence" outside'],
     ["route", { ...RESPONSE.answers.route, confidence: -1 }, '"confidence" outside'],
     ["angry", { type: "choice", noul: 0.5 }, "expected noul"],
@@ -282,23 +310,43 @@ describe("LLMClient.decide()", () => {
     ["urgency", { ...RESPONSE.answers.urgency, confidence: 2 }, '"confidence" outside'],
     ["urgency", { ...RESPONSE.answers.urgency, legend: undefined }, 'invalid "legend" keys'],
     ["urgency", { ...RESPONSE.answers.urgency, legend: { "0": "can wait" } }, 'invalid "legend" keys'],
-    ["urgency", { ...RESPONSE.answers.urgency, legend: { ...RESPONSE.answers.urgency.legend, "0": "wrong" } }, "invalid legend"],
+    [
+      "urgency",
+      { ...RESPONSE.answers.urgency, legend: { ...RESPONSE.answers.urgency.legend, "0": "wrong" } },
+      "invalid legend",
+    ],
     ["urgency", { ...RESPONSE.answers.urgency, probabilities: {} }, 'invalid "probabilities" keys'],
   ] as const)("rejects malformed %s answers (%#)", async (key, answer, message) => {
     const payload = { ...RESPONSE, answers: { ...RESPONSE.answers, [key]: answer } };
-    await expect(createClient(capturingFetcher(payload).fetcher).decide(STATE, QUESTIONS)).rejects.toThrow(message);
+    await expect(createClient(capturingFetcher(payload).fetcher).decide(STATE, QUESTIONS)).rejects.toThrow(
+      message,
+    );
   });
 
-  test.each([[null], [[]], ["unexpected"], [{ answers: null }]])("rejects invalid response envelopes (%#)", async (payload) => {
-    await expect(createClient(capturingFetcher(payload).fetcher).decide(STATE, QUESTIONS)).rejects.toThrow("missing answers object");
-  });
+  test.each([[null], [[]], ["unexpected"], [{ answers: null }]])(
+    "rejects invalid response envelopes (%#)",
+    async (payload) => {
+      await expect(createClient(capturingFetcher(payload).fetcher).decide(STATE, QUESTIONS)).rejects.toThrow(
+        "missing answers object",
+      );
+    },
+  );
 
   test("accepts endpoints of the probability and score ranges", async () => {
     const payload = {
       answers: {
-        route: { ...RESPONSE.answers.route, probabilities: { billing: 1, shipping: 0, technical: 0 }, confidence: 1 },
+        route: {
+          ...RESPONSE.answers.route,
+          probabilities: { billing: 1, shipping: 0, technical: 0 },
+          confidence: 1,
+        },
         angry: { type: "noul", noul: 0 },
-        urgency: { ...RESPONSE.answers.urgency, score: 3, confidence: 0, probabilities: { "0": 0, "1": 0, "2": 0, "3": 1 } },
+        urgency: {
+          ...RESPONSE.answers.urgency,
+          score: 3,
+          confidence: 0,
+          probabilities: { "0": 0, "1": 0, "2": 0, "3": 1 },
+        },
       },
     };
     const result = await createClient(capturingFetcher(payload).fetcher).decide(STATE, QUESTIONS);
@@ -337,23 +385,24 @@ describe("LLMClient.decide()", () => {
     await expect(
       llm.decide(STATE, { q: { type: "choice", instructions: "?", criteria: {} } }),
     ).rejects.toThrow("at least one option");
-    await expect(
-      llm.decide(STATE, { q: { type: "rank", instructions: "?" } } as never),
-    ).rejects.toThrow('unknown type "rank"');
+    await expect(llm.decide(STATE, { q: { type: "rank", instructions: "?" } } as never)).rejects.toThrow(
+      'unknown type "rank"',
+    );
     expect(calls).toHaveLength(0);
   });
 
   test("throws on non-ok responses with the error body", async () => {
-    const fetcher = (async () => new Response("model does not support decisions", { status: 400 })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      new Response("model does not support decisions", { status: 400 })) as unknown as typeof fetch;
     const llm = createClient(fetcher);
 
     await expect(llm.decide(STATE, QUESTIONS)).rejects.toThrow("HTTP 400: model does not support decisions");
   });
 
   test("throws on malformed responses", async () => {
-    await expect(createClient(capturingFetcher({ model: "m" }).fetcher).decide(STATE, QUESTIONS)).rejects.toThrow(
-      "missing answers object",
-    );
+    await expect(
+      createClient(capturingFetcher({ model: "m" }).fetcher).decide(STATE, QUESTIONS),
+    ).rejects.toThrow("missing answers object");
 
     const { angry: _angry, ...partial } = RESPONSE.answers;
     await expect(
@@ -374,7 +423,9 @@ describe("LLMClient.decide()", () => {
       model: "claude-haiku-4-5-20251001",
     });
 
-    expect(createAnthropicCompatibleAdapter({ baseURL: "https://x.test", model: "m" }).decide).toBeUndefined();
+    expect(
+      createAnthropicCompatibleAdapter({ baseURL: "https://x.test", model: "m" }).decide,
+    ).toBeUndefined();
     await expect(llm.decide(STATE, QUESTIONS)).rejects.toThrow(
       'Provider "anthropic-compatible" does not support decision models',
     );

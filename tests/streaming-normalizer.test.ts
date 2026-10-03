@@ -30,13 +30,21 @@ function reference(chunks: Chunk[]): ObservedEvent[] {
 
   const emit = (done: boolean): void => {
     const normalized = normalizeModelOutput(text, reasoning);
-    if (!done && lastText !== undefined && normalized.text === lastText && normalized.reasoning === lastReasoning) {
+    if (
+      !done &&
+      lastText !== undefined &&
+      normalized.text === lastText &&
+      normalized.reasoning === lastReasoning
+    ) {
       return;
     }
     const stableText = done ? normalized.text : withoutTrailingThinkTagPrefix(normalized.text);
     const stableReasoning = done ? normalized.reasoning : withoutTrailingThinkTagPrefix(normalized.reasoning);
     // A retraction reports the whole stable value again, flagged as a resync.
-    const resync = { text: !stableText.startsWith(previousText), reasoning: !stableReasoning.startsWith(previousReasoning) };
+    const resync = {
+      text: !stableText.startsWith(previousText),
+      reasoning: !stableReasoning.startsWith(previousReasoning),
+    };
     events.push({
       text: normalized.text,
       reasoning: normalized.reasoning,
@@ -106,15 +114,43 @@ function random(seed: number): () => number {
 }
 
 const PIECES = [
-  "hello ", "world", "<think>", "</think>", "<THINK>", "</ Think >", "<think a=\">\">", "<", "/", "t", "h", "i",
-  "n", "k", ">", " ", "\n", "{\"a\":1}", "<b>", "a < b", "</think", "<thinking>", "x",
+  "hello ",
+  "world",
+  "<think>",
+  "</think>",
+  "<THINK>",
+  "</ Think >",
+  '<think a=">">',
+  "<",
+  "/",
+  "t",
+  "h",
+  "i",
+  "n",
+  "k",
+  ">",
+  " ",
+  "\n",
+  '{"a":1}',
+  "<b>",
+  "a < b",
+  "</think",
+  "<thinking>",
+  "x",
 ];
 
 function randomChunks(next: () => number): Chunk[] {
-  const source = Array.from({ length: 4 + Math.floor(next() * 30) }, () => PIECES[Math.floor(next() * PIECES.length)]).join("");
-  const reasoningSource = next() < 0.4
-    ? Array.from({ length: Math.floor(next() * 12) }, () => PIECES[Math.floor(next() * PIECES.length)]).join("")
-    : "";
+  const source = Array.from(
+    { length: 4 + Math.floor(next() * 30) },
+    () => PIECES[Math.floor(next() * PIECES.length)],
+  ).join("");
+  const reasoningSource =
+    next() < 0.4
+      ? Array.from(
+          { length: Math.floor(next() * 12) },
+          () => PIECES[Math.floor(next() * PIECES.length)],
+        ).join("")
+      : "";
   const chunks: Chunk[] = [];
   let textCursor = 0;
   let reasoningCursor = 0;
@@ -144,7 +180,12 @@ describe("streaming normalizer", () => {
   test("long outputs, where the delta window slides, match too", async () => {
     const next = random(3);
     for (let run = 0; run < 150; run += 1) {
-      const chunks = [...randomChunks(next), ...randomChunks(next), ...randomChunks(next), ...randomChunks(next)];
+      const chunks = [
+        ...randomChunks(next),
+        ...randomChunks(next),
+        ...randomChunks(next),
+        ...randomChunks(next),
+      ];
       expect({ chunks, events: await actual(chunks) }).toEqual({ chunks, events: reference(chunks) });
     }
   });
@@ -195,7 +236,9 @@ describe("streaming normalizer", () => {
       const view = { text: "", reasoning: "" };
       const fold = (update: ReturnType<typeof normalizer.push>): void => {
         view.text = update.resync.text ? update.delta.text : view.text + update.delta.text;
-        view.reasoning = update.resync.reasoning ? update.delta.reasoning : view.reasoning + update.delta.reasoning;
+        view.reasoning = update.resync.reasoning
+          ? update.delta.reasoning
+          : view.reasoning + update.delta.reasoning;
         resyncs += update.resync.text || update.resync.reasoning ? 1 : 0;
       };
       const chunks = [...randomChunks(next), ...randomChunks(next)];

@@ -14,9 +14,7 @@ import { createLLM, createMCPClient } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -73,48 +71,45 @@ console.log(`Expected calculation result: ${expectedMathResult}`);
 console.log("\nStreaming text output:\n");
 
 try {
-  const result = await llm.generate(
-    requestPrompt,
-    {
-      request: {
-        temperature: 0,
-        mcpClients: [calculatorMCP],
-        maxToolRounds: 8,
-        toolDebug: debugEnabled
-          ? {
-              enabled: true,
-              includeRequest: true,
-              includeResult: true,
-              includeResultOnError: true,
-              pretty: false,
-            }
-          : false,
-        onToolExecution: (execution) => {
-          toolExecutions.push({
-            name: execution.name,
-            error: execution.error,
-            durationMs: execution.durationMs,
-          });
-        },
-      },
-      stream: {
-        enabled: true,
-        onData: (event) => {
-          if (!started) {
-            started = true;
+  const result = await llm.generate(requestPrompt, {
+    request: {
+      temperature: 0,
+      mcpClients: [calculatorMCP],
+      maxToolRounds: 8,
+      toolDebug: debugEnabled
+        ? {
+            enabled: true,
+            includeRequest: true,
+            includeResult: true,
+            includeResultOnError: true,
+            pretty: false,
           }
-          if (event.delta.text.length > 0) {
-            tokens.push(event.delta.text);
-            process.stdout.write(event.delta.text);
-          }
-          chunkCount += 1;
-          if (event.done) {
-            completed = true;
-          }
-        },
+        : false,
+      onToolExecution: (execution) => {
+        toolExecutions.push({
+          name: execution.name,
+          error: execution.error,
+          durationMs: execution.durationMs,
+        });
       },
     },
-  );
+    stream: {
+      enabled: true,
+      onData: (event) => {
+        if (!started) {
+          started = true;
+        }
+        if (event.delta.text.length > 0) {
+          tokens.push(event.delta.text);
+          process.stdout.write(event.delta.text);
+        }
+        chunkCount += 1;
+        if (event.done) {
+          completed = true;
+        }
+      },
+    },
+  });
 
   const streamedText = tokens.join("");
 
@@ -135,7 +130,9 @@ try {
   }
 
   if (!toolExecutions.some((execution) => execution.name === "calculate")) {
-    throw new Error(`Tools validation failed: expected calculate tool call, got ${JSON.stringify(toolExecutions)}`);
+    throw new Error(
+      `Tools validation failed: expected calculate tool call, got ${JSON.stringify(toolExecutions)}`,
+    );
   }
 
   if (tokens.length === 0) {

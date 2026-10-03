@@ -14,9 +14,7 @@ import { createLLM, prompt, s } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
 const apiKey = process.env.LLM_API_KEY;

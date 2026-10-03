@@ -15,9 +15,7 @@ import { conversation, createLLM, loadImages, prompt, s, StructuredParseError } 
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({
@@ -33,7 +31,7 @@ const ReplySchema = s.schema(
   z.object({
     answer: s.string().min(1).describe("The assistant's answer."),
     confidence: s.number().min(0).max(1).describe("Confidence level between 0 and 1."),
-  })
+  }),
 );
 
 // --- Example 1: multi-turn conversation from history ---
@@ -73,9 +71,10 @@ if (!imagePath) {
   // loadImages() reads the file and builds the content blocks — no resizing.
   const imageContent = await loadImages(imagePath);
 
-  const multimodalPrompt = prompt()
-    .system`You are a vision assistant. Describe images concisely.`
-    .user([{ type: "text", text: "What color is dominant in this image?" }, ...imageContent]);
+  const multimodalPrompt = prompt().system`You are a vision assistant. Describe images concisely.`.user([
+    { type: "text", text: "What color is dominant in this image?" },
+    ...imageContent,
+  ]);
 
   try {
     const result = await llm.structured(ReplySchema, multimodalPrompt);

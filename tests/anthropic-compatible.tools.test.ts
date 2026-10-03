@@ -145,30 +145,34 @@ describe("anthropic-compatible MCP tools", () => {
     });
 
     await adapter.complete({
-      messages: [{
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Compare these images" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,YWJj" } },
+            { type: "image_url", image_url: { url: "https://example.com/image.jpg" } },
+          ],
+        },
+      ],
+    });
+
+    expect(requestBody.messages).toEqual([
+      {
         role: "user",
         content: [
           { type: "text", text: "Compare these images" },
-          { type: "image_url", image_url: { url: "data:image/png;base64,YWJj" } },
-          { type: "image_url", image_url: { url: "https://example.com/image.jpg" } },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: "YWJj" },
+          },
+          {
+            type: "image",
+            source: { type: "url", url: "https://example.com/image.jpg" },
+          },
         ],
-      }],
-    });
-
-    expect(requestBody.messages).toEqual([{
-      role: "user",
-      content: [
-        { type: "text", text: "Compare these images" },
-        {
-          type: "image",
-          source: { type: "base64", media_type: "image/png", data: "YWJj" },
-        },
-        {
-          type: "image",
-          source: { type: "url", url: "https://example.com/image.jpg" },
-        },
-      ],
-    }]);
+      },
+    ]);
   });
 
   test("translates array content when an assistant message also contains tool calls", async () => {
@@ -193,11 +197,13 @@ describe("anthropic-compatible MCP tools", () => {
         {
           role: "assistant",
           content: [{ type: "text", text: "Calling the tool" }],
-          tool_calls: [{
-            id: "call_1",
-            type: "function",
-            function: { name: "sum", arguments: "{\"a\":1,\"b\":2}" },
-          }],
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "sum", arguments: '{"a":1,"b":2}' },
+            },
+          ],
         },
         { role: "tool", tool_call_id: "call_1", content: "3" },
       ],
@@ -305,7 +311,11 @@ describe("anthropic-compatible MCP tools", () => {
     expect(argsSeen).toEqual({ a: 4, b: 6 });
     expect(out.text).toBe("10");
     expect(out.toolCalls?.[0]).toMatchObject({ id: "toolu_sum", name: "sum", output: 10 });
-    expect(out.toolExecutions?.[0]).toMatchObject({ callId: "toolu_sum", clientId: "calculator", handledLocally: true });
+    expect(out.toolExecutions?.[0]).toMatchObject({
+      callId: "toolu_sum",
+      clientId: "calculator",
+      handledLocally: true,
+    });
     // Rounds of 8 and 3 prompt tokens: billed input sums to 11, but only 8 of
     // them were ever in the window at once.
     expect(out.usage).toEqual({ inputTokens: 11, contextTokens: 8, outputTokens: 4, totalTokens: 15 });
@@ -727,14 +737,15 @@ describe("anthropic-compatible MCP tools", () => {
 
 describe("anthropic-compatible pass-through reasoning", () => {
   test("extracts thinking blocks as reasoning in complete pass-through", async () => {
-    const fetcher = (async () => jsonResponse({
-      content: [
-        { type: "thinking", thinking: "Consider the sum carefully." },
-        { type: "text", text: "42" },
-      ],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 5, output_tokens: 2 },
-    })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      jsonResponse({
+        content: [
+          { type: "thinking", thinking: "Consider the sum carefully." },
+          { type: "text", text: "42" },
+        ],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 5, output_tokens: 2 },
+      })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -749,10 +760,11 @@ describe("anthropic-compatible pass-through reasoning", () => {
   });
 
   test("accepts a thinking-only response without throwing", async () => {
-    const fetcher = (async () => jsonResponse({
-      content: [{ type: "thinking", thinking: "Only thoughts, no text." }],
-      stop_reason: "max_tokens",
-    })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      jsonResponse({
+        content: [{ type: "thinking", thinking: "Only thoughts, no text." }],
+        stop_reason: "max_tokens",
+      })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -767,7 +779,8 @@ describe("anthropic-compatible pass-through reasoning", () => {
   });
 
   test("still throws when the response has no text, reasoning, or tool calls", async () => {
-    const fetcher = (async () => jsonResponse({ content: [], stop_reason: "end_turn" })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      jsonResponse({ content: [], stop_reason: "end_turn" })) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -837,13 +850,15 @@ describe("anthropic-compatible conversation history normalization", () => {
         {
           role: "assistant",
           content: "",
-          tool_calls: [{
-            id: "call_1",
-            type: "function",
-            function: { name: "get_weather", arguments: "{not valid json" },
-          }],
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "get_weather", arguments: "{not valid json" },
+            },
+          ],
         },
-        { role: "tool", content: "{\"temp\":18}", tool_call_id: "call_1" },
+        { role: "tool", content: '{"temp":18}', tool_call_id: "call_1" },
         { role: "user", content: "And tomorrow?" },
       ],
     });

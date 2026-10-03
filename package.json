@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
+    "prettier": "^3.9.9",
     "typescript": "^7.0.2"
   },
   "exports": {
@@ -34,6 +35,8 @@
   ],
   "license": "MIT",
   "scripts": {
+    "format": "prettier --write src tests examples bench '*.json'",
+    "format:check": "prettier --check src tests examples bench '*.json'",
     "dev": "bun run examples/runner.ts",
     "bench:stream": "bun run bench/streaming.ts",
     "build": "bun run build:types && bun run build:esm && bun run build:cjs",

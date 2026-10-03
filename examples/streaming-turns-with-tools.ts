@@ -14,9 +14,7 @@ import { createLLM, createMCPClient, type LLMReasoningEffort, type StreamTurnTra
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -95,7 +93,8 @@ try {
 
           const label = `turn ${transition.turnIndex}: ${transition.kind}`;
           if (transition.kind === "reasoningComplete") {
-            const text = transition.reasoningText?.trim() || reasoningByTurn.get(transition.turnIndex)?.trim();
+            const text =
+              transition.reasoningText?.trim() || reasoningByTurn.get(transition.turnIndex)?.trim();
             if (currentlyStreamingReasoning) {
               process.stdout.write("\n");
               currentlyStreamingReasoning = false;
@@ -154,10 +153,12 @@ try {
 
   console.log(`\n\n${bold("Turn transitions")}`);
   for (const transition of transitions) {
-    console.log(dim(
-      `- turn ${transition.turnIndex}: ${transition.kind}`
-      + (transition.toolCalls ? ` (${transition.toolCalls.length} tool call(s))` : ""),
-    ));
+    console.log(
+      dim(
+        `- turn ${transition.turnIndex}: ${transition.kind}` +
+          (transition.toolCalls ? ` (${transition.toolCalls.length} tool call(s))` : ""),
+      ),
+    );
   }
 
   console.log(`\n${bold("Reasoning blocks")}`);
@@ -184,10 +185,7 @@ function indent(text: string): string {
     .join("\n");
 }
 
-function writeHeader(
-  label: string,
-  tone: "reasoning" | "tool" | "result" | "visible" | "end",
-): void {
+function writeHeader(label: string, tone: "reasoning" | "tool" | "result" | "visible" | "end"): void {
   const colorize = {
     reasoning: brightCyan,
     tool: brightMagenta,

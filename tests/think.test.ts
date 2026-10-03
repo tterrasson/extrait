@@ -3,13 +3,7 @@ import { sanitizeThink } from "@/think";
 
 describe("think blocks", () => {
   test("extracts think content", () => {
-    const input = [
-      "before",
-      "<think>",
-      "internal reasoning",
-      "</think>",
-      "after",
-    ].join("\n");
+    const input = ["before", "<think>", "internal reasoning", "</think>", "after"].join("\n");
 
     const result = sanitizeThink(input);
 

@@ -26,15 +26,12 @@ describe("prompt", () => {
   });
 
   test("supports fluent system/user messages with template dedent", () => {
-    const built = prompt()
-      .system`
+    const built = prompt().system`
         System line
-      `
-      .user`
+      `.user`
         User line 1
         User line 2
-      `
-      .build();
+      `.build();
 
     expect(built.messages).toEqual([
       { role: "system", content: "System line" },
@@ -50,12 +47,7 @@ describe("prompt", () => {
   });
 
   test("supports assistant messages and preserves turn order", () => {
-    const built = prompt()
-      .system`System line`
-      .user`Hello`
-      .assistant`Hi there`
-      .user`Need help`
-      .build();
+    const built = prompt().system`System line`.user`Hello`.assistant`Hi there`.user`Need help`.build();
 
     expect(built.messages).toEqual([
       { role: "system", content: "System line" },

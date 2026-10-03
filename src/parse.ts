@@ -353,10 +353,7 @@ function markSelectedDiagnostic(
   }
 }
 
-function emitTrace(
-  onTrace: ParseLLMOutputOptions["onTrace"],
-  event: ParseTraceEvent,
-): void {
+function emitTrace(onTrace: ParseLLMOutputOptions["onTrace"], event: ParseTraceEvent): void {
   onTrace?.(event);
 }
 

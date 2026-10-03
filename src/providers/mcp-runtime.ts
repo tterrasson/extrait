@@ -1,10 +1,4 @@
-import type {
-  LLMRequest,
-  LLMToolCall,
-  LLMToolExecution,
-  MCPToolClient,
-  MCPToolDescriptor,
-} from "../types";
+import type { LLMRequest, LLMToolCall, LLMToolExecution, MCPToolClient, MCPToolDescriptor } from "../types";
 import { emitToolExecution } from "./mcp-runtime-debug";
 
 export interface RuntimeToolCall {
@@ -117,7 +111,9 @@ export async function resolveMCPToolset(clients: MCPToolClient[] | undefined): P
   };
 }
 
-export function toProviderFunctionTools(toolset: ResolvedMCPToolset): Array<Record<string, unknown>> | undefined {
+export function toProviderFunctionTools(
+  toolset: ResolvedMCPToolset,
+): Array<Record<string, unknown>> | undefined {
   if (toolset.tools.length === 0) {
     return undefined;
   }
@@ -441,9 +437,7 @@ function uniqueToolName(taken: Map<string, ResolvedMCPTool>, name: string): stri
   // of the same shape, so at worst it exhausts the names already taken.
   for (let suffix = 2; ; suffix += 1) {
     const marker = `_${suffix}`;
-    const stem = name
-      .slice(0, MAX_TOOL_NAME_LENGTH - marker.length)
-      .replace(RE_TRAILING_UNDERSCORES, "");
+    const stem = name.slice(0, MAX_TOOL_NAME_LENGTH - marker.length).replace(RE_TRAILING_UNDERSCORES, "");
     const candidate = `${stem}${marker}`;
     if (!taken.has(candidate)) {
       return candidate;

@@ -33,10 +33,7 @@ const RE_IDENTIFIER_CHAR = /[a-zA-Z0-9:_-]/;
 const TAG_NAME = "think";
 
 type TagClass =
-  | { kind: "none" }
-  | { kind: "undecided" }
-  | { kind: "open"; end: number }
-  | { kind: "close"; end: number };
+  { kind: "none" } | { kind: "undecided" } | { kind: "open"; end: number } | { kind: "close"; end: number };
 
 function isTagSpace(char: string | undefined): boolean {
   return char === " " || char === "\t" || char === "\n" || char === "\r";
@@ -263,7 +260,8 @@ class TrimmedText {
       last -= 1;
     }
 
-    const added = this.body.length === 0 ? text.slice(first, last + 1) : this.pending + text.slice(0, last + 1);
+    const added =
+      this.body.length === 0 ? text.slice(first, last + 1) : this.pending + text.slice(0, last + 1);
     this.body += added;
     this.pending = text.slice(last + 1);
     return added;
@@ -380,7 +378,9 @@ class OutputState {
     }
     // The dedicated reasoning comes first: growing it now edits the middle.
     this.reasoning.replace(
-      [this.dedicated.body, this.blocks, this.block?.body ?? ""].filter((part) => part.length > 0).join(SEPARATOR),
+      [this.dedicated.body, this.blocks, this.block?.body ?? ""]
+        .filter((part) => part.length > 0)
+        .join(SEPARATOR),
     );
   }
 }
@@ -401,7 +401,11 @@ class FieldReport {
    * whether it extends the previous report, and the newly stable delta. The
    * stable form withholds a trailing partial think tag unless `done`.
    */
-  update(field: Field, provisional: Field | undefined, done: boolean): {
+  update(
+    field: Field,
+    provisional: Field | undefined,
+    done: boolean,
+  ): {
     value: string;
     changed: boolean;
     extends: boolean;

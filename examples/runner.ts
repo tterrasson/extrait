@@ -22,7 +22,7 @@ const availableExamples = [
   "conversation",
   "simulated-tools",
   "embeddings",
-  "decision"
+  "decision",
 ] as const;
 
 const exampleName = process.argv[2] || "simple";

@@ -15,9 +15,7 @@ import { createLLM, prompt, s, StructuredParseError } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -46,12 +44,12 @@ const DecompositionSchema = s.schema(
           id: s.number().int().describe("Sub-question ID"),
           question: s.string().describe("The sub-question to answer"),
           reasoning: s.string().describe("Why this sub-question is needed"),
-        })
+        }),
       )
       .min(1)
       .max(4)
       .describe("Break the question into 1-4 sub-questions"),
-  })
+  }),
 );
 
 // Step 2: Answer each sub-question
@@ -61,7 +59,7 @@ const AnswerSchema = s.schema(
     questionId: s.number().int().describe("ID of the question being answered"),
     answer: s.string().min(1).describe("The answer to this sub-question"),
     confidence: s.number().min(0).max(1).describe("Confidence in this answer (0-1)"),
-  })
+  }),
 );
 
 // Step 3: Synthesize final answer
@@ -71,13 +69,11 @@ const SynthesisSchema = s.schema(
     answer: s.string().min(1).describe("The comprehensive final answer"),
     summary: s.string().describe("Brief summary of the reasoning process"),
     confidence: s.number().min(0).max(1).describe("Overall confidence in the final answer"),
-  })
+  }),
 );
 
 const userInput = process.argv.slice(3).join(" ").trim();
-const question =
-  userInput ||
-  "How does photosynthesis work and why is it important for life on Earth?";
+const question = userInput || "How does photosynthesis work and why is it important for life on Earth?";
 
 console.log("🧠 Multi-Step Reasoning Process\n");
 console.log("Question:", question);
@@ -96,7 +92,7 @@ try {
       Question: """${question}"""
 
       Generate 2-4 sub-questions that cover all aspects needed to answer the main question.
-    `
+    `,
   );
 
   console.log("Sub-questions identified:");
@@ -124,7 +120,7 @@ try {
         Context: This is part ${subQ.id} of answering the larger question: "${question}"
 
         Provide a clear, factual answer.
-      `
+      `,
     );
 
     answers.push(answer.data);
@@ -136,9 +132,7 @@ try {
   // STEP 3: Synthesize final answer
   console.log("🎯 Step 3: Synthesizing final answer...\n");
 
-  const answersText = answers
-    .map((a) => `Q${a.questionId}: ${a.answer}`)
-    .join("\n\n");
+  const answersText = answers.map((a) => `Q${a.questionId}: ${a.answer}`).join("\n\n");
 
   const synthesis = await llm.structured(
     SynthesisSchema,
@@ -151,7 +145,7 @@ try {
       ${answersText}
 
       Synthesize a complete, coherent answer that integrates all the information from the sub-answers.
-    `
+    `,
   );
 
   console.log("━".repeat(60));

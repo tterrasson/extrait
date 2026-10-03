@@ -84,10 +84,7 @@ describe("formatZodSchemaLikeTypeScript – discriminated unions", () => {
 
 describe("formatZodSchemaLikeTypeScript – intersection", () => {
   test("formats an intersection", () => {
-    const schema = z.intersection(
-      z.object({ a: z.string() }),
-      z.object({ b: z.number() }),
-    );
+    const schema = z.intersection(z.object({ a: z.string() }), z.object({ b: z.number() }));
     const result = formatZodSchemaLikeTypeScript(schema);
     expect(result).toContain("&");
     expect(result).toContain("a: string");
@@ -119,16 +116,12 @@ describe("formatZodSchemaLikeTypeScript – wrapper types", () => {
   });
 
   test("unwraps readonly on object", () => {
-    const result = formatZodSchemaLikeTypeScript(
-      z.object({ x: z.string() }).readonly(),
-    );
+    const result = formatZodSchemaLikeTypeScript(z.object({ x: z.string() }).readonly());
     expect(result).toContain("x: string");
   });
 
   test("unwraps pipeline to output type", () => {
-    const result = formatZodSchemaLikeTypeScript(
-      z.string().pipe(z.coerce.number()),
-    );
+    const result = formatZodSchemaLikeTypeScript(z.string().pipe(z.coerce.number()));
     expect(result).toBe("number");
   });
 });
@@ -151,9 +144,11 @@ describe("formatZodSchemaLikeTypeScript – descriptions through wrappers", () =
   });
 
   test("reads description through readonly wrapper", () => {
-    const schema = z.object({
-      id: z.string().describe("unique id"),
-    }).readonly();
+    const schema = z
+      .object({
+        id: z.string().describe("unique id"),
+      })
+      .readonly();
     const result = formatZodSchemaLikeTypeScript(schema);
     expect(result).toContain("// unique id");
   });

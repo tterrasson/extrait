@@ -958,3 +958,5 @@ Run the test suite with Bun.
 ```bash
 bun run test
 ```
+
+Use `bun run format` to apply the repository's Prettier formatting, or `bun run format:check` to verify it without changes.

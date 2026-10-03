@@ -126,7 +126,9 @@ function assertGeneratePrompt(prompt: StructuredPromptBuilder): void {
     throw new TypeError(
       "generate() takes the prompt and the options as two arguments: " +
         "generate(prompt, options). The single-object form generate({ prompt, ...options }) was removed" +
-        (legacyKeys.length > 0 ? ` (found option ${legacyKeys.map((key) => `"${key}"`).join(", ")} in the prompt).` : "."),
+        (legacyKeys.length > 0
+          ? ` (found option ${legacyKeys.map((key) => `"${key}"`).join(", ")} in the prompt).`
+          : "."),
     );
   }
 }
@@ -138,7 +140,9 @@ function prepareGeneratePromptPayload(
   if (Array.isArray(payload.messages) && payload.messages.length > 0) {
     const messages = payload.messages.map((message) => ({ ...message }));
     const mergedSystemPrompt = mergeSystemPrompts(payload.systemPrompt, systemPrompt);
-    const systemMessages = mergedSystemPrompt ? [{ role: "system" as const, content: mergedSystemPrompt }] : [];
+    const systemMessages = mergedSystemPrompt
+      ? [{ role: "system" as const, content: mergedSystemPrompt }]
+      : [];
 
     return {
       messages: [...systemMessages, ...messages],

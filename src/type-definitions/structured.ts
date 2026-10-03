@@ -42,8 +42,7 @@ export interface StructuredPromptResolver {
 export type StructuredPromptValue = string | StructuredPromptPayload | StructuredPromptResolver;
 
 export type StructuredPromptBuilder =
-  | StructuredPromptValue
-  | ((context: StructuredPromptContext) => StructuredPromptValue);
+  StructuredPromptValue | ((context: StructuredPromptContext) => StructuredPromptValue);
 
 export interface StructuredDebugOptions {
   enabled?: boolean;

@@ -3,13 +3,7 @@ import { z } from "zod";
 import { createStreamingStructuredParser } from "@/structured-streaming";
 import { normalizeModelOutput } from "@/generate-output";
 import { structured } from "@/structured";
-import type {
-  LLMAdapter,
-  LLMRequest,
-  LLMResponse,
-  LLMStreamCallbacks,
-  StructuredStreamEvent,
-} from "@/types";
+import type { LLMAdapter, LLMRequest, LLMResponse, LLMStreamCallbacks, StructuredStreamEvent } from "@/types";
 
 /** Replays `raw` one character at a time and returns the preview at each step. */
 function previewAtEveryPrefix(raw: string, reasoning?: string): unknown[] {
@@ -66,7 +60,7 @@ function randomJsonValue(random: () => number, depth: number): unknown {
 
 /** Includes the characters that stress escaping and the root scanner. */
 function randomString(random: () => number): string {
-  const alphabet = ['a', 'z', ' ', '"', "\\", "{", "}", "[", "]", ":", ",", "é", "\n", "\t", "0"];
+  const alphabet = ["a", "z", " ", '"', "\\", "{", "}", "[", "]", ":", ",", "é", "\n", "\t", "0"];
   const size = Math.floor(random() * 8);
   let out = "";
   for (let index = 0; index < size; index += 1) {
@@ -383,7 +377,7 @@ describe("streaming preview fuzz", () => {
 
   test("corrupted documents never throw and never stop making progress", () => {
     const random = makeRandom(0xdead);
-    const noise = ['{', '}', '[', ']', '"', ':', ',', "\\", "e", "-", " ", " "];
+    const noise = ["{", "}", "[", "]", '"', ":", ",", "\\", "e", "-", " ", " "];
     for (let iteration = 0; iteration < 500; iteration += 1) {
       const document = randomJsonValue(random, 0);
       if (typeof document !== "object" || document === null) {
@@ -576,12 +570,9 @@ describe("streaming preview integration", () => {
         return { text: largeText, finishReason: "stop" };
       },
     };
-    await structured(
-      largeModel,
-      z.object({ pad: z.string(), a: z.number(), b: z.number() }),
-      "Return JSON",
-      { stream: { enabled: true, onData: (event) => largeEvents.push(event) } },
-    );
+    await structured(largeModel, z.object({ pad: z.string(), a: z.number(), b: z.number() }), "Return JSON", {
+      stream: { enabled: true, onData: (event) => largeEvents.push(event) },
+    });
     expect(largeEvents).toHaveLength(4);
     expect(largeEvents[0]?.snapshot.data).toEqual({ pad, a: 1 } as never);
     // Reused by reference: no recomputation happened for the intermediate events.

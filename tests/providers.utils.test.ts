@@ -58,20 +58,17 @@ describe("providers/utils buildURL", () => {
   });
 
   test("preserves a base path for anthropic-compatible style endpoints", () => {
-    expect(buildURL("https://example.com/api/", "/v1/messages")).toBe(
-      "https://example.com/api/v1/messages",
-    );
+    expect(buildURL("https://example.com/api/", "/v1/messages")).toBe("https://example.com/api/v1/messages");
   });
 
   test("rejects an absolute path pointing at another host", () => {
-    expect(() => buildURL("https://example.com/api/", "https://attacker.example/v1/responses"))
-      .toThrow(/different origin/);
+    expect(() => buildURL("https://example.com/api/", "https://attacker.example/v1/responses")).toThrow(
+      /different origin/,
+    );
   });
 
   test("rejects an absolute path on a non-http scheme", () => {
-    expect(() => buildURL("https://example.com/api/", "file:///etc/passwd")).toThrow(
-      /different origin/,
-    );
+    expect(() => buildURL("https://example.com/api/", "file:///etc/passwd")).toThrow(/different origin/);
   });
 
   test("accepts an absolute path on the same origin", () => {
@@ -87,10 +84,7 @@ describe("providers/utils cleanUndefined", () => {
   });
 
   test("drops __proto__ instead of hitting the prototype setter", () => {
-    const polluted = JSON.parse('{"model":"m","__proto__":{"polluted":true}}') as Record<
-      string,
-      unknown
-    >;
+    const polluted = JSON.parse('{"model":"m","__proto__":{"polluted":true}}') as Record<string, unknown>;
     const cleaned = cleanUndefined(polluted);
 
     expect(cleaned).toEqual({ model: "m" });
@@ -140,10 +134,7 @@ describe("providers/utils preferLatestUsage", () => {
 
   test("preserves older fields when the newer snapshot is partial", () => {
     expect(
-      preferLatestUsage(
-        { inputTokens: 10, outputTokens: 1, totalTokens: 11 },
-        { outputTokens: 2 },
-      ),
+      preferLatestUsage({ inputTokens: 10, outputTokens: 1, totalTokens: 11 }, { outputTokens: 2 }),
     ).toEqual({ inputTokens: 10, contextTokens: 10, outputTokens: 2, totalTokens: 11 });
   });
 
@@ -170,9 +161,9 @@ describe("providers/utils usage context tokens", () => {
   });
 
   test("carries an already-merged context through further merges", () => {
-    expect(
-      mergeUsage({ inputTokens: 5400, contextTokens: 2600 }, { inputTokens: 900 })?.contextTokens,
-    ).toBe(2600);
+    expect(mergeUsage({ inputTokens: 5400, contextTokens: 2600 }, { inputTokens: 900 })?.contextTokens).toBe(
+      2600,
+    );
   });
 
   test("is left undefined when no side reports tokens", () => {

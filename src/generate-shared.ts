@@ -23,7 +23,6 @@ const sharedOutdent = createOutdent({
   newline: "\n",
 });
 
-
 export type PromptRequestOptions = Omit<LLMRequest, "prompt" | "systemPrompt" | "messages">;
 
 export interface StreamDelta {
@@ -143,7 +142,10 @@ export function normalizePromptPayload(value: StructuredPromptPayload): Structur
   };
 }
 
-export function applyPromptOutdent(payload: StructuredPromptPayload, enabled: boolean): StructuredPromptPayload {
+export function applyPromptOutdent(
+  payload: StructuredPromptPayload,
+  enabled: boolean,
+): StructuredPromptPayload {
   if (!enabled) {
     return payload;
   }
@@ -158,7 +160,10 @@ export function applyPromptOutdent(payload: StructuredPromptPayload, enabled: bo
   };
 }
 
-export function applyOutdentToOptionalPrompt(value: string | undefined, enabled: boolean): string | undefined {
+export function applyOutdentToOptionalPrompt(
+  value: string | undefined,
+  enabled: boolean,
+): string | undefined {
   if (!enabled || typeof value !== "string") {
     return value;
   }

@@ -80,11 +80,7 @@ function removeIndentAfterNewlines(segment: string, indentation: number): string
     }
 
     let removed = 0;
-    while (
-      index + 1 < segment.length &&
-      removed < indentation &&
-      isIndentChar(segment.charAt(index + 1))
-    ) {
+    while (index + 1 < segment.length && removed < indentation && isIndentChar(segment.charAt(index + 1))) {
       index += 1;
       removed += 1;
     }

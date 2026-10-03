@@ -4,7 +4,7 @@ import {
   createDefaultProviderRegistry,
   type BuiltinProviderKind,
   type ModelAdapterConfig,
-  type ProviderRegistry
+  type ProviderRegistry,
 } from "./providers/registry";
 import { generate } from "./generate";
 import { structured } from "./structured";
@@ -44,9 +44,10 @@ interface LLMClientDefaults {
   timeout?: StructuredTimeoutOptions;
 }
 
-export type CreateLLMOptions<TProvider extends string = BuiltinProviderKind> = ModelAdapterConfig<TProvider> & {
-  defaults?: LLMClientDefaults;
-};
+export type CreateLLMOptions<TProvider extends string = BuiltinProviderKind> =
+  ModelAdapterConfig<TProvider> & {
+    defaults?: LLMClientDefaults;
+  };
 
 export interface LLMClient {
   adapter: LLMAdapter;
@@ -57,10 +58,7 @@ export interface LLMClient {
     prompt: StructuredPromptBuilder,
     options?: StructuredCallOptions<TSchema>,
   ): Promise<StructuredResult<z.infer<TSchema>>>;
-  generate(
-    prompt: StructuredPromptBuilder,
-    options?: GenerateCallOptions,
-  ): Promise<GenerateResult>;
+  generate(prompt: StructuredPromptBuilder, options?: GenerateCallOptions): Promise<GenerateResult>;
   embed(input: string | string[], options?: Omit<EmbeddingRequest, "input">): Promise<EmbeddingResult>;
   /**
    * Asks a decision model (llama.cpp `/v1/systemone`) to score the options of
@@ -94,14 +92,14 @@ export function createLLM<TProvider extends string>(
       return structured(adapter, schema, prompt, merged);
     },
 
-    async generate(
-      prompt: StructuredPromptBuilder,
-      options?: GenerateCallOptions,
-    ): Promise<GenerateResult> {
+    async generate(prompt: StructuredPromptBuilder, options?: GenerateCallOptions): Promise<GenerateResult> {
       return generate(adapter, prompt, mergeGenerateOptions(defaults, options));
     },
 
-    async embed(input: string | string[], options: Omit<EmbeddingRequest, "input"> = {}): Promise<EmbeddingResult> {
+    async embed(
+      input: string | string[],
+      options: Omit<EmbeddingRequest, "input"> = {},
+    ): Promise<EmbeddingResult> {
       if (!adapter.embed) {
         throw new Error(`Provider "${adapter.provider ?? "unknown"}" does not support embeddings.`);
       }
@@ -142,10 +140,7 @@ function mergeStructuredOptions<TSchema extends z.ZodTypeAny>(
       ...defaults?.request,
       ...overrides?.request,
     },
-    stream: mergeObjectLike(
-      defaults?.stream as StructuredCallOptions<TSchema>["stream"],
-      overrides?.stream,
-    ),
+    stream: mergeObjectLike(defaults?.stream as StructuredCallOptions<TSchema>["stream"], overrides?.stream),
     selfHeal: mergeObjectLike(defaults?.selfHeal, overrides?.selfHeal),
     debug: mergeObjectLike(defaults?.debug, overrides?.debug),
     timeout: mergeObjectLike(defaults?.timeout, overrides?.timeout),
@@ -174,7 +169,10 @@ function mergeGenerateOptions(
   };
 }
 
-function mergeObjectLike<TValue>(defaults: TValue | undefined, overrides: TValue | undefined): TValue | undefined {
+function mergeObjectLike<TValue>(
+  defaults: TValue | undefined,
+  overrides: TValue | undefined,
+): TValue | undefined {
   if (overrides === undefined) {
     return defaults;
   }

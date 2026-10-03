@@ -124,9 +124,7 @@ describe("consumeSSE", () => {
       },
     });
 
-    await expect(consumeSSE(new Response(stream), () => {})).rejects.toThrow(
-      /without an event boundary/,
-    );
+    await expect(consumeSSE(new Response(stream), () => {})).rejects.toThrow(/without an event boundary/);
     expect(cancelled).toBe(true);
   });
 });

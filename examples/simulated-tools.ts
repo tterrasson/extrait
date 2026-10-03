@@ -13,9 +13,7 @@ import { conversation, createLLM } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 const debugEnabled = process.env.STRUCTURED_DEBUG === "1";
 
 const llm = createLLM({

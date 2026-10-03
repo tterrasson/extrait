@@ -32,22 +32,14 @@ export function languageBonus(language: string | null): number {
     return 100;
   }
 
-  if (
-    language === "javascript" ||
-    language === "typescript" ||
-    language === "js" ||
-    language === "ts"
-  ) {
+  if (language === "javascript" || language === "typescript" || language === "js" || language === "ts") {
     return 40;
   }
 
   return 0;
 }
 
-export function jsonShapeScore(
-  content: string,
-  acceptArrays: boolean,
-): number {
+export function jsonShapeScore(content: string, acceptArrays: boolean): number {
   const trimmed = content.trim();
   if (!trimmed) {
     return -100;
@@ -75,7 +67,7 @@ export function jsonShapeScore(
 
   const colonCount = countChar(trimmed, ":");
   const commaCount = countChar(trimmed, ",");
-  const quoteCount = countChar(trimmed, "\"");
+  const quoteCount = countChar(trimmed, '"');
 
   if (root === "{") {
     if (RE_EMPTY_OBJECT.test(trimmed)) {
@@ -280,10 +272,7 @@ export function resolveExtractionHeuristics(
   };
 
   const firstPassMin = normalizeInteger(merged.firstPassMin, defaults.firstPassMin);
-  const firstPassCap = Math.max(
-    firstPassMin,
-    normalizeInteger(merged.firstPassCap, defaults.firstPassCap),
-  );
+  const firstPassCap = Math.max(firstPassMin, normalizeInteger(merged.firstPassCap, defaults.firstPassCap));
   const secondPassMin = normalizeInteger(merged.secondPassMin, defaults.secondPassMin);
   const secondPassCap = Math.max(
     secondPassMin,
@@ -293,19 +282,10 @@ export function resolveExtractionHeuristics(
   return {
     firstPassMin,
     firstPassCap,
-    firstPassMultiplier: normalizeInteger(
-      merged.firstPassMultiplier,
-      defaults.firstPassMultiplier,
-    ),
+    firstPassMultiplier: normalizeInteger(merged.firstPassMultiplier, defaults.firstPassMultiplier),
     secondPassMin,
     secondPassCap,
-    secondPassMultiplier: normalizeInteger(
-      merged.secondPassMultiplier,
-      defaults.secondPassMultiplier,
-    ),
-    hintMaxLength: normalizeInteger(
-      merged.hintMaxLength,
-      defaults.hintMaxLength,
-    ),
+    secondPassMultiplier: normalizeInteger(merged.secondPassMultiplier, defaults.secondPassMultiplier),
+    hintMaxLength: normalizeInteger(merged.hintMaxLength, defaults.hintMaxLength),
   };
 }

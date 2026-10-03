@@ -10,14 +10,7 @@ import type {
   LLMToolCall,
   LLMUsage,
 } from "../types";
-import {
-  buildURL,
-  cleanUndefined,
-  isRecord,
-  pickString,
-  readErrorBody,
-  toFiniteNumber,
-} from "./utils";
+import { buildURL, cleanUndefined, isRecord, pickString, readErrorBody, toFiniteNumber } from "./utils";
 
 export interface OpenAICompatibleAdapterOptions {
   baseURL: string;
@@ -70,9 +63,9 @@ export async function embedOpenAI(
   }
 
   return {
-    embeddings: data.map((d: unknown) => (
-      isRecord(d) && Array.isArray(d.embedding) ? (d.embedding as number[]) : []
-    )),
+    embeddings: data.map((d: unknown) =>
+      isRecord(d) && Array.isArray(d.embedding) ? (d.embedding as number[]) : [],
+    ),
     model: pickString(json.model) ?? (body.model as string),
     usage: pickUsage(json),
     raw: json,
@@ -224,10 +217,7 @@ export function normalizeLogprobBytes(value: unknown): { bytes?: number[] | null
   if (value === null) {
     return { bytes: null };
   }
-  if (
-    Array.isArray(value) &&
-    value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
-  ) {
+  if (Array.isArray(value) && value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)) {
     return { bytes: value as number[] };
   }
   return {};
@@ -264,12 +254,14 @@ export function pickTextLikePart(value: unknown): string {
     return "";
   }
 
-  return pickString(value.text)
-    ?? pickString(value.output_text)
-    ?? pickString(value.refusal)
-    ?? pickString(value.reasoning)
-    ?? pickString(value.reasoning_content)
-    ?? (Array.isArray(value.content) ? value.content.map((part) => pickTextLikePart(part)).join("") : "");
+  return (
+    pickString(value.text) ??
+    pickString(value.output_text) ??
+    pickString(value.refusal) ??
+    pickString(value.reasoning) ??
+    pickString(value.reasoning_content) ??
+    (Array.isArray(value.content) ? value.content.map((part) => pickTextLikePart(part)).join("") : "")
+  );
 }
 
 export function pickUsage(payload: Record<string, unknown>): LLMUsage | undefined {

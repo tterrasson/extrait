@@ -1,8 +1,5 @@
 import type { DecisionRequest, DecisionResult } from "./decision";
-import type {
-  StructuredDebugOptions,
-  StructuredTimeoutOptions,
-} from "./structured";
+import type { StructuredDebugOptions, StructuredTimeoutOptions } from "./structured";
 
 export type HTTPHeaders = Record<string, string>;
 

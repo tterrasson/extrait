@@ -9,12 +9,7 @@ export interface ImageInput {
 }
 
 /** Everything `images()` can normalize without any I/O. */
-export type SyncImageSource =
-  | string
-  | URL
-  | Uint8Array
-  | ArrayBuffer
-  | ImageInput;
+export type SyncImageSource = string | URL | Uint8Array | ArrayBuffer | ImageInput;
 
 /** Everything `loadImages()` accepts — sync sources plus file paths and blobs. */
 export type ImageSource = SyncImageSource | Blob;
@@ -40,12 +35,17 @@ const MAX_FTYP_BOX_BYTES = 1024;
  */
 export function sniffMimeType(bytes: Uint8Array): string | undefined {
   const at = (index: number): number => bytes[index] ?? -1;
-  const ascii = (start: number, end: number): string =>
-    String.fromCharCode(...bytes.subarray(start, end));
+  const ascii = (start: number, end: number): string => String.fromCharCode(...bytes.subarray(start, end));
 
   if (
-    at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47 &&
-    at(4) === 0x0d && at(5) === 0x0a && at(6) === 0x1a && at(7) === 0x0a
+    at(0) === 0x89 &&
+    at(1) === 0x50 &&
+    at(2) === 0x4e &&
+    at(3) === 0x47 &&
+    at(4) === 0x0d &&
+    at(5) === 0x0a &&
+    at(6) === 0x1a &&
+    at(7) === 0x0a
   ) {
     return "image/png";
   }
@@ -82,11 +82,7 @@ export function sniffMimeType(bytes: Uint8Array): string | undefined {
     }
     if (
       brands.some(
-        (brand) =>
-          brand.startsWith("hei") ||
-          brand.startsWith("hev") ||
-          brand === "mif1" ||
-          brand === "msf1",
+        (brand) => brand.startsWith("hei") || brand.startsWith("hev") || brand === "mif1" || brand === "msf1",
       )
     ) {
       return "image/heic";
@@ -167,9 +163,7 @@ function toImageURL(source: SyncImageSource): string {
   if (source instanceof URL) {
     const { url, path } = splitURL(source);
     if (url) return url;
-    throw new Error(
-      `images() cannot read the local file "${path}" — use await loadImages(...) instead.`,
-    );
+    throw new Error(`images() cannot read the local file "${path}" — use await loadImages(...) instead.`);
   }
 
   if (source instanceof Uint8Array || source instanceof ArrayBuffer) {
@@ -230,9 +224,7 @@ async function loadImageURL(source: ImageSource): Promise<string> {
  * Builds image content blocks from any source, including file paths and `Blob`s.
  * Images are transmitted as-is: nothing is decoded, resized or re-encoded.
  */
-export async function loadImages(
-  input: ImageSource | ImageSource[],
-): Promise<LLMImageContent[]> {
+export async function loadImages(input: ImageSource | ImageSource[]): Promise<LLMImageContent[]> {
   const inputs = Array.isArray(input) ? input : [input];
   const urls = await Promise.all(inputs.map(loadImageURL));
   return urls.map(toContent);

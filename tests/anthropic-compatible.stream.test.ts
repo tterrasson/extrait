@@ -134,18 +134,14 @@ describe("anthropic-compatible streaming", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onToken: (t) => tokens.push(t) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onToken: (t) => tokens.push(t) });
 
     expect(result.text).toBe("ok");
     expect(tokens).toEqual(["ok"]);
   });
 
   test("throws on HTTP error during streaming", async () => {
-    const fetcher = (async () =>
-      new Response("Internal Error", { status: 500 })) as unknown as typeof fetch;
+    const fetcher = (async () => new Response("Internal Error", { status: 500 })) as unknown as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -171,11 +167,31 @@ describe("anthropic-compatible streaming", () => {
 
       if (round === 1) {
         return sseResponse([
-          JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } }),
-          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Need math. " } }),
-          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "signed-thinking" } }),
-          JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "redacted_thinking", data: "redacted-data" } }),
-          JSON.stringify({ type: "content_block_start", index: 2, content_block: { type: "text", text: "Let me check. " } }),
+          JSON.stringify({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "thinking", thinking: "" },
+          }),
+          JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "thinking_delta", thinking: "Need math. " },
+          }),
+          JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "signature_delta", signature: "signed-thinking" },
+          }),
+          JSON.stringify({
+            type: "content_block_start",
+            index: 1,
+            content_block: { type: "redacted_thinking", data: "redacted-data" },
+          }),
+          JSON.stringify({
+            type: "content_block_start",
+            index: 2,
+            content_block: { type: "text", text: "Let me check. " },
+          }),
           JSON.stringify({
             type: "content_block_start",
             index: 3,
@@ -189,12 +205,12 @@ describe("anthropic-compatible streaming", () => {
           JSON.stringify({
             type: "content_block_delta",
             index: 3,
-            delta: { type: "input_json_delta", partial_json: "{\"a\":2" },
+            delta: { type: "input_json_delta", partial_json: '{"a":2' },
           }),
           JSON.stringify({
             type: "content_block_delta",
             index: 3,
-            delta: { type: "input_json_delta", partial_json: ",\"b\":3}" },
+            delta: { type: "input_json_delta", partial_json: ',"b":3}' },
           }),
           JSON.stringify({
             type: "message_delta",
@@ -216,7 +232,10 @@ describe("anthropic-compatible streaming", () => {
       expect(hasToolResultMessage).toBe(true);
 
       return sseResponse([
-        JSON.stringify({ type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Got result. " } }),
+        JSON.stringify({
+          type: "content_block_delta",
+          delta: { type: "thinking_delta", thinking: "Got result. " },
+        }),
         JSON.stringify({ type: "content_block_delta", delta: { text: "Result: " } }),
         JSON.stringify({ type: "content_block_delta", delta: { text: "5" } }),
         JSON.stringify({
@@ -275,7 +294,9 @@ describe("anthropic-compatible streaming", () => {
       outputTokens: 3,
     });
     expect(chunks.some((chunk) => chunk.finishReason === "tool_use")).toBe(true);
-    expect(chunks.some((chunk) => chunk.reasoningDelta === "Need math. " && chunk.turnIndex === 1)).toBe(true);
+    expect(chunks.some((chunk) => chunk.reasoningDelta === "Need math. " && chunk.turnIndex === 1)).toBe(
+      true,
+    );
     expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "toolu_add")).toBe(true);
     expect(transitions).toEqual([
       "1:reasoningComplete",
@@ -306,9 +327,21 @@ describe("anthropic-compatible streaming", () => {
       round += 1;
       if (round === 1) {
         return sseResponse([
-          JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_add", name: "add", input: {} } }),
-          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"a\":2" } }),
-          JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: ",\"b\":3}" } }),
+          JSON.stringify({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "tool_use", id: "toolu_add", name: "add", input: {} },
+          }),
+          JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "input_json_delta", partial_json: '{"a":2' },
+          }),
+          JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "input_json_delta", partial_json: ',"b":3}' },
+          }),
           JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use" } }),
           "[DONE]",
         ]);
@@ -320,7 +353,11 @@ describe("anthropic-compatible streaming", () => {
       ]);
     }) as unknown as typeof fetch;
 
-    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "test-model", fetcher });
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
 
     const chunks: LLMStreamChunk[] = [];
     await adapter.stream!(
@@ -332,22 +369,38 @@ describe("anthropic-compatible streaming", () => {
     const argSnapshots = chunks
       .map((chunk) => chunk.toolCalls?.[0]?.arguments)
       .filter((value): value is string => typeof value === "string");
-    expect(argSnapshots).toContain("{\"a\":2");
-    expect(argSnapshots).toContain("{\"a\":2,\"b\":3}");
-    expect(argSnapshots.indexOf("{\"a\":2")).toBeLessThan(argSnapshots.indexOf("{\"a\":2,\"b\":3}"));
+    expect(argSnapshots).toContain('{"a":2');
+    expect(argSnapshots).toContain('{"a":2,"b":3}');
+    expect(argSnapshots.indexOf('{"a":2')).toBeLessThan(argSnapshots.indexOf('{"a":2,"b":3}'));
   });
 
   test("streams and returns tool calls in pass-through mode", async () => {
     const fetcher = (async () =>
       sseResponse([
-        JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_lookup", name: "lookup", input: {} } }),
-        JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"q\":" } }),
-        JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "\"x\"}" } }),
+        JSON.stringify({
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "tool_use", id: "toolu_lookup", name: "lookup", input: {} },
+        }),
+        JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json: '{"q":' },
+        }),
+        JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json: '"x"}' },
+        }),
         JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use" } }),
         "[DONE]",
       ])) as unknown as typeof fetch;
 
-    const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "test-model", fetcher });
+    const adapter = createAnthropicCompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
 
     const chunks: LLMStreamChunk[] = [];
     const result = await adapter.stream!(
@@ -356,15 +409,19 @@ describe("anthropic-compatible streaming", () => {
     );
 
     // The tool call is surfaced in the final result (previously dropped entirely).
-    expect(result.toolCalls?.[0]).toMatchObject({ id: "toolu_lookup", name: "lookup", arguments: "{\"q\":\"x\"}" });
+    expect(result.toolCalls?.[0]).toMatchObject({
+      id: "toolu_lookup",
+      name: "lookup",
+      arguments: '{"q":"x"}',
+    });
     expect(result.finishReason).toBe("tool_use");
     // ...and its arguments streamed incrementally across chunks.
     const argSnapshots = chunks
       .map((chunk) => chunk.toolCalls?.[0]?.arguments)
       .filter((value): value is string => typeof value === "string");
-    expect(argSnapshots).toContain("{\"q\":");
-    expect(argSnapshots).toContain("{\"q\":\"x\"}");
-    expect(argSnapshots.indexOf("{\"q\":")).toBeLessThan(argSnapshots.indexOf("{\"q\":\"x\"}"));
+    expect(argSnapshots).toContain('{"q":');
+    expect(argSnapshots).toContain('{"q":"x"}');
+    expect(argSnapshots.indexOf('{"q":')).toBeLessThan(argSnapshots.indexOf('{"q":"x"}'));
   });
 
   test("extracts delta from content_block.text", async () => {
@@ -382,10 +439,7 @@ describe("anthropic-compatible streaming", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onToken: (t) => tokens.push(t) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onToken: (t) => tokens.push(t) });
 
     expect(result.text).toBe("block");
     expect(tokens).toEqual(["block"]);
@@ -406,10 +460,7 @@ describe("anthropic-compatible streaming", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onToken: (t) => tokens.push(t) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onToken: (t) => tokens.push(t) });
 
     expect(result.text).toBe("");
     expect(tokens).toEqual([]);
@@ -455,10 +506,7 @@ describe("anthropic-compatible pickUsage", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onChunk: (c) => chunks.push(c) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onChunk: (c) => chunks.push(c) });
 
     expect(result.usage?.inputTokens).toBe(10);
   });
@@ -740,12 +788,13 @@ describe("anthropic-compatible error paths", () => {
   });
 
   test("throws for an in-band stream error", async () => {
-    const fetcher = (async () => sseResponse([
-      JSON.stringify({
-        type: "error",
-        error: { type: "overloaded_error", message: "Service overloaded" },
-      }),
-    ])) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({
+          type: "error",
+          error: { type: "overloaded_error", message: "Service overloaded" },
+        }),
+      ])) as unknown as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -757,9 +806,10 @@ describe("anthropic-compatible error paths", () => {
   });
 
   test("throws when the stream ends without a terminal event or stop reason", async () => {
-    const fetcher = (async () => sseResponse([
-      JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "partial" } }),
-    ])) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      sseResponse([
+        JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "partial" } }),
+      ])) as unknown as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -771,8 +821,7 @@ describe("anthropic-compatible error paths", () => {
   });
 
   test("HTTP error in passthrough mode", async () => {
-    const fetcher = (async () =>
-      new Response("Bad Request", { status: 400 })) as unknown as typeof fetch;
+    const fetcher = (async () => new Response("Bad Request", { status: 400 })) as unknown as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -784,8 +833,7 @@ describe("anthropic-compatible error paths", () => {
   });
 
   test("HTTP error in MCP tool loop", async () => {
-    const fetcher = (async () =>
-      new Response("Unauthorized", { status: 401 })) as unknown as typeof fetch;
+    const fetcher = (async () => new Response("Unauthorized", { status: 401 })) as unknown as typeof fetch;
 
     const adapter = createAnthropicCompatibleAdapter({
       baseURL: "https://example.com",
@@ -840,12 +888,28 @@ describe("anthropic-compatible pass-through reasoning streaming", () => {
   test("accumulates thinking deltas and exposes reasoning and raw", async () => {
     const events = [
       JSON.stringify({ type: "message_start", message: { usage: { input_tokens: 7 } } }),
-      JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } }),
-      JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Let me think. " } }),
-      JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Done." } }),
+      JSON.stringify({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "" },
+      }),
+      JSON.stringify({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "Let me think. " },
+      }),
+      JSON.stringify({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "Done." },
+      }),
       JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "text", text: "" } }),
       JSON.stringify({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Hello" } }),
-      JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 3 } }),
+      JSON.stringify({
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: { output_tokens: 3 },
+      }),
     ];
     const fetcher = (async () => sseResponse(events)) as unknown as typeof fetch;
     const adapter = createAnthropicCompatibleAdapter({

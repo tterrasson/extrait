@@ -16,9 +16,7 @@ import { createLLM, prompt, s, StructuredParseError } from "@/index";
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -33,7 +31,7 @@ const llm = createLLM({
   defaults: {
     mode: "strict", // Use strict mode for faster, simpler execution
     selfHeal: false,
-    debug: debugEnabled
+    debug: debugEnabled,
   },
 });
 
@@ -42,28 +40,20 @@ const SentimentSchema = s.schema(
   "SentimentAnalysis",
   z.object({
     sentiment: z.enum(["positive", "negative", "neutral"]).describe("Overall sentiment of the text"),
-    confidence: s
-      .number()
-      .min(0)
-      .max(1)
-      .describe("Confidence score between 0 and 1"),
+    confidence: s.number().min(0).max(1).describe("Confidence score between 0 and 1"),
     emotional: s.boolean().describe("Whether the text is emotional or factual"),
     urgent: s.boolean().describe("Whether the text conveys urgency"),
-    keywords: s
-      .array(s.string())
-      .max(5)
-      .describe("Up to 5 key words that indicate the sentiment"),
+    keywords: s.array(s.string()).max(5).describe("Up to 5 key words that indicate the sentiment"),
     category: z
       .enum(["feedback", "complaint", "question", "praise", "neutral"])
       .optional()
       .describe("Type of message"),
-  })
+  }),
 );
 
 const userInput = process.argv.slice(3).join(" ").trim();
 const textToAnalyze =
-  userInput ||
-  "I absolutely love this product! It's been a game-changer for my workflow. Thank you so much!";
+  userInput || "I absolutely love this product! It's been a game-changer for my workflow. Thank you so much!";
 
 console.log("🎭 Analyzing sentiment...\n");
 console.log("Text:", textToAnalyze);
@@ -86,7 +76,7 @@ try {
       parse: {
         repair: true,
       },
-    }
+    },
     // No streaming - get results immediately
   );
 
@@ -108,9 +98,7 @@ try {
     console.error("\n❌ Sentiment analysis failed.");
     console.error("Validation issues:", error.zodIssues ?? []);
     if ((error.zodIssues?.length ?? 0) === 0) {
-      console.error(
-        "No schema issues were reported. The model response was likely not valid JSON.",
-      );
+      console.error("No schema issues were reported. The model response was likely not valid JSON.");
     }
     console.error("\nModel text:");
     console.error(error.text);

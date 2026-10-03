@@ -1,10 +1,4 @@
-import type {
-  LLMAdapter,
-  LLMRequest,
-  LLMToolCall,
-  LLMUsage,
-  ReasoningBlock,
-} from "./types";
+import type { LLMAdapter, LLMRequest, LLMToolCall, LLMUsage, ReasoningBlock } from "./types";
 import { preferLatestUsage as preferLatestStreamUsage } from "./providers/utils";
 import {
   appendReasoningBlock,
@@ -247,7 +241,12 @@ export async function callModel<TSnapshot, TTraceEvent>(
     const finalText = typeof response.text === "string" ? response.text : streamedProviderText;
     const finalReasoning =
       typeof response.reasoning === "string" ? response.reasoning : streamedDedicatedReasoning;
-    emitStreamingData(normalizer.finish({ text: finalText, reasoning: finalReasoning }), true, usage, finishReason);
+    emitStreamingData(
+      normalizer.finish({ text: finalText, reasoning: finalReasoning }),
+      true,
+      usage,
+      finishReason,
+    );
     const finalNormalized = normalizeModelOutput(finalText, finalReasoning, streamedReasoningBlocks);
 
     options.observe?.(

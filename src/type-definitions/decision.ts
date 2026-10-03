@@ -81,7 +81,11 @@ export type DecisionAnswers<TQuestions extends DecisionQuestions = DecisionQuest
 };
 
 /** JSON content given to a decision model, serialized as text by the server. */
-export type DecisionJSONValue = string | number | boolean | null
+export type DecisionJSONValue =
+  | string
+  | number
+  | boolean
+  | null
   | readonly DecisionJSONValue[]
   | { readonly [key: string]: DecisionJSONValue };
 

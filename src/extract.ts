@@ -13,11 +13,7 @@ import {
   sortCandidates,
   type RankedCandidate,
 } from "./extract-shape";
-import type {
-  ExtractJsonCandidatesOptions,
-  ExtractionCandidate,
-  ExtractionHeuristicsOptions,
-} from "./types";
+import type { ExtractJsonCandidatesOptions, ExtractionCandidate, ExtractionHeuristicsOptions } from "./types";
 
 interface StackItem {
   char: "{" | "[";
@@ -83,11 +79,7 @@ export function extractJsonCandidates(
       continue;
     }
 
-    const parseHint = buildParseHint(
-      candidate.content,
-      allowRepairHints,
-      heuristics.hintMaxLength,
-    );
+    const parseHint = buildParseHint(candidate.content, allowRepairHints, heuristics.hintMaxLength);
     if (!parseHint) {
       continue;
     }
@@ -111,10 +103,7 @@ export function extractJsonCandidates(
   }));
 }
 
-function prefilterByJsonShape(
-  candidates: ExtractionCandidate[],
-  acceptArrays: boolean,
-): RankedCandidate[] {
+function prefilterByJsonShape(candidates: ExtractionCandidate[], acceptArrays: boolean): RankedCandidate[] {
   const shaped = candidates.map((candidate) => {
     const shapeScore = jsonShapeScore(candidate.content, acceptArrays);
     return {
@@ -138,10 +127,7 @@ function prefilterByJsonShape(
   return deduped.slice(0, Math.min(1, deduped.length));
 }
 
-function extractFromMarkdown(
-  input: string,
-  acceptArrays: boolean,
-): ExtractionCandidate[] {
+function extractFromMarkdown(input: string, acceptArrays: boolean): ExtractionCandidate[] {
   const blocks = extractMarkdownCodeBlocks(input);
   return blocks.flatMap((block, index) => {
     const language = block.language || null;

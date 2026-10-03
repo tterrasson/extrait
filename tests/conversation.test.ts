@@ -115,7 +115,13 @@ describe("conversation()", () => {
       {
         role: "assistant",
         content: "",
-        tool_calls: [{ id: "call_1", type: "function", function: { name: "get_weather", arguments: '{"city":"Paris"}' } }],
+        tool_calls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+          },
+        ],
       },
       { role: "tool", content: '{"temp":18}', tool_call_id: "call_1" },
       { role: "user", content: "Thanks!" },

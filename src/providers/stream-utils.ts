@@ -11,10 +11,7 @@ const MAX_SSE_EVENT_CHARS = 8_000_000;
  * `type`), so `event`, `id` and `retry` are ignored. Every character is scanned
  * once, however the body is chunked.
  */
-export async function consumeSSE(
-  response: Response,
-  onEvent: (data: string) => void,
-): Promise<void> {
+export async function consumeSSE(response: Response, onEvent: (data: string) => void): Promise<void> {
   if (!response.body) {
     return;
   }
@@ -114,9 +111,7 @@ export async function consumeSSE(
       processChunk(decoder.decode(value, { stream: true }));
 
       if (partialChars + dataChars > MAX_SSE_EVENT_CHARS) {
-        throw new Error(
-          `SSE stream exceeded ${MAX_SSE_EVENT_CHARS} characters without an event boundary.`,
-        );
+        throw new Error(`SSE stream exceeded ${MAX_SSE_EVENT_CHARS} characters without an event boundary.`);
       }
     }
 

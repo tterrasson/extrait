@@ -153,7 +153,7 @@ for (const mode of [
 ] as const) {
   for (const chunks of CHUNK_COUNTS) {
     const result = await runScenario(mode, chunks);
-    const row = `| ${mode} | ${chunks} | ${(chunks * CHUNK_SIZE / 1000).toFixed(0)} ko | ${result.wallMs.toFixed(0)} ms | ${(result.peakHeapBytes / 1024 / 1024).toFixed(1)} Mo | ${result.events} |`;
+    const row = `| ${mode} | ${chunks} | ${((chunks * CHUNK_SIZE) / 1000).toFixed(0)} ko | ${result.wallMs.toFixed(0)} ms | ${(result.peakHeapBytes / 1024 / 1024).toFixed(1)} Mo | ${result.events} |`;
     rows.push(row);
     console.log(row);
   }

@@ -5,13 +5,9 @@ import { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "@/markdown"
 
 describe("extractJsonCandidates", () => {
   test("prioritizes fenced markdown blocks", () => {
-    const input = [
-      "Some text before",
-      "```json",
-      "{\"a\": 1}",
-      "```",
-      "Then another object {\"a\":2}",
-    ].join("\n");
+    const input = ["Some text before", "```json", '{"a": 1}', "```", 'Then another object {"a":2}'].join(
+      "\n",
+    );
 
     const candidates = extractJsonCandidates(input, { maxCandidates: 5 });
 
@@ -60,12 +56,7 @@ describe("extractJsonCandidates", () => {
   });
 
   test("does not sanitize <think> blocks by itself", () => {
-    const input = [
-      "<think>",
-      '{"hidden":true}',
-      "</think>",
-      '{"visible":true}',
-    ].join("\n");
+    const input = ["<think>", '{"hidden":true}', "</think>", '{"visible":true}'].join("\n");
 
     const candidates = extractJsonCandidates(input);
 
@@ -74,12 +65,7 @@ describe("extractJsonCandidates", () => {
   });
 
   test("works with sanitized think input", () => {
-    const input = [
-      "<think>",
-      '{"hidden":true}',
-      "</think>",
-      '{"visible":true}',
-    ].join("\n");
+    const input = ["<think>", '{"hidden":true}', "</think>", '{"visible":true}'].join("\n");
     const sanitized = sanitizeThink(input);
     const candidates = extractJsonCandidates(sanitized.visibleText);
 
@@ -118,14 +104,7 @@ describe("extractJsonCandidates", () => {
   });
 
   test("non-json code block gets lower score bonus than json block", () => {
-    const input = [
-      "```python",
-      '{"a": 1}',
-      "```",
-      "```json",
-      '{"b": 2}',
-      "```",
-    ].join("\n");
+    const input = ["```python", '{"a": 1}', "```", "```json", '{"b": 2}', "```"].join("\n");
 
     const candidates = extractJsonCandidates(input, { maxCandidates: 5 });
 
@@ -187,7 +166,7 @@ describe("extractJsonCandidates", () => {
   });
 
   test("fenced block with empty content is skipped", () => {
-    const input = "```json\n\n```\n{\"ok\":true}";
+    const input = '```json\n\n```\n{"ok":true}';
     const candidates = extractJsonCandidates(input, { maxCandidates: 5 });
 
     // empty fenced block not included; scan finds {"ok":true}
@@ -203,14 +182,7 @@ describe("extractJsonCandidates", () => {
   });
 
   test("javascript/typescript language gets a score bonus", () => {
-    const input = [
-      "```javascript",
-      '{"a": 1}',
-      "```",
-      "```json",
-      '{"b": 2}',
-      "```",
-    ].join("\n");
+    const input = ["```javascript", '{"a": 1}', "```", "```json", '{"b": 2}', "```"].join("\n");
     const candidates = extractJsonCandidates(input, { maxCandidates: 5 });
 
     const jsCandidate = candidates.find((c) => c.content.includes('"a"'));
@@ -239,14 +211,7 @@ describe("extractJsonCandidates", () => {
 
 describe("extractMarkdownCodeBlocks", () => {
   test("extracts markdown code by language", () => {
-    const input = [
-      "```ts",
-      "export const x = 1;",
-      "```",
-      "```json",
-      "{\"ok\": true}",
-      "```",
-    ].join("\n");
+    const input = ["```ts", "export const x = 1;", "```", "```json", '{"ok": true}', "```"].join("\n");
 
     const ts = extractFirstMarkdownCode(input, { language: "ts" });
     const all = extractMarkdownCodeBlocks(input);

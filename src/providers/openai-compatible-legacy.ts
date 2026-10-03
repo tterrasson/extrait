@@ -48,7 +48,9 @@ import type { OpenAICompatibleAdapterOptions } from "./openai-compatible-common"
 
 export type OpenAICompatibleLegacyAdapterOptions = OpenAICompatibleAdapterOptions;
 
-export function createOpenAICompatibleLegacyAdapter(options: OpenAICompatibleLegacyAdapterOptions): LLMAdapter {
+export function createOpenAICompatibleLegacyAdapter(
+  options: OpenAICompatibleLegacyAdapterOptions,
+): LLMAdapter {
   const fetcher = options.fetcher ?? fetch;
   const path = options.path ?? "/v1/chat/completions";
   const embeddingPath = options.embeddingPath ?? "/v1/embeddings";
@@ -135,7 +137,10 @@ async function streamWithChatCompletionsPassThrough(
     collectOpenAIStreamToolCalls(json, streamedToolCalls);
     const nativeDelta = nativeToolCalls.push(rawDelta);
     const delta = nativeDelta.textDelta;
-    const chunkToolCalls = mergeToolCalls(buildOpenAIStreamToolCalls(streamedToolCalls), nativeDelta.toolCalls);
+    const chunkToolCalls = mergeToolCalls(
+      buildOpenAIStreamToolCalls(streamedToolCalls),
+      nativeDelta.toolCalls,
+    );
 
     usage = preferLatestUsage(usage, chunkUsage);
     if (chunkFinishReason) {
@@ -729,7 +734,9 @@ function throwForChatCompletionsStreamError(payload: Record<string, unknown>): v
     return;
   }
 
-  throw new Error(pickString(error?.message) ?? pickString(payload.message) ?? "Chat Completions stream failed.");
+  throw new Error(
+    pickString(error?.message) ?? pickString(payload.message) ?? "Chat Completions stream failed.",
+  );
 }
 
 function assertChatCompletionsStreamTerminated(terminated: boolean): void {
@@ -766,7 +773,9 @@ function pickAssistantReasoningDelta(payload: Record<string, unknown>): string {
   return pickReasoningText(delta);
 }
 
-function pickAssistantReasoningDeltaFieldName(payload: Record<string, unknown>): OpenAIReasoningFieldName | undefined {
+function pickAssistantReasoningDeltaFieldName(
+  payload: Record<string, unknown>,
+): OpenAIReasoningFieldName | undefined {
   const choices = payload.choices;
   if (!Array.isArray(choices) || choices.length === 0) {
     return undefined;
@@ -889,9 +898,7 @@ class NativeToolCallStreamState {
   }
 
   private fallbackId(index: number): string {
-    return this.idNamespace
-      ? `call_native_${this.idNamespace}_${index}`
-      : `call_native_${index}`;
+    return this.idNamespace ? `call_native_${this.idNamespace}_${index}` : `call_native_${index}`;
   }
 }
 

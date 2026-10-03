@@ -92,9 +92,7 @@ describe("image passthrough reaches provider payloads", () => {
       fetcher,
     });
     await adapter.complete({
-      messages: [
-        { role: "user", content: images("DATA:image/png;BASE64,AAAA") },
-      ],
+      messages: [{ role: "user", content: images("DATA:image/png;BASE64,AAAA") }],
     });
 
     const messages = captured.body.messages as Array<{ content: Array<Record<string, unknown>> }>;

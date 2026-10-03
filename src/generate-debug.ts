@@ -27,14 +27,9 @@ export interface DebugResponseInput {
   logprobs?: LLMLogprobs;
 }
 
-export function emitDebugRequest(
-  config: NormalizedDebugConfig,
-  input: DebugRequestInput,
-): void {
+export function emitDebugRequest(config: NormalizedDebugConfig, input: DebugRequestInput): void {
   const requestBody =
-    input.requestPayload.body !== undefined
-      ? JSON.stringify(input.requestPayload.body, null, 2)
-      : "(none)";
+    input.requestPayload.body !== undefined ? JSON.stringify(input.requestPayload.body, null, 2) : "(none)";
   const requestMessages =
     input.requestPayload.messages !== undefined
       ? JSON.stringify(input.requestPayload.messages, null, 2)
@@ -75,10 +70,7 @@ export function emitDebugRequest(
   emitDebug(config, lines.join("\n"));
 }
 
-export function emitDebugResponse(
-  config: NormalizedDebugConfig,
-  input: DebugResponseInput,
-): void {
+export function emitDebugResponse(config: NormalizedDebugConfig, input: DebugResponseInput): void {
   const text = input.text.length > 0 ? input.text : "(none)";
   const reasoning = input.reasoning.length > 0 ? input.reasoning : "(none)";
   const metadata = [

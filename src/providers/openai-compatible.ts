@@ -294,11 +294,7 @@ async function completeWithResponsesAPIWithMCP(
     ];
   }
 
-  return buildResponsesMCPResult(
-    state,
-    pickResponsesText(state.lastPayload ?? {}),
-    state.lastPayload,
-  );
+  return buildResponsesMCPResult(state, pickResponsesText(state.lastPayload ?? {}), state.lastPayload);
 }
 
 async function streamWithResponsesAPIPassThrough(
@@ -508,7 +504,10 @@ async function streamWithResponsesAPIWithMCP(
 
     assertResponsesStreamTerminated(streamTerminated);
 
-    const resolvedRoundUsage = preferLatestUsage(roundUsage, roundPayload ? pickUsage(roundPayload) : undefined);
+    const resolvedRoundUsage = preferLatestUsage(
+      roundUsage,
+      roundPayload ? pickUsage(roundPayload) : undefined,
+    );
     state.aggregatedUsage = mergeUsage(state.aggregatedUsage, resolvedRoundUsage);
     if (roundFinishReason) {
       state.finishReason = roundFinishReason;
@@ -534,9 +533,8 @@ async function streamWithResponsesAPIWithMCP(
     });
 
     if (functionCalls.length === 0) {
-      const finalText = roundText.length > 0
-        ? roundText
-        : (roundPayload ? pickResponsesText(roundPayload) : "");
+      const finalText =
+        roundText.length > 0 ? roundText : roundPayload ? pickResponsesText(roundPayload) : "";
       const out = buildResponsesMCPResult(state, finalText, roundPayload ?? state.lastPayload, roundLogprobs);
       request.onTurnTransition?.({ turnIndex: round, kind: "streamEnd" });
       callbacks.onComplete?.(out);
@@ -580,11 +578,7 @@ async function streamWithResponsesAPIWithMCP(
     ];
   }
 
-  const out = buildResponsesMCPResult(
-    state,
-    pickResponsesText(state.lastPayload ?? {}),
-    state.lastPayload,
-  );
+  const out = buildResponsesMCPResult(state, pickResponsesText(state.lastPayload ?? {}), state.lastPayload);
   request.onTurnTransition?.({ turnIndex: maxToolRounds + 1, kind: "streamEnd" });
   callbacks.onComplete?.(out);
   return out;
@@ -613,18 +607,21 @@ function buildResponsesInput(request: LLMRequest): unknown {
  */
 function toResponsesItems(message: LLMMessage): Array<Record<string, unknown>> {
   if (message.role === "tool") {
-    return [{
-      type: "function_call_output",
-      call_id: pickString(message.tool_call_id) ?? "",
-      output: typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? null),
-    }];
+    return [
+      {
+        type: "function_call_output",
+        call_id: pickString(message.tool_call_id) ?? "",
+        output:
+          typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? null),
+      },
+    ];
   }
 
   if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
     const items: Array<Record<string, unknown>> = [];
     if (
-      (typeof message.content === "string" && message.content.length > 0)
-      || (Array.isArray(message.content) && message.content.length > 0)
+      (typeof message.content === "string" && message.content.length > 0) ||
+      (Array.isArray(message.content) && message.content.length > 0)
     ) {
       items.push(toResponsesMessage({ role: "assistant", content: message.content }));
     }
@@ -636,9 +633,10 @@ function toResponsesItems(message: LLMMessage): Array<Record<string, unknown>> {
         type: "function_call",
         call_id: pickString(toolCall.id) ?? "",
         name: pickString(toolCall.function.name),
-        arguments: typeof toolCall.function.arguments === "string"
-          ? toolCall.function.arguments
-          : JSON.stringify(toolCall.function.arguments ?? {}),
+        arguments:
+          typeof toolCall.function.arguments === "string"
+            ? toolCall.function.arguments
+            : JSON.stringify(toolCall.function.arguments ?? {}),
       });
     }
     return items;
@@ -669,7 +667,9 @@ function toResponsesMessage(message: LLMMessage): Record<string, unknown> {
   };
 }
 
-function toResponsesTools(tools: Array<Record<string, unknown>> | undefined): Array<Record<string, unknown>> | undefined {
+function toResponsesTools(
+  tools: Array<Record<string, unknown>> | undefined,
+): Array<Record<string, unknown>> | undefined {
   if (!Array.isArray(tools) || tools.length === 0) {
     return undefined;
   }
@@ -717,9 +717,9 @@ function pickResponsesLogprobs(payload: Record<string, unknown>): LLMLogprobs | 
   return content.length > 0 ? { content } : undefined;
 }
 
-function withPickedResponsesLogprobs(
-  payload: Record<string, unknown> | undefined,
-): { logprobs?: LLMLogprobs } {
+function withPickedResponsesLogprobs(payload: Record<string, unknown> | undefined): {
+  logprobs?: LLMLogprobs;
+} {
   if (!payload) return {};
   const logprobs = pickResponsesLogprobs(payload);
   return logprobs ? { logprobs } : {};
@@ -882,10 +882,12 @@ function pickResponsesStreamReasoningDelta(payload: Record<string, unknown>): st
   }
 
   if (isRecord(payload.delta)) {
-    return pickReasoningText(payload.delta)
-      || pickString(payload.delta.text)
-      || pickString(payload.delta.summary_text)
-      || "";
+    return (
+      pickReasoningText(payload.delta) ||
+      pickString(payload.delta.text) ||
+      pickString(payload.delta.summary_text) ||
+      ""
+    );
   }
 
   return "";
@@ -916,8 +918,9 @@ function pickResponsesStreamFinishReason(payload: Record<string, unknown>): stri
     return pickResponsesFinishReason(isRecord(payload.response) ? payload.response : payload);
   }
 
-  const status = pickString(payload.status)
-    ?? (isRecord(payload.response) ? pickString(payload.response.status) : undefined);
+  const status =
+    pickString(payload.status) ??
+    (isRecord(payload.response) ? pickString(payload.response.status) : undefined);
   // Lifecycle events such as `response.created` carry a non-terminal status;
   // surfacing it as a finishReason would make consumers treat the very first
   // chunk as the end of the stream.
@@ -950,9 +953,12 @@ function collectResponsesStreamToolCalls(
       key,
       argumentsText: "",
     };
-    const delta = pickString(payload.delta)
-      ?? (isRecord(payload.delta) ? pickString(payload.delta.text) ?? pickString(payload.delta.arguments) : undefined)
-      ?? pickString(payload.arguments_delta);
+    const delta =
+      pickString(payload.delta) ??
+      (isRecord(payload.delta)
+        ? (pickString(payload.delta.text) ?? pickString(payload.delta.arguments))
+        : undefined) ??
+      pickString(payload.arguments_delta);
     if (delta) {
       existing.argumentsText += delta;
     }
@@ -1022,7 +1028,9 @@ function collectResponsesStreamToolCallsFromItem(
   state.set(key, existing);
 }
 
-function buildResponsesStreamToolCalls(state: Map<string, OpenAIResponsesStreamToolCallState>): LLMToolCall[] {
+function buildResponsesStreamToolCalls(
+  state: Map<string, OpenAIResponsesStreamToolCallState>,
+): LLMToolCall[] {
   return [...state.values()].map((entry) => ({
     id: entry.id ?? entry.key,
     type: entry.type === "function_call" ? "function" : (entry.type ?? "function"),
@@ -1113,7 +1121,7 @@ function pickResponsesReasoning(payload: Record<string, unknown>): string {
         return item.summary.map((part) => pickTextLikePart(part)).join("");
       }
       if ((itemType.includes("reasoning") || itemType.includes("thinking")) && Array.isArray(item.content)) {
-        return item.content.map((part) => isRecord(part) ? pickTextLike(part) : "").join("");
+        return item.content.map((part) => (isRecord(part) ? pickTextLike(part) : "")).join("");
       }
 
       return "";

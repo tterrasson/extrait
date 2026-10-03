@@ -151,9 +151,7 @@ describe("resolveMCPToolset", () => {
   });
 
   test("normalizes schema without properties", async () => {
-    const client = createMockClient("svc", [
-      { name: "do", inputSchema: { type: "object" } },
-    ]);
+    const client = createMockClient("svc", [{ name: "do", inputSchema: { type: "object" } }]);
     const result = await resolveMCPToolset([client]);
     expect(result.tools[0]!.inputSchema.properties).toEqual({});
   });
@@ -221,11 +219,7 @@ describe("executeMCPToolCalls", () => {
     const client = createMockClient("svc", [{ name: "run" }]);
     const toolset = await resolveMCPToolset([client]);
     await expect(
-      executeMCPToolCalls(
-        [{ name: "run" }],
-        toolset,
-        { round: 1, request: { prompt: "test" } },
-      ),
+      executeMCPToolCalls([{ name: "run" }], toolset, { round: 1, request: { prompt: "test" } }),
     ).rejects.toThrow("without id or name");
   });
 
@@ -233,11 +227,7 @@ describe("executeMCPToolCalls", () => {
     const client = createMockClient("svc", [{ name: "run" }]);
     const toolset = await resolveMCPToolset([client]);
     await expect(
-      executeMCPToolCalls(
-        [{ id: "c1" }],
-        toolset,
-        { round: 1, request: { prompt: "test" } },
-      ),
+      executeMCPToolCalls([{ id: "c1" }], toolset, { round: 1, request: { prompt: "test" } }),
     ).rejects.toThrow("without id or name");
   });
 
@@ -260,17 +250,13 @@ describe("executeMCPToolCalls", () => {
   test("uses custom unknownToolError message when tool name is unknown", async () => {
     const client = createMockClient("svc", [{ name: "run" }]);
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "unknown" }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          unknownToolError: (toolName) => `Missing tool: ${toolName}`,
-        },
+    const results = await executeMCPToolCalls([{ id: "c1", name: "unknown" }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        unknownToolError: (toolName) => `Missing tool: ${toolName}`,
       },
-    );
+    });
     expect(results).toHaveLength(1);
     expect(results[0]!.call.error).toBe("Missing tool: unknown");
     expect(results[0]!.execution.error).toBe("Missing tool: unknown");
@@ -283,11 +269,10 @@ describe("executeMCPToolCalls", () => {
       return { done: true };
     });
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "run", arguments: "{not json" }],
-      toolset,
-      { round: 1, request: { prompt: "test" } },
-    );
+    const results = await executeMCPToolCalls([{ id: "c1", name: "run", arguments: "{not json" }], toolset, {
+      round: 1,
+      request: { prompt: "test" },
+    });
 
     expect(called).toBe(false);
     expect(results).toHaveLength(1);
@@ -300,11 +285,10 @@ describe("executeMCPToolCalls", () => {
   test("executes tool successfully", async () => {
     const client = createMockClient("svc", [{ name: "run" }], () => ({ done: true }));
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
-      toolset,
-      { round: 1, request: { prompt: "test" } },
-    );
+    const results = await executeMCPToolCalls([{ id: "c1", name: "run", arguments: '{"x":1}' }], toolset, {
+      round: 1,
+      request: { prompt: "test" },
+    });
     expect(results.length).toBe(1);
     expect(results[0]!.execution.output).toEqual({ done: true });
     expect(results[0]!.execution.handledLocally).toBe(true);
@@ -316,11 +300,10 @@ describe("executeMCPToolCalls", () => {
       throw new Error("tool failed");
     });
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      { round: 1, request: { prompt: "test" } },
-    );
+    const results = await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: { prompt: "test" },
+    });
     expect(results[0]!.execution.error).toBe("tool failed");
     expect(results[0]!.call.error).toBe("tool failed");
   });
@@ -330,28 +313,23 @@ describe("executeMCPToolCalls", () => {
       throw "oops";
     });
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      { round: 1, request: { prompt: "test" } },
-    );
+    const results = await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: { prompt: "test" },
+    });
     expect(results[0]!.execution.error).toBe("oops");
   });
 
   test("transformToolOutput transforms the output before sending to LLM", async () => {
     const client = createMockClient("svc", [{ name: "run" }], () => ({ raw: "verbose data" }));
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          transformToolOutput: (output) => ({ cleaned: true }),
-        },
+    const results = await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        transformToolOutput: (output) => ({ cleaned: true }),
       },
-    );
+    });
     expect(results[0]!.execution.output).toEqual({ cleaned: true });
     expect(results[0]!.call.output).toEqual({ cleaned: true });
   });
@@ -361,23 +339,19 @@ describe("executeMCPToolCalls", () => {
     let capturedContext: unknown;
     const client = createMockClient("svc", [{ name: "run" }], () => ({ value: 42 }));
     const toolset = await resolveMCPToolset([client]);
-    await executeMCPToolCalls(
-      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
-      toolset,
-      {
-        round: 2,
-        request: {
-          prompt: "test",
-          transformToolOutput: (output, context) => {
-            capturedOutput = output;
-            capturedContext = context;
-            return output;
-          },
+    await executeMCPToolCalls([{ id: "c1", name: "run", arguments: '{"x":1}' }], toolset, {
+      round: 2,
+      request: {
+        prompt: "test",
+        transformToolOutput: (output, context) => {
+          capturedOutput = output;
+          capturedContext = context;
+          return output;
         },
-        provider: "openai-compatible",
-        model: "test-model",
       },
-    );
+      provider: "openai-compatible",
+      model: "test-model",
+    });
     expect(capturedOutput).toEqual({ value: 42 });
     expect(capturedContext).toMatchObject({
       callId: "c1",
@@ -391,20 +365,16 @@ describe("executeMCPToolCalls", () => {
   test("transformToolOutput async works correctly", async () => {
     const client = createMockClient("svc", [{ name: "run" }], () => "original");
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          transformToolOutput: async (output) => {
-            await new Promise((resolve) => setTimeout(resolve, 0));
-            return "transformed";
-          },
+    const results = await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        transformToolOutput: async (output) => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          return "transformed";
         },
       },
-    );
+    });
     expect(results[0]!.execution.output).toBe("transformed");
   });
 
@@ -450,7 +420,9 @@ describe("executeMCPToolCalls", () => {
     const client: MCPToolClient = {
       id: "svc",
       async listTools() {
-        return { tools: [{ name: "do-work", inputSchema: { type: "object", properties: {} } as MCPToolSchema }] };
+        return {
+          tools: [{ name: "do-work", inputSchema: { type: "object", properties: {} } as MCPToolSchema }],
+        };
       },
       async callTool(params) {
         capturedParams = params;
@@ -459,20 +431,16 @@ describe("executeMCPToolCalls", () => {
     };
     const toolset = await resolveMCPToolset([client]);
 
-    await executeMCPToolCalls(
-      [{ id: "c1", name: "do_work", arguments: '{"x":1}' }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          transformToolCallParams: (params, context) => {
-            expect(context).toEqual({ name: "do_work", remoteName: "do-work", clientId: "svc" });
-            return { ...params, _meta: { source: "test", clientId: context.clientId } };
-          },
+    await executeMCPToolCalls([{ id: "c1", name: "do_work", arguments: '{"x":1}' }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        transformToolCallParams: (params, context) => {
+          expect(context).toEqual({ name: "do_work", remoteName: "do-work", clientId: "svc" });
+          return { ...params, _meta: { source: "test", clientId: context.clientId } };
         },
       },
-    );
+    });
 
     expect(capturedParams).toEqual({
       name: "do-work",
@@ -495,18 +463,14 @@ describe("executeMCPToolCalls", () => {
     };
     const toolset = await resolveMCPToolset([client]);
 
-    await executeMCPToolCalls(
-      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          transformToolArguments: (args) => ({ ...args, injected: true }),
-          transformToolCallParams: (params) => ({ ...params, _meta: { seen: params.arguments } }),
-        },
+    await executeMCPToolCalls([{ id: "c1", name: "run", arguments: '{"x":1}' }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        transformToolArguments: (args) => ({ ...args, injected: true }),
+        transformToolCallParams: (params) => ({ ...params, _meta: { seen: params.arguments } }),
       },
-    );
+    });
 
     expect(capturedParams).toEqual({
       name: "run",
@@ -521,20 +485,16 @@ describe("executeMCPToolCalls", () => {
       throw new Error("tool failed");
     });
     const toolset = await resolveMCPToolset([client]);
-    const results = await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          transformToolOutput: () => {
-            called = true;
-            return "should not be called";
-          },
+    const results = await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        transformToolOutput: () => {
+          called = true;
+          return "should not be called";
         },
       },
-    );
+    });
     expect(called).toBe(false);
     expect(results[0]!.execution.error).toBe("tool failed");
   });
@@ -543,17 +503,13 @@ describe("executeMCPToolCalls", () => {
     const executions: LLMToolExecution[] = [];
     const client = createMockClient("svc", [{ name: "run" }]);
     const toolset = await resolveMCPToolset([client]);
-    await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          onToolExecution: (exec) => executions.push(exec),
-        },
+    await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        onToolExecution: (exec) => executions.push(exec),
       },
-    );
+    });
     expect(executions.length).toBe(1);
     expect(executions[0]!.callId).toBe("c1");
   });
@@ -562,22 +518,18 @@ describe("executeMCPToolCalls", () => {
     const logs: string[] = [];
     const client = createMockClient("svc", [{ name: "run" }]);
     const toolset = await resolveMCPToolset([client]);
-    await executeMCPToolCalls(
-      [{ id: "c1", name: "run", arguments: '{"x":1}' }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          toolDebug: {
-            enabled: true,
-            logger: (line) => logs.push(line),
-          },
+    await executeMCPToolCalls([{ id: "c1", name: "run", arguments: '{"x":1}' }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        toolDebug: {
+          enabled: true,
+          logger: (line) => logs.push(line),
         },
-        provider: "test",
-        model: "m1",
       },
-    );
+      provider: "test",
+      model: "m1",
+    });
     expect(logs.some((l) => l.includes("[tool:mcp:ok]"))).toBe(true);
     expect(logs.some((l) => l.includes("[tool:mcp:request]"))).toBe(true);
     expect(logs.some((l) => l.includes("[tool:mcp:result:ok]"))).toBe(true);
@@ -589,21 +541,17 @@ describe("executeMCPToolCalls", () => {
       throw new Error("boom");
     });
     const toolset = await resolveMCPToolset([client]);
-    await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          toolDebug: {
-            enabled: true,
-            logger: (line) => logs.push(line),
-            includeResultOnError: true,
-          },
+    await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        toolDebug: {
+          enabled: true,
+          logger: (line) => logs.push(line),
+          includeResultOnError: true,
         },
       },
-    );
+    });
     expect(logs.some((l) => l.includes("[tool:mcp:error]"))).toBe(true);
     expect(logs.some((l) => l.includes("[tool:mcp:result:error]"))).toBe(true);
   });
@@ -614,21 +562,17 @@ describe("executeMCPToolCalls", () => {
       throw new Error("boom");
     });
     const toolset = await resolveMCPToolset([client]);
-    await executeMCPToolCalls(
-      [{ id: "c1", name: "run" }],
-      toolset,
-      {
-        round: 1,
-        request: {
-          prompt: "test",
-          toolDebug: {
-            enabled: true,
-            logger: (line) => logs.push(line),
-            includeResultOnError: false,
-          },
+    await executeMCPToolCalls([{ id: "c1", name: "run" }], toolset, {
+      round: 1,
+      request: {
+        prompt: "test",
+        toolDebug: {
+          enabled: true,
+          logger: (line) => logs.push(line),
+          includeResultOnError: false,
         },
       },
-    );
+    });
 
     expect(logs.some((l) => l.includes("[tool:mcp:error]"))).toBe(true);
     expect(logs.some((l) => l.includes("[tool:mcp:result:error]"))).toBe(false);
@@ -749,12 +693,28 @@ describe("dynamic tool discovery", () => {
       async listTools() {
         callCount += 1;
         if (callCount === 1) {
-          return { tools: [{ name: "tool_get", description: "Bootstrap", inputSchema: { type: "object", properties: {} } as MCPToolSchema }] };
+          return {
+            tools: [
+              {
+                name: "tool_get",
+                description: "Bootstrap",
+                inputSchema: { type: "object", properties: {} } as MCPToolSchema,
+              },
+            ],
+          };
         }
         return {
           tools: [
-            { name: "tool_get", description: "Bootstrap", inputSchema: { type: "object", properties: {} } as MCPToolSchema },
-            { name: "websearch", description: "Search the web", inputSchema: { type: "object", properties: {} } as MCPToolSchema },
+            {
+              name: "tool_get",
+              description: "Bootstrap",
+              inputSchema: { type: "object", properties: {} } as MCPToolSchema,
+            },
+            {
+              name: "websearch",
+              description: "Search the web",
+              inputSchema: { type: "object", properties: {} } as MCPToolSchema,
+            },
           ],
         };
       },

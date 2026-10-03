@@ -23,8 +23,7 @@ const llm = createLLM({
   apiKey: process.env.LLM_API_KEY,
 });
 
-const message =
-  process.argv[3] ?? "I was charged twice for my order last week and nobody has replied.";
+const message = process.argv[3] ?? "I was charged twice for my order last week and nobody has replied.";
 
 const { answers, model, usage } = await llm.decide(`Customer message: ${message}`, {
   route: {

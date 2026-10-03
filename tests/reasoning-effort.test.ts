@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  toAnthropicReasoningEffort,
-  toOpenAIReasoningEffort,
-} from "@/providers/reasoning-effort";
+import { toAnthropicReasoningEffort, toOpenAIReasoningEffort } from "@/providers/reasoning-effort";
 import type { LLMReasoningEffort } from "@/types";
 
 describe("reasoning effort mapping", () => {

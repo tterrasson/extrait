@@ -31,10 +31,13 @@ async function collectSSE(chunks: string[]): Promise<string[]> {
 }
 
 function sseResponse(events: unknown[]): Response {
-  return new Response(events.map((event) => `data: ${typeof event === "string" ? event : JSON.stringify(event)}\n\n`).join(""), {
-    status: 200,
-    headers: { "content-type": "text/event-stream" },
-  });
+  return new Response(
+    events.map((event) => `data: ${typeof event === "string" ? event : JSON.stringify(event)}\n\n`).join(""),
+    {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    },
+  );
 }
 
 function captureFetch(respond: (body: Record<string, unknown>) => Response) {
@@ -49,7 +52,12 @@ function captureFetch(respond: (body: Record<string, unknown>) => Response) {
 
 describe("SSE parsing", () => {
   test("accepts every line terminator the spec allows, including mixed ones", async () => {
-    expect(await collectSSE(["data: a\n\r\ndata: b\r\n\ndata: c\r\rdata: d\n\n"])).toEqual(["a", "b", "c", "d"]);
+    expect(await collectSSE(["data: a\n\r\ndata: b\r\n\ndata: c\r\rdata: d\n\n"])).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
   });
 
   test("a CRLF split across chunks is one terminator", async () => {
@@ -94,8 +102,8 @@ describe("OpenAI Responses protocol", () => {
   });
 
   test("encodes assistant content parts as output_text", async () => {
-    const { bodies, fetcher } = captureFetch(() =>
-      new Response(JSON.stringify({ status: "completed", output_text: "ok" })),
+    const { bodies, fetcher } = captureFetch(
+      () => new Response(JSON.stringify({ status: "completed", output_text: "ok" })),
     );
     const adapter = createResponsesAdapter({ baseURL: "https://example.com", model: "m", fetcher });
     await adapter.complete({
@@ -115,17 +123,40 @@ describe("OpenAI Chat Completions protocol", () => {
   test("a name repeated in every tool-call delta is not doubled", async () => {
     const { fetcher } = captureFetch(() =>
       sseResponse([
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "lookup", arguments: "" } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "lookup", arguments: "{\"q\":" } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "lookup", arguments: "1}" } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, id: "c1", type: "function", function: { name: "lookup", arguments: "" } },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            { delta: { tool_calls: [{ index: 0, function: { name: "lookup", arguments: '{"q":' } }] } },
+          ],
+        },
+        {
+          choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "lookup", arguments: "1}" } }] } }],
+        },
         { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
         "[DONE]",
       ]),
     );
-    const adapter = createOpenAICompatibleLegacyAdapter({ baseURL: "https://example.com", model: "m", fetcher });
-    const result = await adapter.stream!({ prompt: "hi", body: { tools: [{ type: "function", function: { name: "lookup" } }] } });
+    const adapter = createOpenAICompatibleLegacyAdapter({
+      baseURL: "https://example.com",
+      model: "m",
+      fetcher,
+    });
+    const result = await adapter.stream!({
+      prompt: "hi",
+      body: { tools: [{ type: "function", function: { name: "lookup" } }] },
+    });
     expect(result.toolCalls?.[0]?.name).toBe("lookup");
-    expect(result.toolCalls?.[0]?.arguments).toBe("{\"q\":1}");
+    expect(result.toolCalls?.[0]?.arguments).toBe('{"q":1}');
   });
 
   test("a tool call streamed without any arguments still runs", async () => {
@@ -145,13 +176,25 @@ describe("OpenAI Chat Completions protocol", () => {
       round += 1;
       return round === 1
         ? sseResponse([
-            { choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "now" } }] } }] },
+            {
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "now" } }],
+                  },
+                },
+              ],
+            },
             { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
             "[DONE]",
           ])
         : sseResponse([{ choices: [{ delta: { content: "noon" }, finish_reason: "stop" }] }, "[DONE]"]);
     });
-    const adapter = createOpenAICompatibleLegacyAdapter({ baseURL: "https://example.com", model: "m", fetcher });
+    const adapter = createOpenAICompatibleLegacyAdapter({
+      baseURL: "https://example.com",
+      model: "m",
+      fetcher,
+    });
     const result = await adapter.stream!({ prompt: "time?", mcpClients: [client] });
     expect(calls).toEqual([{}]);
     expect(result.toolCalls?.[0]?.error).toBeUndefined();
@@ -160,12 +203,20 @@ describe("OpenAI Chat Completions protocol", () => {
 
 describe("Anthropic protocol", () => {
   test("input tokens include cached prompt tokens", async () => {
-    const { fetcher } = captureFetch(() =>
-      new Response(JSON.stringify({
-        content: [{ type: "text", text: "ok" }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 1000, output_tokens: 5 },
-      })),
+    const { fetcher } = captureFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            content: [{ type: "text", text: "ok" }],
+            stop_reason: "end_turn",
+            usage: {
+              input_tokens: 10,
+              cache_creation_input_tokens: 100,
+              cache_read_input_tokens: 1000,
+              output_tokens: 5,
+            },
+          }),
+        ),
     );
     const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "m", fetcher });
     const result = await adapter.complete({ prompt: "hi" });
@@ -176,7 +227,10 @@ describe("Anthropic protocol", () => {
   test("streamed usage keeps the cached prompt tokens of message_start", async () => {
     const { fetcher } = captureFetch(() =>
       sseResponse([
-        { type: "message_start", message: { usage: { input_tokens: 10, cache_read_input_tokens: 1000, output_tokens: 1 } } },
+        {
+          type: "message_start",
+          message: { usage: { input_tokens: 10, cache_read_input_tokens: 1000, output_tokens: 1 } },
+        },
         { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
         { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } },
         { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 7 } },
@@ -190,8 +244,9 @@ describe("Anthropic protocol", () => {
   });
 
   test("results of parallel tool calls form a single user turn", async () => {
-    const { bodies, fetcher } = captureFetch(() =>
-      new Response(JSON.stringify({ content: [{ type: "text", text: "done" }], stop_reason: "end_turn" })),
+    const { bodies, fetcher } = captureFetch(
+      () =>
+        new Response(JSON.stringify({ content: [{ type: "text", text: "done" }], stop_reason: "end_turn" })),
     );
     const adapter = createAnthropicCompatibleAdapter({ baseURL: "https://example.com", model: "m", fetcher });
     await adapter.complete({
@@ -320,7 +375,9 @@ describe("JSON extraction", () => {
   });
 
   test("a quoted decoy still loses to the real payload", () => {
-    const result = parseLLMOutput('"draft: {not the payload}" {"size": 1, "name": "x"}', schema, { repair: true });
+    const result = parseLLMOutput('"draft: {not the payload}" {"size": 1, "name": "x"}', schema, {
+      repair: true,
+    });
     expect(result.data).toEqual({ size: 1, name: "x" });
   });
 });

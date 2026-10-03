@@ -42,10 +42,7 @@ const ANTHROPIC_EFFORT: Record<LLMReasoningEffort, AnthropicReasoningEffort | nu
  * the provider default: the caller asking for `low` would quietly pay for
  * `high`. Fail loudly instead.
  */
-function lookupEffort<T>(
-  table: Record<LLMReasoningEffort, T>,
-  effort: LLMReasoningEffort,
-): T {
+function lookupEffort<T>(table: Record<LLMReasoningEffort, T>, effort: LLMReasoningEffort): T {
   if (!Object.hasOwn(table, effort)) {
     throw new RangeError(
       `Unknown reasoningEffort ${JSON.stringify(effort)}. Expected one of: ${Object.keys(table).join(", ")}.`,

@@ -323,11 +323,7 @@ async function completeWithMCPToolLoop(
       });
     }
 
-    messages = [
-      ...messages,
-      { role: "assistant", content },
-      { role: "user", content: toolResultContent },
-    ];
+    messages = [...messages, { role: "assistant", content }, { role: "user", content: toolResultContent }];
   }
 
   return {
@@ -569,7 +565,10 @@ function buildAnthropicRequestBody(
     ...body,
     // Precedence: per-request maxTokens > max_tokens already present in the
     // body (request.body over defaultBody via spread) > adapter default.
-    max_tokens: resolveMaxTokens(request.maxTokens, toFiniteNumber(body.max_tokens) ?? options.defaultMaxTokens),
+    max_tokens: resolveMaxTokens(
+      request.maxTokens,
+      toFiniteNumber(body.max_tokens) ?? options.defaultMaxTokens,
+    ),
     output_config: anthropicEffort
       ? cleanUndefined({
           ...bodyOutputConfig,
@@ -594,9 +593,10 @@ function omitRecordKey(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function resolveAnthropicInput(
-  request: LLMRequest,
-): { systemPrompt?: string; messages: Array<Record<string, unknown>> } {
+function resolveAnthropicInput(request: LLMRequest): {
+  systemPrompt?: string;
+  messages: Array<Record<string, unknown>>;
+} {
   if (Array.isArray(request.messages) && request.messages.length > 0) {
     return toAnthropicInput(request.messages);
   }
@@ -611,9 +611,10 @@ function resolveAnthropicInput(
   };
 }
 
-function toAnthropicInput(
-  messages: LLMMessage[],
-): { systemPrompt?: string; messages: Array<Record<string, unknown>> } {
+function toAnthropicInput(messages: LLMMessage[]): {
+  systemPrompt?: string;
+  messages: Array<Record<string, unknown>>;
+} {
   const systemParts: string[] = [];
   const normalizedMessages: Array<Record<string, unknown>> = [];
   let sawNonSystem = false;
@@ -637,7 +638,12 @@ function toAnthropicInput(
           continue;
         }
         const input = parseToolArguments(tc.function.arguments);
-        parts.push({ type: "tool_use", id: tc.id, name: tc.function.name, input: isRecord(input) ? input : {} });
+        parts.push({
+          type: "tool_use",
+          id: tc.id,
+          name: tc.function.name,
+          input: isRecord(input) ? input : {},
+        });
       }
       normalizedMessages.push({ role: "assistant", content: parts });
       continue;
@@ -664,9 +670,7 @@ function toAnthropicInput(
 
     normalizedMessages.push({
       role: message.role,
-      content: Array.isArray(message.content)
-        ? toAnthropicMessageContent(message.content)
-        : message.content,
+      content: Array.isArray(message.content) ? toAnthropicMessageContent(message.content) : message.content,
     });
   }
 
@@ -681,8 +685,11 @@ function toAnthropicInput(
 }
 
 function isToolResultContent(content: unknown): content is Array<Record<string, unknown>> {
-  return Array.isArray(content) && content.length > 0
-    && content.every((part) => isRecord(part) && part.type === "tool_result");
+  return (
+    Array.isArray(content) &&
+    content.length > 0 &&
+    content.every((part) => isRecord(part) && part.type === "tool_result")
+  );
 }
 
 function toAnthropicMessageContent(content: LLMMessage["content"]): Array<Record<string, unknown>> {
@@ -972,7 +979,7 @@ function buildAnthropicStreamToolCalls(state: Map<number, AnthropicStreamToolCal
       id: entry.id ?? "",
       type: "function",
       name: entry.name,
-      arguments: entry.argumentsText.length > 0 ? entry.argumentsText : entry.input ?? {},
+      arguments: entry.argumentsText.length > 0 ? entry.argumentsText : (entry.input ?? {}),
     }));
 }
 
@@ -989,7 +996,8 @@ function buildAnthropicAssistantToolContent(
   }
 
   for (const call of toolCalls) {
-    const parsedArguments = typeof call.arguments === "string" ? parseToolArguments(call.arguments) : call.arguments;
+    const parsedArguments =
+      typeof call.arguments === "string" ? parseToolArguments(call.arguments) : call.arguments;
     content.push({
       type: "tool_use",
       id: call.id,
@@ -1076,7 +1084,9 @@ function sumPromptTokens(usage: Record<string, unknown>): number | undefined {
   return (uncached ?? 0) + (cacheWrite ?? 0) + (cacheRead ?? 0);
 }
 
-function toAnthropicTools(tools: Array<Record<string, unknown>> | undefined): Array<Record<string, unknown>> | undefined {
+function toAnthropicTools(
+  tools: Array<Record<string, unknown>> | undefined,
+): Array<Record<string, unknown>> | undefined {
   if (!Array.isArray(tools) || tools.length === 0) {
     return undefined;
   }
@@ -1093,10 +1103,7 @@ function toAnthropicTools(tools: Array<Record<string, unknown>> | undefined): Ar
     });
 }
 
-function toAnthropicToolChoice(
-  value: LLMRequest["toolChoice"],
-  parallelToolCalls?: boolean,
-): unknown {
+function toAnthropicToolChoice(value: LLMRequest["toolChoice"], parallelToolCalls?: boolean): unknown {
   let choice: Record<string, unknown> | undefined;
 
   if (value === "required") {

@@ -3,7 +3,7 @@ import { extractFirstMarkdownCode, extractMarkdownCodeBlocks } from "@/markdown"
 
 describe("markdown code fences", () => {
   test("extracts a code block without final newline", () => {
-    const input = "```json\n{\"key\": \"value\"}```";
+    const input = '```json\n{"key": "value"}```';
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(1);
@@ -12,7 +12,7 @@ describe("markdown code fences", () => {
   });
 
   test("extracts a code block with final newline", () => {
-    const input = "```json\n{\"key\": \"value\"}\n```";
+    const input = '```json\n{"key": "value"}\n```';
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(1);
@@ -88,11 +88,7 @@ const y = 2;
   });
 
   test("supports fences longer than three backticks", () => {
-    const input = [
-      "````ts",
-      "const marker = \"```\";",
-      "````",
-    ].join("\n");
+    const input = ["````ts", 'const marker = "```";', "````"].join("\n");
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(1);
@@ -125,7 +121,7 @@ const y = 2;
   });
 
   test("unclosed fence is not extracted", () => {
-    const input = "```json\n{\"ok\": true}\nno closing fence";
+    const input = '```json\n{"ok": true}\nno closing fence';
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(0);
@@ -166,7 +162,7 @@ const y = 2;
   });
 
   test("inline closing fence on same line as content", () => {
-    const input = "```json\n{\"ok\": true}```";
+    const input = '```json\n{"ok": true}```';
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(1);
@@ -174,7 +170,7 @@ const y = 2;
   });
 
   test("closing fence with trailing spaces is valid", () => {
-    const input = "```json\n{\"ok\": true}\n```   \n";
+    const input = '```json\n{"ok": true}\n```   \n';
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(1);
@@ -182,7 +178,7 @@ const y = 2;
   });
 
   test("handles Windows CRLF line endings", () => {
-    const input = "```json\r\n{\"ok\": true}\r\n```\r\n";
+    const input = '```json\r\n{"ok": true}\r\n```\r\n';
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(1);
@@ -191,7 +187,7 @@ const y = 2;
   });
 
   test("opening fence with 4+ spaces indent is not a valid fence", () => {
-    const input = "    ```json\n{\"ok\": true}\n```";
+    const input = '    ```json\n{"ok": true}\n```';
     const blocks = extractMarkdownCodeBlocks(input);
 
     expect(blocks).toHaveLength(0);

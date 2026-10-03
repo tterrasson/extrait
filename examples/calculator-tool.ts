@@ -3,9 +3,7 @@ import { createLLM, createMCPClient, prompt, s, StructuredParseError } from "@/i
 import { requireBaseURL } from "./env";
 
 const provider = (process.env.LLM_PROVIDER ?? "openai-compatible") as
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+  "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 const model = process.env.LLM_MODEL ?? "my-model-id";
 const baseURL = requireBaseURL();
@@ -57,9 +55,7 @@ console.log(`Question: ${question}\n`);
 try {
   const result = await llm.structured(
     ResultSchema,
-    prompt()
-      .system`You are a precise calculator assistant.`
-      .user`
+    prompt().system`You are a precise calculator assistant.`.user`
         Calculate: """${question}"""
 
         Use the available MCP tools to perform the calculations.

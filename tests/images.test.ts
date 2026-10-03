@@ -13,21 +13,15 @@ const GIF_BYTES = Uint8Array.from(Buffer.from("GIF89a-payload", "latin1"));
 const WEBP_BYTES = Uint8Array.from(Buffer.from("RIFF\0\0\0\0WEBPVP8 ", "latin1"));
 const AVIF_BYTES = Uint8Array.from(Buffer.from("\0\0\0\x20ftypavif", "latin1"));
 // Major brand `mif1` (structural HEIF), `avif` only among the compatible brands.
-const AVIF_MIF1_BYTES = Uint8Array.from(
-  Buffer.from("\0\0\0\x18ftypmif1\0\0\0\0mif1avif", "latin1"),
-);
-const HEIC_BYTES = Uint8Array.from(
-  Buffer.from("\0\0\0\x18ftypheic\0\0\0\0mif1heic", "latin1"),
-);
+const AVIF_MIF1_BYTES = Uint8Array.from(Buffer.from("\0\0\0\x18ftypmif1\0\0\0\0mif1avif", "latin1"));
+const HEIC_BYTES = Uint8Array.from(Buffer.from("\0\0\0\x18ftypheic\0\0\0\0mif1heic", "latin1"));
 const UNKNOWN_BYTES = Uint8Array.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
 
 describe("images()", () => {
   test("keeps { base64, mimeType } support", () => {
     const result = images({ base64: "abc123", mimeType: "image/png" });
 
-    expect(result).toEqual([
-      { type: "image_url", image_url: { url: "data:image/png;base64,abc123" } },
-    ]);
+    expect(result).toEqual([{ type: "image_url", image_url: { url: "data:image/png;base64,abc123" } }]);
   });
 
   test("builds multiple image content blocks from an array", () => {
@@ -67,12 +61,8 @@ describe("images()", () => {
   test("treats URI schemes as case-insensitive", () => {
     const upperData = `DATA:image/png;BASE64,${FIXTURE_BASE64}`;
     expect(images(upperData)[0]?.image_url.url).toBe(upperData);
-    expect(images("HTTPS://example.com/a.png")[0]?.image_url.url).toBe(
-      "HTTPS://example.com/a.png",
-    );
-    expect(images("Http://example.com/a.png")[0]?.image_url.url).toBe(
-      "Http://example.com/a.png",
-    );
+    expect(images("HTTPS://example.com/a.png")[0]?.image_url.url).toBe("HTTPS://example.com/a.png");
+    expect(images("Http://example.com/a.png")[0]?.image_url.url).toBe("Http://example.com/a.png");
   });
 
   test("accepts a URL object", () => {
@@ -91,20 +81,13 @@ describe("images()", () => {
   });
 
   test("accepts an ArrayBuffer", () => {
-    const buffer = PNG_BYTES.buffer.slice(
-      PNG_BYTES.byteOffset,
-      PNG_BYTES.byteOffset + PNG_BYTES.byteLength,
-    );
+    const buffer = PNG_BYTES.buffer.slice(PNG_BYTES.byteOffset, PNG_BYTES.byteOffset + PNG_BYTES.byteLength);
     const [block] = images(buffer as ArrayBuffer);
     expect(block?.image_url.url).toBe(`data:image/png;base64,${FIXTURE_BASE64}`);
   });
 
   test("preserves order across mixed sources", () => {
-    const result = images([
-      "https://example.com/1.png",
-      PNG_BYTES,
-      { base64: "zzz", mimeType: "image/gif" },
-    ]);
+    const result = images(["https://example.com/1.png", PNG_BYTES, { base64: "zzz", mimeType: "image/gif" }]);
 
     expect(result.map((block) => block.image_url.url)).toEqual([
       "https://example.com/1.png",

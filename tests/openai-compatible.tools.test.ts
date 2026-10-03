@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createOpenAICompatibleAdapter as createResponsesAdapter } from "@/providers/openai-compatible";
-import {
-  createOpenAICompatibleLegacyAdapter as createOpenAICompatibleAdapter,
-} from "@/providers/openai-compatible-legacy";
+import { createOpenAICompatibleLegacyAdapter as createOpenAICompatibleAdapter } from "@/providers/openai-compatible-legacy";
 import type { MCPToolClient } from "@/types";
 
 function jsonResponse(payload: Record<string, unknown>): Response {
@@ -430,7 +428,11 @@ describe("openai-compatible MCP tools", () => {
     expect(argsSeen).toEqual({ a: 2, b: 3 });
     expect(out.text).toBe("5");
     expect(out.toolCalls?.[0]).toMatchObject({ id: "call_add", name: "add", output: { result: 5 } });
-    expect(out.toolExecutions?.[0]).toMatchObject({ callId: "call_add", name: "add", clientId: "calculator" });
+    expect(out.toolExecutions?.[0]).toMatchObject({
+      callId: "call_add",
+      name: "add",
+      clientId: "calculator",
+    });
     expect(executions).toEqual([{ callId: "call_add", name: "add", clientId: "calculator" }]);
 
     const first = requests[0];
@@ -442,7 +444,7 @@ describe("openai-compatible MCP tools", () => {
       { role: "user", content: "Compute 2+3" },
     ]);
     const tools = Array.isArray(first?.tools) ? first.tools : [];
-    expect(((tools[0] as { function?: { name?: string } }).function?.name)).toBe("add");
+    expect((tools[0] as { function?: { name?: string } }).function?.name).toBe("add");
 
     const second = requests[1];
     const messages = Array.isArray(second?.messages) ? second.messages : [];
@@ -568,9 +570,10 @@ describe("openai-compatible MCP tools", () => {
 
       const messages = Array.isArray(body.messages) ? body.messages : [];
       const toolMessage = messages.find((entry) => (entry as { role?: string }).role === "tool") as
-        | { content?: string }
-        | undefined;
-      expect(toolMessage?.content).toBe('{"error":"Tool \\"lookup\\" is not registered in the current toolset."}');
+        { content?: string } | undefined;
+      expect(toolMessage?.content).toBe(
+        '{"error":"Tool \\"lookup\\" is not registered in the current toolset."}',
+      );
 
       return jsonResponse({
         choices: [
@@ -665,9 +668,11 @@ describe("openai-compatible MCP tools", () => {
 
     expect(argsSeen).toEqual({ a: 7, b: 9 });
     expect(out.text).toBe("16");
-    expect(out.toolCalls?.some((call) => call.name === "add" && (call.output as { result?: number })?.result === 16)).toBe(
-      true,
-    );
+    expect(
+      out.toolCalls?.some(
+        (call) => call.name === "add" && (call.output as { result?: number })?.result === 16,
+      ),
+    ).toBe(true);
 
     const second = requests[1];
     expect(requests[0]?.previous_response_id).toBe("resp_external");
@@ -870,7 +875,7 @@ describe("openai-compatible MCP tools", () => {
         id: "call_lookup",
         type: "function",
         name: "lookup",
-        arguments: "{\"q\":\"bun\"}",
+        arguments: '{"q":"bun"}',
       },
     ]);
     expect(out.toolExecutions).toBeUndefined();
@@ -923,28 +928,34 @@ describe("openai-compatible MCP logprobs", () => {
       callCount += 1;
       if (callCount === 1) {
         return jsonResponse({
-          choices: [{
-            message: {
-              role: "assistant",
-              content: null,
-              tool_calls: [{
-                id: "call_1",
-                type: "function",
-                function: { name: "add", arguments: "{\"a\":1,\"b\":2}" },
-              }],
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "add", arguments: '{"a":1,"b":2}' },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
             },
-            finish_reason: "tool_calls",
-          }],
+          ],
         });
       }
       return jsonResponse({
-        choices: [{
-          message: { role: "assistant", content: "3" },
-          finish_reason: "stop",
-          logprobs: {
-            content: [{ token: "3", logprob: -0.05 }],
+        choices: [
+          {
+            message: { role: "assistant", content: "3" },
+            finish_reason: "stop",
+            logprobs: {
+              content: [{ token: "3", logprob: -0.05 }],
+            },
           },
-        }],
+        ],
       });
     }) as unknown as typeof fetch;
 
@@ -980,7 +991,7 @@ describe("openai-compatible MCP logprobs", () => {
             type: "response.completed",
             response: {
               status: "completed",
-              output: [{ type: "function_call", call_id: "call_1", name: "add", arguments: "{\"a\":1,\"b\":2}" }],
+              output: [{ type: "function_call", call_id: "call_1", name: "add", arguments: '{"a":1,"b":2}' }],
             },
           },
         ]);

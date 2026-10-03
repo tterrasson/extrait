@@ -79,9 +79,7 @@ for (const api of ["responses", "chat"] as const) {
         api === "responses"
           ? { type: "response.function_call_arguments.delta", item_id: "fc_1", delta }
           : {
-              choices: [
-                { delta: { tool_calls: [{ index: 0, function: { arguments: delta } }] } },
-              ],
+              choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: delta } }] } }],
             },
       );
     }
@@ -95,8 +93,7 @@ for (const api of ["responses", "chat"] as const) {
         : { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
     );
 
-    const factory =
-      api === "responses" ? createOpenAICompatibleAdapter : createOpenAICompatibleLegacyAdapter;
+    const factory = api === "responses" ? createOpenAICompatibleAdapter : createOpenAICompatibleLegacyAdapter;
 
     const adapter = factory({
       baseURL: "http://test.invalid",

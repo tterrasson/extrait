@@ -27,12 +27,7 @@ describe("parseLLMOutput", () => {
   });
 
   test("continues across multiple candidates until the first valid one", () => {
-    const input = [
-      "Attempt 1: {'wrong': true}",
-      "```json",
-      "{\"va2\": \"7\", \"val\": [\"ok\"]}",
-      "```",
-    ].join("\n");
+    const input = ["Attempt 1: {'wrong': true}", "```json", '{"va2": "7", "val": ["ok"]}', "```"].join("\n");
 
     const result = parseLLMOutput(input, Schema, {
       repair: true,
@@ -133,10 +128,7 @@ describe("parseLLMOutput", () => {
   });
 
   test("multiple candidates: selected diagnostic is marked", () => {
-    const input = [
-      '{"invalid": true}',
-      '{"va2": "5", "val": ["ok"]}',
-    ].join(" ");
+    const input = ['{"invalid": true}', '{"va2": "5", "val": ["ok"]}'].join(" ");
 
     const result = parseLLMOutput(input, Schema, {
       repair: true,
@@ -239,11 +231,7 @@ describe("parseLLMOutput - repair and hint edge cases", () => {
 
   test("markSelectedDiagnostic marks exactly one diagnostic when multiple exist", () => {
     // Exercises the loop body in markSelectedDiagnostic (lines 349-352)
-    const input = [
-      '{"va2": "1"}',
-      '{"va2": "2", "val": ["a"]}',
-      '{"va2": "3", "val": ["b", "c"]}',
-    ].join(" ");
+    const input = ['{"va2": "1"}', '{"va2": "2", "val": ["a"]}', '{"va2": "3", "val": ["b", "c"]}'].join(" ");
 
     const result = parseLLMOutput(input, Schema, { repair: true, maxCandidates: 5 });
 
@@ -319,10 +307,7 @@ describe("parseLLMOutput - repair and hint edge cases", () => {
   });
 
   test("keeps the least-bad candidate to expose the most actionable zod issues", () => {
-    const input = [
-      '{"va2":"oops","val":[1]}',
-      '{"foo":"bar"}',
-    ].join(" ");
+    const input = ['{"va2":"oops","val":[1]}', '{"foo":"bar"}'].join(" ");
 
     const result = parseLLMOutput(input, Schema, {
       repair: true,
@@ -346,9 +331,7 @@ describe("parseLLMOutput - repair and hint edge cases", () => {
     });
 
     expect(traces.some((line) => line.includes("info:extract:Extracted"))).toBe(true);
-    expect(traces.some((line) => line.includes("error:result:No candidate could be validated."))).toBe(
-      true,
-    );
+    expect(traces.some((line) => line.includes("error:result:No candidate could be validated."))).toBe(true);
   });
 });
 
@@ -360,13 +343,13 @@ describe("formatZodIssues", () => {
         message: "Required",
         code: "invalid_type",
         expected: "string",
-        received: "undefined"
+        received: "undefined",
       } as z.core.$ZodIssue,
       {
         path: [],
         message: "Unrecognized key",
         code: "unrecognized_keys",
-        keys: []
+        keys: [],
       } as unknown as z.core.$ZodIssue,
     ]);
 

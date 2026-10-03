@@ -1,8 +1,5 @@
 import type { HTTPHeaders, LLMAdapter } from "../types";
-import {
-  createOpenAICompatibleAdapter,
-  type OpenAICompatibleAdapterOptions,
-} from "./openai-compatible";
+import { createOpenAICompatibleAdapter, type OpenAICompatibleAdapterOptions } from "./openai-compatible";
 import {
   createOpenAICompatibleLegacyAdapter,
   type OpenAICompatibleLegacyAdapterOptions,
@@ -12,10 +9,7 @@ import {
   type AnthropicCompatibleAdapterOptions,
 } from "./anthropic-compatible";
 
-export type BuiltinProviderKind =
-  | "openai-compatible"
-  | "openai-compatible-legacy"
-  | "anthropic-compatible";
+export type BuiltinProviderKind = "openai-compatible" | "openai-compatible-legacy" | "anthropic-compatible";
 
 export interface ProviderFactory<TOptions = unknown> {
   (options: TOptions): LLMAdapter;

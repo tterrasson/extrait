@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { withFormat } from "@/format";
 import { getSchemaName, inferSchemaExample, inspectSchemaMetadata, s, setSchemaName } from "@/schema-builder";
-import { DEFAULT_SCHEMA_INSTRUCTION} from "@/format";
+import { DEFAULT_SCHEMA_INSTRUCTION } from "@/format";
 
 describe("schema builder", () => {
   test("inspects required/defaults/descriptions", () => {
@@ -86,9 +86,11 @@ describe("schema builder", () => {
   });
 
   test("readDefaultValue traverses ZodReadonly wrapper", () => {
-    const schema = z.object({
-      items: z.array(z.string()).default(["a"]),
-    }).readonly();
+    const schema = z
+      .object({
+        items: z.array(z.string()).default(["a"]),
+      })
+      .readonly();
     const example = inferSchemaExample(schema);
     expect(example).toEqual({ items: ["a"] });
   });
@@ -112,7 +114,10 @@ describe("schema builder", () => {
 
   test("readDefaultValue traverses ZodEffects wrapper", () => {
     const schema = z.object({
-      name: z.string().default("hello").transform((v) => v.toUpperCase()),
+      name: z
+        .string()
+        .default("hello")
+        .transform((v) => v.toUpperCase()),
     });
     const metadata = inspectSchemaMetadata(schema);
     expect(metadata.defaults).toEqual({ name: "hello" });
@@ -127,9 +132,11 @@ describe("schema builder", () => {
   });
 
   test("readSchemaDescription traverses ZodReadonly", () => {
-    const schema = z.object({
-      id: z.string().describe("unique id"),
-    }).readonly();
+    const schema = z
+      .object({
+        id: z.string().describe("unique id"),
+      })
+      .readonly();
     const metadata = inspectSchemaMetadata(schema);
     expect(metadata.fieldDescriptions.id).toBe("unique id");
   });
@@ -153,7 +160,10 @@ describe("schema builder", () => {
 
   test("readSchemaDescription traverses ZodEffects", () => {
     const schema = z.object({
-      name: z.string().describe("the name").transform((v) => v.toUpperCase()),
+      name: z
+        .string()
+        .describe("the name")
+        .transform((v) => v.toUpperCase()),
     });
     const metadata = inspectSchemaMetadata(schema);
     expect(metadata.fieldDescriptions.name).toBe("the name");

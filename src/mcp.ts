@@ -1,8 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import {
-  StdioClientTransport,
-  type StdioServerParameters,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport, type StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
   StreamableHTTPClientTransport,
   type StreamableHTTPClientTransportOptions,
@@ -34,9 +31,7 @@ export interface MCPInMemoryTransportConfig {
 }
 
 export type MCPTransportConfig =
-  | MCPStdioTransportConfig
-  | MCPStreamableHTTPTransportConfig
-  | MCPInMemoryTransportConfig;
+  MCPStdioTransportConfig | MCPStreamableHTTPTransportConfig | MCPInMemoryTransportConfig;
 
 export interface CreateMCPClientOptions {
   id: string;

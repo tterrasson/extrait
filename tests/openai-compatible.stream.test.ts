@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createOpenAICompatibleAdapter as createResponsesAdapter } from "@/providers/openai-compatible";
-import {
-  createOpenAICompatibleLegacyAdapter as createOpenAICompatibleAdapter,
-} from "@/providers/openai-compatible-legacy";
+import { createOpenAICompatibleLegacyAdapter as createOpenAICompatibleAdapter } from "@/providers/openai-compatible-legacy";
 import type { MCPToolClient, LLMStreamChunk } from "@/types";
 
 function sseResponse(events: string[]): Response {
@@ -54,7 +52,10 @@ describe("openai-compatible streaming", () => {
       return sseResponse([
         JSON.stringify({ choices: [{ delta: { content: "Hello" } }] }),
         JSON.stringify({ choices: [{ delta: { content: " world" } }] }),
-        JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }),
+        JSON.stringify({
+          choices: [{ delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+        }),
         "[DONE]",
       ]);
     }) as typeof fetch;
@@ -92,29 +93,35 @@ describe("openai-compatible streaming", () => {
     const fetcher = (async () =>
       sseResponse([
         JSON.stringify({
-          choices: [{
-            delta: { content: "yes" },
-            logprobs: {
-              content: [{
-                token: "yes",
-                logprob: -0.1,
-                bytes: [121, 101, 115],
-                top_logprobs: [
-                  { token: "yes", logprob: -0.1, bytes: [121, 101, 115] },
-                  { token: "no", logprob: -2.4, bytes: null },
+          choices: [
+            {
+              delta: { content: "yes" },
+              logprobs: {
+                content: [
+                  {
+                    token: "yes",
+                    logprob: -0.1,
+                    bytes: [121, 101, 115],
+                    top_logprobs: [
+                      { token: "yes", logprob: -0.1, bytes: [121, 101, 115] },
+                      { token: "no", logprob: -2.4, bytes: null },
+                    ],
+                  },
                 ],
-              }],
+              },
             },
-          }],
+          ],
         }),
         JSON.stringify({
-          choices: [{
-            delta: {},
-            finish_reason: "content_filter",
-            logprobs: {
-              refusal: [{ token: " refusal", logprob: -0.3, bytes: [999] }],
+          choices: [
+            {
+              delta: {},
+              finish_reason: "content_filter",
+              logprobs: {
+                refusal: [{ token: " refusal", logprob: -0.3, bytes: [999] }],
+              },
             },
-          }],
+          ],
         }),
         "[DONE]",
       ])) as unknown as typeof fetch;
@@ -139,15 +146,17 @@ describe("openai-compatible streaming", () => {
       ],
     });
     expect(result.logprobs).toEqual({
-      content: [{
-        token: "yes",
-        logprob: -0.1,
-        bytes: [121, 101, 115],
-        top_logprobs: [
-          { token: "yes", logprob: -0.1, bytes: [121, 101, 115] },
-          { token: "no", logprob: -2.4, bytes: null },
-        ],
-      }],
+      content: [
+        {
+          token: "yes",
+          logprob: -0.1,
+          bytes: [121, 101, 115],
+          top_logprobs: [
+            { token: "yes", logprob: -0.1, bytes: [121, 101, 115] },
+            { token: "no", logprob: -2.4, bytes: null },
+          ],
+        },
+      ],
       refusal: [{ token: " refusal", logprob: -0.3 }],
     });
   });
@@ -184,7 +193,10 @@ describe("openai-compatible streaming", () => {
   test("keeps the latest stream usage snapshot instead of summing chunk usage", async () => {
     const fetcher = (async () =>
       sseResponse([
-        JSON.stringify({ choices: [{ delta: { content: "Hello" } }], usage: { prompt_tokens: 5, total_tokens: 5 } }),
+        JSON.stringify({
+          choices: [{ delta: { content: "Hello" } }],
+          usage: { prompt_tokens: 5, total_tokens: 5 },
+        }),
         JSON.stringify({
           choices: [{ delta: {}, finish_reason: "stop" }],
           usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
@@ -216,7 +228,7 @@ describe("openai-compatible streaming", () => {
       sseResponse([
         JSON.stringify({ choices: [{ delta: { reasoning_content: "Thinking" } }] }),
         JSON.stringify({ choices: [{ delta: { reasoning_content: "..." } }] }),
-        JSON.stringify({ choices: [{ delta: { content: "{\"value\":" } }] }),
+        JSON.stringify({ choices: [{ delta: { content: '{"value":' } }] }),
         JSON.stringify({ choices: [{ delta: { content: "7}" }, finish_reason: "stop" }] }),
         "[DONE]",
       ])) as unknown as typeof fetch;
@@ -258,10 +270,7 @@ describe("openai-compatible streaming", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onChunk: (chunk) => chunks.push(chunk) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onChunk: (chunk) => chunks.push(chunk) });
 
     expect(result.text).toBe("done");
     expect(result.reasoning).toBe("step 1");
@@ -303,7 +312,7 @@ describe("openai-compatible streaming", () => {
                     index: 0,
                     id: "call_lookup",
                     type: "function",
-                    function: { name: "lookup", arguments: "{\"q\"" },
+                    function: { name: "lookup", arguments: '{"q"' },
                   },
                 ],
               },
@@ -317,7 +326,7 @@ describe("openai-compatible streaming", () => {
                 tool_calls: [
                   {
                     index: 0,
-                    function: { arguments: ":\"x\"}" },
+                    function: { arguments: ':"x"}' },
                   },
                 ],
               },
@@ -347,7 +356,7 @@ describe("openai-compatible streaming", () => {
     expect(result.text).toBe("");
     expect(result.finishReason).toBe("tool_calls");
     expect(result.toolCalls).toEqual([
-      { id: "call_lookup", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+      { id: "call_lookup", type: "function", name: "lookup", arguments: '{"q":"x"}' },
     ]);
     expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "call_lookup")).toBe(true);
   });
@@ -366,7 +375,7 @@ describe("openai-compatible streaming", () => {
                   {
                     id: "call_lookup",
                     type: "function",
-                    function: { name: "lookup", arguments: "{\"q\":\"x\"}" },
+                    function: { name: "lookup", arguments: '{"q":"x"}' },
                   },
                 ],
               },
@@ -396,7 +405,7 @@ describe("openai-compatible streaming", () => {
     expect(result.text).toBe("");
     expect(result.finishReason).toBe("tool_calls");
     expect(result.toolCalls).toEqual([
-      { id: "call_lookup", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+      { id: "call_lookup", type: "function", name: "lookup", arguments: '{"q":"x"}' },
     ]);
     expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "call_lookup")).toBe(true);
   });
@@ -458,7 +467,9 @@ describe("openai-compatible streaming", () => {
     const fetcher = (async () =>
       sseResponse([
         JSON.stringify({ choices: [{ delta: { content: "before <tool_" } }] }),
-        JSON.stringify({ choices: [{ delta: { content: "call>{\"name\":\"lookup\",\"arguments\":{\"q\":\"x\"}}</tool_" } }] }),
+        JSON.stringify({
+          choices: [{ delta: { content: 'call>{"name":"lookup","arguments":{"q":"x"}}</tool_' } }],
+        }),
         JSON.stringify({ choices: [{ delta: { content: "call> after" }, finish_reason: "stop" }] }),
         "[DONE]",
       ])) as unknown as typeof fetch;
@@ -482,7 +493,7 @@ describe("openai-compatible streaming", () => {
     expect(tokens.join("")).toBe("before  after");
     expect(result.finishReason).toBe("stop");
     expect(result.toolCalls).toEqual([
-      { id: "call_native_0", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+      { id: "call_native_0", type: "function", name: "lookup", arguments: '{"q":"x"}' },
     ]);
   });
 
@@ -531,10 +542,12 @@ describe("openai-compatible streaming", () => {
     const fetcher = (async () =>
       sseResponse([
         JSON.stringify({
-          choices: [{
-            delta: { content: "Before <tool_call>{\"name\":\"lookup\"" },
-            finish_reason: "stop",
-          }],
+          choices: [
+            {
+              delta: { content: 'Before <tool_call>{"name":"lookup"' },
+              finish_reason: "stop",
+            },
+          ],
         }),
         "[DONE]",
       ])) as unknown as typeof fetch;
@@ -550,14 +563,16 @@ describe("openai-compatible streaming", () => {
       body: { tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }] },
     });
 
-    expect(result.text).toBe("Before <tool_call>{\"name\":\"lookup\"");
+    expect(result.text).toBe('Before <tool_call>{"name":"lookup"');
     expect(result.toolCalls).toBeUndefined();
   });
 
   test("does not intercept <tool_call> markup when the request declares no tools", async () => {
     const fetcher = (async () =>
       sseResponse([
-        JSON.stringify({ choices: [{ delta: { content: "Use the <tool_call>{\"name\":\"x\"}</tool_call> format." } }] }),
+        JSON.stringify({
+          choices: [{ delta: { content: 'Use the <tool_call>{"name":"x"}</tool_call> format.' } }],
+        }),
         JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }),
         "[DONE]",
       ])) as unknown as typeof fetch;
@@ -571,7 +586,7 @@ describe("openai-compatible streaming", () => {
     const result = await adapter.stream!({ prompt: "test" }, {});
 
     // No tools declared: the literal markup stays in the text, untouched.
-    expect(result.text).toBe("Use the <tool_call>{\"name\":\"x\"}</tool_call> format.");
+    expect(result.text).toBe('Use the <tool_call>{"name":"x"}</tool_call> format.');
     expect(result.toolCalls).toBeUndefined();
     expect(result.finishReason).toBe("stop");
   });
@@ -591,10 +606,7 @@ describe("openai-compatible streaming", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onToken: (t) => tokens.push(t) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onToken: (t) => tokens.push(t) });
 
     expect(result.text).toBe("ok");
     expect(tokens).toEqual(["ok"]);
@@ -662,8 +674,7 @@ describe("openai-compatible streaming", () => {
   });
 
   test("throws on HTTP error during streaming", async () => {
-    const fetcher = (async () =>
-      new Response("Server Error", { status: 500 })) as unknown as typeof fetch;
+    const fetcher = (async () => new Response("Server Error", { status: 500 })) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
@@ -697,7 +708,7 @@ describe("openai-compatible streaming", () => {
                       index: 0,
                       id: "call_add",
                       type: "function",
-                      function: { name: "add", arguments: "{\"a\":2" },
+                      function: { name: "add", arguments: '{"a":2' },
                     },
                   ],
                 },
@@ -711,7 +722,7 @@ describe("openai-compatible streaming", () => {
                   tool_calls: [
                     {
                       index: 0,
-                      function: { arguments: ",\"b\":3}" },
+                      function: { arguments: ',"b":3}' },
                     },
                   ],
                 },
@@ -792,7 +803,12 @@ describe("openai-compatible streaming", () => {
               {
                 delta: {
                   tool_calls: [
-                    { index: 0, id: "call_add", type: "function", function: { name: "add", arguments: "{\"a\":2" } },
+                    {
+                      index: 0,
+                      id: "call_add",
+                      type: "function",
+                      function: { name: "add", arguments: '{"a":2' },
+                    },
                   ],
                 },
               },
@@ -800,7 +816,10 @@ describe("openai-compatible streaming", () => {
           }),
           JSON.stringify({
             choices: [
-              { delta: { tool_calls: [{ index: 0, function: { arguments: ",\"b\":3}" } }] }, finish_reason: "tool_calls" },
+              {
+                delta: { tool_calls: [{ index: 0, function: { arguments: ',"b":3}' } }] },
+                finish_reason: "tool_calls",
+              },
             ],
           }),
           "[DONE]",
@@ -813,7 +832,11 @@ describe("openai-compatible streaming", () => {
       ]);
     }) as typeof fetch;
 
-    const adapter = createOpenAICompatibleAdapter({ baseURL: "https://example.com", model: "test-model", fetcher });
+    const adapter = createOpenAICompatibleAdapter({
+      baseURL: "https://example.com",
+      model: "test-model",
+      fetcher,
+    });
 
     const chunks: LLMStreamChunk[] = [];
     await adapter.stream!(
@@ -826,10 +849,10 @@ describe("openai-compatible streaming", () => {
     const argSnapshots = chunks
       .map((chunk) => chunk.toolCalls?.[0]?.arguments)
       .filter((value): value is string => typeof value === "string");
-    expect(argSnapshots).toContain("{\"a\":2");
-    expect(argSnapshots).toContain("{\"a\":2,\"b\":3}");
+    expect(argSnapshots).toContain('{"a":2');
+    expect(argSnapshots).toContain('{"a":2,"b":3}');
     // Partial snapshot must appear before the complete one.
-    expect(argSnapshots.indexOf("{\"a\":2")).toBeLessThan(argSnapshots.indexOf("{\"a\":2,\"b\":3}"));
+    expect(argSnapshots.indexOf('{"a":2')).toBeLessThan(argSnapshots.indexOf('{"a":2,"b":3}'));
   });
 
   test("streams reasoning in MCP mode before tool calls", async () => {
@@ -853,7 +876,7 @@ describe("openai-compatible streaming", () => {
                       index: 0,
                       id: "call_add_reasoning",
                       type: "function",
-                      function: { name: "add", arguments: "{\"a\":1,\"b\":4}" },
+                      function: { name: "add", arguments: '{"a":1,"b":4}' },
                     },
                   ],
                 },
@@ -867,8 +890,7 @@ describe("openai-compatible streaming", () => {
 
       const messages = Array.isArray(bodyParsed.messages) ? bodyParsed.messages : [];
       const assistantMessage = messages.find((entry) => (entry as { role?: string }).role === "assistant") as
-        | { reasoning?: string }
-        | undefined;
+        { reasoning?: string } | undefined;
       expect(assistantMessage?.reasoning).toBe("Need addition. ");
 
       return sseResponse([
@@ -965,10 +987,7 @@ describe("openai-compatible streaming", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onToken: (t) => tokens.push(t) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onToken: (t) => tokens.push(t) });
 
     expect(result.text).toBe("from responses api");
     expect(tokens).toEqual(["from ", "responses api"]);
@@ -992,13 +1011,13 @@ describe("openai-compatible streaming", () => {
           type: "response.function_call_arguments.delta",
           output_index: 0,
           item_id: "call_lookup",
-          delta: "{\"q\"",
+          delta: '{"q"',
         }),
         JSON.stringify({
           type: "response.function_call_arguments.done",
           output_index: 0,
           item_id: "call_lookup",
-          arguments: "{\"q\":\"x\"}",
+          arguments: '{"q":"x"}',
         }),
         JSON.stringify({
           type: "response.completed",
@@ -1010,7 +1029,7 @@ describe("openai-compatible streaming", () => {
                 type: "function_call",
                 call_id: "call_lookup",
                 name: "lookup",
-                arguments: "{\"q\":\"x\"}",
+                arguments: '{"q":"x"}',
               },
             ],
           },
@@ -1037,7 +1056,7 @@ describe("openai-compatible streaming", () => {
 
     expect(result.text).toBe("");
     expect(result.toolCalls).toEqual([
-      { id: "call_lookup", type: "function", name: "lookup", arguments: "{\"q\":\"x\"}" },
+      { id: "call_lookup", type: "function", name: "lookup", arguments: '{"q":"x"}' },
     ]);
     expect(chunks.some((chunk) => chunk.toolCalls?.[0]?.id === "call_lookup")).toBe(true);
   });
@@ -1099,13 +1118,13 @@ describe("openai-compatible streaming", () => {
               type: "function_call",
               call_id: "call_sum",
               name: "add",
-              arguments: "{\"a\":7",
+              arguments: '{"a":7',
             },
           }),
           JSON.stringify({
             type: "response.function_call_arguments.delta",
             call_id: "call_sum",
-            delta: ",\"b\":9}",
+            delta: ',"b":9}',
           }),
           JSON.stringify({
             type: "response.completed",
@@ -1186,12 +1205,14 @@ describe("openai-compatible streaming", () => {
       if (round <= 2) {
         return sseResponse([
           JSON.stringify({
-            choices: [{
-              delta: {
-                content: `<tool_call>{"name":"add","arguments":{"a":${round},"b":1}}</tool_call>`,
+            choices: [
+              {
+                delta: {
+                  content: `<tool_call>{"name":"add","arguments":{"a":${round},"b":1}}</tool_call>`,
+                },
+                finish_reason: "tool_calls",
               },
-              finish_reason: "tool_calls",
-            }],
+            ],
           }),
           "[DONE]",
         ]);
@@ -1222,10 +1243,12 @@ describe("openai-compatible streaming", () => {
     ]);
     const finalMessages = requests[2]?.messages as Array<Record<string, unknown>>;
     const assistantMessages = finalMessages.filter((message) => message.role === "assistant");
-    expect(assistantMessages.map((message) => {
-      const calls = message.tool_calls as Array<Record<string, unknown>>;
-      return calls[0]?.id;
-    })).toEqual(["call_native_round_1_0", "call_native_round_2_0"]);
+    expect(
+      assistantMessages.map((message) => {
+        const calls = message.tool_calls as Array<Record<string, unknown>>;
+        return calls[0]?.id;
+      }),
+    ).toEqual(["call_native_round_1_0", "call_native_round_2_0"]);
   });
 });
 
@@ -1233,18 +1256,22 @@ describe("openai-compatible text extraction", () => {
   test("normalizes chat completion logprobs", async () => {
     const fetcher = (async () =>
       jsonResponse({
-        choices: [{
-          finish_reason: "stop",
-          message: { role: "assistant", content: "A" },
-          logprobs: {
-            content: [{
-              token: "A",
-              logprob: -0.25,
-              bytes: [65],
-              top_logprobs: [{ token: "B", logprob: -1.5, bytes: [66] }],
-            }],
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { role: "assistant", content: "A" },
+            logprobs: {
+              content: [
+                {
+                  token: "A",
+                  logprob: -0.25,
+                  bytes: [65],
+                  top_logprobs: [{ token: "B", logprob: -1.5, bytes: [66] }],
+                },
+              ],
+            },
           },
-        }],
+        ],
       })) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
@@ -1254,12 +1281,14 @@ describe("openai-compatible text extraction", () => {
     });
     const result = await adapter.complete({ prompt: "test" });
 
-    expect(result.logprobs?.content).toEqual([{
-      token: "A",
-      logprob: -0.25,
-      bytes: [65],
-      top_logprobs: [{ token: "B", logprob: -1.5, bytes: [66] }],
-    }]);
+    expect(result.logprobs?.content).toEqual([
+      {
+        token: "A",
+        logprob: -0.25,
+        bytes: [65],
+        top_logprobs: [{ token: "B", logprob: -1.5, bytes: [66] }],
+      },
+    ]);
   });
 
   test("pickResponsesText from output_text", async () => {
@@ -1361,9 +1390,7 @@ describe("openai-compatible text extraction", () => {
   test("pickResponsesText from output item text", async () => {
     const fetcher = (async () =>
       jsonResponse({
-        output: [
-          { type: "message", text: "from text field" },
-        ],
+        output: [{ type: "message", text: "from text field" }],
         status: "completed",
       })) as unknown as typeof fetch;
 
@@ -1384,9 +1411,7 @@ describe("openai-compatible text extraction", () => {
         output: [
           {
             type: "message",
-            content: [
-              { type: "output_text", output_text: "via output_text part" },
-            ],
+            content: [{ type: "output_text", output_text: "via output_text part" }],
           },
         ],
         status: "completed",
@@ -1411,11 +1436,7 @@ describe("openai-compatible text extraction", () => {
             finish_reason: "stop",
             message: {
               role: "assistant",
-              content: [
-                { type: "text", text: "part1" },
-                "part2",
-                { type: "image" },
-              ],
+              content: [{ type: "text", text: "part1" }, "part2", { type: "image" }],
             },
           },
         ],
@@ -1472,8 +1493,7 @@ describe("openai-compatible text extraction", () => {
   });
 
   test("HTTP error in passthrough mode", async () => {
-    const fetcher = (async () =>
-      new Response("Bad Request", { status: 400 })) as unknown as typeof fetch;
+    const fetcher = (async () => new Response("Bad Request", { status: 400 })) as unknown as typeof fetch;
 
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
@@ -1490,14 +1510,16 @@ describe("openai-compatible text extraction", () => {
     const fetcher = (async () =>
       sseResponse([
         JSON.stringify({
-          choices: [{
-            delta: {
-              content: [
-                { type: "text", text: "hello " },
-                { type: "text", text: "there" },
-              ],
+          choices: [
+            {
+              delta: {
+                content: [
+                  { type: "text", text: "hello " },
+                  { type: "text", text: "there" },
+                ],
+              },
             },
-          }],
+          ],
         }),
         "[DONE]",
       ])) as unknown as typeof fetch;
@@ -1508,10 +1530,7 @@ describe("openai-compatible text extraction", () => {
       fetcher,
     });
 
-    const result = await adapter.stream!(
-      { prompt: "test" },
-      { onToken: (t) => tokens.push(t) },
-    );
+    const result = await adapter.stream!({ prompt: "test" }, { onToken: (t) => tokens.push(t) });
 
     expect(result.text).toBe("hello there");
     expect(tokens).toEqual(["hello there"]);

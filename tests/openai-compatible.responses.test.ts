@@ -24,19 +24,25 @@ describe("openai-compatible Responses contract", () => {
       expect(init?.signal).toBe(signal);
       return jsonResponse({
         status: "completed",
-        output: [{
-          type: "message",
-          content: [{
-            type: "output_text",
-            text: "yes",
-            logprobs: [{
-              token: "yes",
-              logprob: -0.1,
-              bytes: [121, 101, 115],
-              top_logprobs: [{ token: "no", logprob: -2, bytes: [110, 111] }],
-            }],
-          }],
-        }],
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: "yes",
+                logprobs: [
+                  {
+                    token: "yes",
+                    logprob: -0.1,
+                    bytes: [121, 101, 115],
+                    top_logprobs: [{ token: "no", logprob: -2, bytes: [110, 111] }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
         usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
       });
     }) as typeof fetch;
@@ -87,22 +93,26 @@ describe("openai-compatible Responses contract", () => {
     });
 
     await adapter.complete({
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: "Describe" },
-          { type: "image_url", image_url: { url: "data:image/png;base64,abc" } },
-        ],
-      }],
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,abc" } },
+          ],
+        },
+      ],
     });
 
-    expect(body.input).toEqual([{
-      role: "user",
-      content: [
-        { type: "input_text", text: "Describe" },
-        { type: "input_image", image_url: "data:image/png;base64,abc" },
-      ],
-    }]);
+    expect(body.input).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: "Describe" },
+          { type: "input_image", image_url: "data:image/png;base64,abc" },
+        ],
+      },
+    ]);
   });
 
   test("uses output_text parts for assistant history and preserves text beside tool calls", async () => {
@@ -123,11 +133,13 @@ describe("openai-compatible Responses contract", () => {
         {
           role: "assistant",
           content: [{ type: "text", text: "I will calculate it." }],
-          tool_calls: [{
-            id: "call_1",
-            type: "function",
-            function: { name: "sum", arguments: "{\"a\":1,\"b\":2}" },
-          }],
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "sum", arguments: '{"a":1,"b":2}' },
+            },
+          ],
         },
         { role: "tool", content: "3", tool_call_id: "call_1" },
       ],
@@ -139,19 +151,22 @@ describe("openai-compatible Responses contract", () => {
         role: "assistant",
         content: [{ type: "output_text", text: "I will calculate it." }],
       },
-      { type: "function_call", call_id: "call_1", name: "sum", arguments: "{\"a\":1,\"b\":2}" },
+      { type: "function_call", call_id: "call_1", name: "sum", arguments: '{"a":1,"b":2}' },
       { type: "function_call_output", call_id: "call_1", output: "3" },
     ]);
   });
 
   test("returns non-streaming refusal output as text", async () => {
-    const fetcher = (async () => jsonResponse({
-      status: "completed",
-      output: [{
-        type: "message",
-        content: [{ type: "refusal", refusal: "I cannot help with that." }],
-      }],
-    })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      jsonResponse({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [{ type: "refusal", refusal: "I cannot help with that." }],
+          },
+        ],
+      })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -165,17 +180,18 @@ describe("openai-compatible Responses contract", () => {
 
   test("streams and accumulates Responses logprobs", async () => {
     const chunks: unknown[] = [];
-    const fetcher = (async () => sseResponse([
-      {
-        type: "response.output_text.delta",
-        delta: "A",
-        logprobs: [{ token: "A", logprob: -0.2, bytes: [65], top_logprobs: [] }],
-      },
-      {
-        type: "response.completed",
-        response: { status: "completed", output_text: "A" },
-      },
-    ])) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      sseResponse([
+        {
+          type: "response.output_text.delta",
+          delta: "A",
+          logprobs: [{ token: "A", logprob: -0.2, bytes: [65], top_logprobs: [] }],
+        },
+        {
+          type: "response.completed",
+          response: { status: "completed", output_text: "A" },
+        },
+      ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -189,46 +205,53 @@ describe("openai-compatible Responses contract", () => {
 
     expect(result.text).toBe("A");
     expect(result.logprobs?.content).toEqual([{ token: "A", logprob: -0.2, bytes: [65] }]);
-    expect(chunks).toContainEqual(expect.objectContaining({
-      textDelta: "A",
-      logprobs: { content: [{ token: "A", logprob: -0.2, bytes: [65] }] },
-    }));
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        textDelta: "A",
+        logprobs: { content: [{ token: "A", logprob: -0.2, bytes: [65] }] },
+      }),
+    );
   });
 
   test("streams refusal deltas as response text", async () => {
     const tokens: string[] = [];
-    const fetcher = (async () => sseResponse([
-      { type: "response.refusal.delta", delta: "I cannot" },
-      { type: "response.refusal.delta", delta: " help." },
-      {
-        type: "response.completed",
-        response: {
-          status: "completed",
-          output: [{
-            type: "message",
-            content: [{ type: "refusal", refusal: "I cannot help." }],
-          }],
+    const fetcher = (async () =>
+      sseResponse([
+        { type: "response.refusal.delta", delta: "I cannot" },
+        { type: "response.refusal.delta", delta: " help." },
+        {
+          type: "response.completed",
+          response: {
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                content: [{ type: "refusal", refusal: "I cannot help." }],
+              },
+            ],
+          },
         },
-      },
-    ])) as unknown as typeof fetch;
+      ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
       fetcher,
     });
 
-    const result = await adapter.stream!({ prompt: "test" }, {
-      onToken: (token) => tokens.push(token),
-    });
+    const result = await adapter.stream!(
+      { prompt: "test" },
+      {
+        onToken: (token) => tokens.push(token),
+      },
+    );
 
     expect(tokens).toEqual(["I cannot", " help."]);
     expect(result.text).toBe("I cannot help.");
   });
 
   test("throws when a Responses stream ends before a terminal event", async () => {
-    const fetcher = (async () => sseResponse([
-      { type: "response.output_text.delta", delta: "partial" },
-    ])) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      sseResponse([{ type: "response.output_text.delta", delta: "partial" }])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -239,10 +262,11 @@ describe("openai-compatible Responses contract", () => {
   });
 
   test("throws for a malformed Responses stream event", async () => {
-    const fetcher = (async () => new Response("data: not-json\n\ndata: [DONE]\n\n", {
-      status: 200,
-      headers: { "content-type": "text/event-stream" },
-    })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      new Response("data: not-json\n\ndata: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -258,10 +282,12 @@ describe("openai-compatible Responses contract", () => {
     const fetcher = (async (_input, init) => {
       body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(init?.signal).toBe(signal);
-      return sseResponse([{
-        type: "response.completed",
-        response: { status: "completed", output_text: "ok" },
-      }]);
+      return sseResponse([
+        {
+          type: "response.completed",
+          response: { status: "completed", output_text: "ok" },
+        },
+      ]);
     }) as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
@@ -303,9 +329,21 @@ describe("openai-compatible Responses contract", () => {
       fetcher,
     });
 
-    await adapter.complete({ prompt: "test", reasoningEffort: "low", body: { reasoning: { summary: "detailed" } } });
-    await adapter.complete({ prompt: "test", reasoningEffort: "low", body: { reasoning: { summary: null } } });
-    await adapter.complete({ prompt: "test", reasoningEffort: "low", body: { reasoning: { summary: undefined } } });
+    await adapter.complete({
+      prompt: "test",
+      reasoningEffort: "low",
+      body: { reasoning: { summary: "detailed" } },
+    });
+    await adapter.complete({
+      prompt: "test",
+      reasoningEffort: "low",
+      body: { reasoning: { summary: null } },
+    });
+    await adapter.complete({
+      prompt: "test",
+      reasoningEffort: "low",
+      body: { reasoning: { summary: undefined } },
+    });
 
     expect(bodies[0]?.reasoning).toEqual({ effort: "low", summary: "detailed" });
     expect(bodies[1]?.reasoning).toEqual({ effort: "low", summary: null });
@@ -352,31 +390,32 @@ describe("openai-compatible Responses contract", () => {
   });
 
   test("streams parallel tool-call arguments by output item id", async () => {
-    const fetcher = (async () => sseResponse([
-      {
-        type: "response.output_item.added",
-        output_index: 0,
-        item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "first", arguments: "" },
-      },
-      {
-        type: "response.output_item.added",
-        output_index: 1,
-        item: { type: "function_call", id: "fc_2", call_id: "call_2", name: "second", arguments: "" },
-      },
-      { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: "{\"a\":" },
-      { type: "response.function_call_arguments.delta", item_id: "fc_2", delta: "{\"b\":2}" },
-      { type: "response.function_call_arguments.done", item_id: "fc_1", arguments: "{\"a\":1}" },
-      {
-        type: "response.completed",
-        response: {
-          status: "completed",
-          output: [
-            { type: "function_call", id: "fc_1", call_id: "call_1", name: "first", arguments: "{\"a\":1}" },
-            { type: "function_call", id: "fc_2", call_id: "call_2", name: "second", arguments: "{\"b\":2}" },
-          ],
+    const fetcher = (async () =>
+      sseResponse([
+        {
+          type: "response.output_item.added",
+          output_index: 0,
+          item: { type: "function_call", id: "fc_1", call_id: "call_1", name: "first", arguments: "" },
         },
-      },
-    ])) as unknown as typeof fetch;
+        {
+          type: "response.output_item.added",
+          output_index: 1,
+          item: { type: "function_call", id: "fc_2", call_id: "call_2", name: "second", arguments: "" },
+        },
+        { type: "response.function_call_arguments.delta", item_id: "fc_1", delta: '{"a":' },
+        { type: "response.function_call_arguments.delta", item_id: "fc_2", delta: '{"b":2}' },
+        { type: "response.function_call_arguments.done", item_id: "fc_1", arguments: '{"a":1}' },
+        {
+          type: "response.completed",
+          response: {
+            status: "completed",
+            output: [
+              { type: "function_call", id: "fc_1", call_id: "call_1", name: "first", arguments: '{"a":1}' },
+              { type: "function_call", id: "fc_2", call_id: "call_2", name: "second", arguments: '{"b":2}' },
+            ],
+          },
+        },
+      ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -385,12 +424,17 @@ describe("openai-compatible Responses contract", () => {
 
     const result = await adapter.stream!({
       prompt: "use both",
-      body: { tools: [{ type: "function", name: "first" }, { type: "function", name: "second" }] },
+      body: {
+        tools: [
+          { type: "function", name: "first" },
+          { type: "function", name: "second" },
+        ],
+      },
     });
 
     expect(result.toolCalls).toEqual([
-      { id: "call_1", type: "function", name: "first", arguments: "{\"a\":1}" },
-      { id: "call_2", type: "function", name: "second", arguments: "{\"b\":2}" },
+      { id: "call_1", type: "function", name: "first", arguments: '{"a":1}' },
+      { id: "call_2", type: "function", name: "second", arguments: '{"b":2}' },
     ]);
   });
 
@@ -453,19 +497,20 @@ describe("openai-compatible Responses contract", () => {
   });
 
   test("extracts reasoning summaries from Responses output items", async () => {
-    const fetcher = (async () => jsonResponse({
-      status: "completed",
-      output: [
-        {
-          type: "reasoning",
-          summary: [
-            { type: "summary_text", text: "First step. " },
-            { type: "summary_text", text: "Second step." },
-          ],
-        },
-        { type: "message", content: [{ type: "output_text", text: "done" }] },
-      ],
-    })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      jsonResponse({
+        status: "completed",
+        output: [
+          {
+            type: "reasoning",
+            summary: [
+              { type: "summary_text", text: "First step. " },
+              { type: "summary_text", text: "Second step." },
+            ],
+          },
+          { type: "message", content: [{ type: "output_text", text: "done" }] },
+        ],
+      })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -486,13 +531,17 @@ describe("openai-compatible Responses contract", () => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       inputs.push(body.input);
       if (call === 1) {
-        return sseResponse([{
-          type: "response.completed",
-          response: {
-            status: "completed",
-            output: [{ type: "function_call", id: "fc_1", call_id: "call_1", name: "add", arguments: "{}" }],
+        return sseResponse([
+          {
+            type: "response.completed",
+            response: {
+              status: "completed",
+              output: [
+                { type: "function_call", id: "fc_1", call_id: "call_1", name: "add", arguments: "{}" },
+              ],
+            },
           },
-        }]);
+        ]);
       }
       return sseResponse([
         { type: "response.output_text.delta", delta: "done" },
@@ -524,12 +573,13 @@ describe("openai-compatible Responses contract", () => {
 
   test("does not surface non-terminal statuses as finishReason", async () => {
     const chunks: Array<{ finishReason?: string }> = [];
-    const fetcher = (async () => sseResponse([
-      { type: "response.created", response: { status: "in_progress" } },
-      { type: "response.in_progress", response: { status: "in_progress" } },
-      { type: "response.output_text.delta", delta: "hi" },
-      { type: "response.completed", response: { status: "completed", output_text: "hi" } },
-    ])) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      sseResponse([
+        { type: "response.created", response: { status: "in_progress" } },
+        { type: "response.in_progress", response: { status: "in_progress" } },
+        { type: "response.output_text.delta", delta: "hi" },
+        { type: "response.completed", response: { status: "completed", output_text: "hi" } },
+      ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -547,10 +597,13 @@ describe("openai-compatible Responses contract", () => {
   });
 
   test("throws for typed stream failures", async () => {
-    const fetcher = (async () => sseResponse([{
-      type: "response.failed",
-      response: { error: { message: "model unavailable" } },
-    }])) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      sseResponse([
+        {
+          type: "response.failed",
+          response: { error: { message: "model unavailable" } },
+        },
+      ])) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -602,15 +655,18 @@ describe("openai-compatible Responses contract", () => {
   });
 
   test("enforces maxToolRounds in non-streaming Responses MCP mode", async () => {
-    const fetcher = (async () => jsonResponse({
-      status: "requires_action",
-      output: [{
-        type: "function_call",
-        call_id: "call_1",
-        name: "add",
-        arguments: "{}",
-      }],
-    })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      jsonResponse({
+        status: "requires_action",
+        output: [
+          {
+            type: "function_call",
+            call_id: "call_1",
+            name: "add",
+            arguments: "{}",
+          },
+        ],
+      })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -622,11 +678,13 @@ describe("openai-compatible Responses contract", () => {
       callTool: async () => ({ content: [{ type: "text", text: "3" }] }),
     };
 
-    await expect(adapter.complete({
-      prompt: "Add",
-      mcpClients: [mcpClient],
-      maxToolRounds: 0,
-    })).rejects.toThrow("Tool call loop exceeded maxToolRounds (0)");
+    await expect(
+      adapter.complete({
+        prompt: "Add",
+        mcpClients: [mcpClient],
+        maxToolRounds: 0,
+      }),
+    ).rejects.toThrow("Tool call loop exceeded maxToolRounds (0)");
   });
 });
 
@@ -682,12 +740,15 @@ describe("openai-compatible-legacy contract", () => {
   });
 
   test("returns Chat Completions refusal content as text", async () => {
-    const fetcher = (async () => jsonResponse({
-      choices: [{
-        finish_reason: "content_filter",
-        message: { role: "assistant", content: null, refusal: "I cannot help with that." },
-      }],
-    })) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      jsonResponse({
+        choices: [
+          {
+            finish_reason: "content_filter",
+            message: { role: "assistant", content: null, refusal: "I cannot help with that." },
+          },
+        ],
+      })) as unknown as typeof fetch;
     const adapter = createOpenAICompatibleLegacyAdapter({
       baseURL: "https://example.com",
       model: "test-model",
@@ -737,13 +798,15 @@ describe("openai-compatible Responses tool-message conversion", () => {
         {
           role: "assistant",
           content: "",
-          tool_calls: [{
-            id: "call_weather",
-            type: "function",
-            function: { name: "get_weather", arguments: "{\"city\":\"Paris\"}" },
-          }],
+          tool_calls: [
+            {
+              id: "call_weather",
+              type: "function",
+              function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+            },
+          ],
         },
-        { role: "tool", content: "{\"temp\":18}", tool_call_id: "call_weather" },
+        { role: "tool", content: '{"temp":18}', tool_call_id: "call_weather" },
         { role: "user", content: "Should I bring an umbrella?" },
       ],
     });
@@ -752,8 +815,8 @@ describe("openai-compatible Responses tool-message conversion", () => {
     expect(body.input).toEqual([
       { role: "system", content: "You are a weather assistant." },
       { role: "user", content: "Weather in Paris?" },
-      { type: "function_call", call_id: "call_weather", name: "get_weather", arguments: "{\"city\":\"Paris\"}" },
-      { type: "function_call_output", call_id: "call_weather", output: "{\"temp\":18}" },
+      { type: "function_call", call_id: "call_weather", name: "get_weather", arguments: '{"city":"Paris"}' },
+      { type: "function_call_output", call_id: "call_weather", output: '{"temp":18}' },
       { role: "user", content: "Should I bring an umbrella?" },
     ]);
   });
@@ -776,11 +839,13 @@ describe("openai-compatible Responses tool-message conversion", () => {
         {
           role: "assistant",
           content: "Let me check.",
-          tool_calls: [{
-            id: "call_1",
-            type: "function",
-            function: { name: "sum", arguments: { a: 1, b: 2 } },
-          }],
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: { name: "sum", arguments: { a: 1, b: 2 } },
+            },
+          ],
         },
         { role: "tool", content: "3", tool_call_id: "call_1" },
       ],
@@ -789,7 +854,7 @@ describe("openai-compatible Responses tool-message conversion", () => {
     expect(body.input).toEqual([
       { role: "user", content: "Compute" },
       { role: "assistant", content: "Let me check." },
-      { type: "function_call", call_id: "call_1", name: "sum", arguments: "{\"a\":1,\"b\":2}" },
+      { type: "function_call", call_id: "call_1", name: "sum", arguments: '{"a":1,"b":2}' },
       { type: "function_call_output", call_id: "call_1", output: "3" },
     ]);
   });

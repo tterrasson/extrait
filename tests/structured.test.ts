@@ -11,7 +11,7 @@ import {
   StructuredParseError,
 } from "@/structured";
 import type { LLMAdapter, LLMRequest, LLMResponse, LLMStreamCallbacks } from "@/types";
-import { DEFAULT_SCHEMA_INSTRUCTION} from "@/format";
+import { DEFAULT_SCHEMA_INSTRUCTION } from "@/format";
 
 class MockAdapter implements LLMAdapter {
   private readonly outputs: string[];
@@ -302,7 +302,12 @@ describe("structured", () => {
     expect(result.data).toEqual({ sentiment: "POSITIVE", confidence: 0.8 });
     expect(snapshots).toEqual([
       { data: { sentiment: "POS" }, done: false, deltaText: '{"sentiment":"POS', deltaReasoning: "" },
-      { data: { sentiment: "POSITIVE", confidence: null }, done: false, deltaText: 'ITIVE","confidence":', deltaReasoning: "" },
+      {
+        data: { sentiment: "POSITIVE", confidence: null },
+        done: false,
+        deltaText: 'ITIVE","confidence":',
+        deltaReasoning: "",
+      },
       { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false, deltaText: "0.8", deltaReasoning: "" },
       { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false, deltaText: "}", deltaReasoning: "" },
       { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: true, deltaText: "", deltaReasoning: "" },
@@ -339,11 +344,12 @@ describe("structured", () => {
     const result = await structured(model, schema, "Return JSON", {
       stream: {
         enabled: true,
-        onData: (event) => snapshots.push({
-          data: event.snapshot.data,
-          done: event.done,
-          text: event.snapshot.text,
-        }),
+        onData: (event) =>
+          snapshots.push({
+            data: event.snapshot.data,
+            done: event.done,
+            text: event.snapshot.text,
+          }),
       },
       selfHeal: false,
     });
@@ -352,8 +358,16 @@ describe("structured", () => {
     expect(snapshots).toEqual([
       { data: null, done: false, text: `Voici l'analyse: ` },
       { data: { sentiment: "POS" }, done: false, text: `Voici l'analyse: {"sentiment":"POS` },
-      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: false, text: `Voici l'analyse: {"sentiment":"POSITIVE","confidence":0.8}` },
-      { data: { sentiment: "POSITIVE", confidence: 0.8 }, done: true, text: `Voici l'analyse: {"sentiment":"POSITIVE","confidence":0.8}` },
+      {
+        data: { sentiment: "POSITIVE", confidence: 0.8 },
+        done: false,
+        text: `Voici l'analyse: {"sentiment":"POSITIVE","confidence":0.8}`,
+      },
+      {
+        data: { sentiment: "POSITIVE", confidence: 0.8 },
+        done: true,
+        text: `Voici l'analyse: {"sentiment":"POSITIVE","confidence":0.8}`,
+      },
     ]);
   });
 
@@ -425,11 +439,12 @@ describe("structured", () => {
       structured(model, schema, "Return JSON", {
         stream: {
           enabled: true,
-          onData: (event) => events.push({
-            data: event.snapshot.data,
-            done: event.done,
-            text: event.snapshot.text,
-          }),
+          onData: (event) =>
+            events.push({
+              data: event.snapshot.data,
+              done: event.done,
+              text: event.snapshot.text,
+            }),
         },
         selfHeal: false,
       }),
@@ -449,7 +464,6 @@ describe("structured", () => {
         tags: z.array(z.string()).default([]).describe("tag list"),
       })
       .describe("Summary object");
-
 
     const model = new MockAdapter(['{"summary":"ok","tags":[]}']);
 
@@ -509,7 +523,13 @@ describe("structured", () => {
     const result = buildSelfHealPrompt({
       rawOutput: '{"name": 42}',
       issues: [
-        { path: ["name"], message: "Expected string, received number", code: "invalid_type", expected: "string", received: "number" } as z.core.$ZodIssue,
+        {
+          path: ["name"],
+          message: "Expected string, received number",
+          code: "invalid_type",
+          expected: "string",
+          received: "number",
+        } as z.core.$ZodIssue,
       ],
       schema,
     });
@@ -570,7 +590,13 @@ describe("structured", () => {
     const result = buildSelfHealPrompt({
       rawOutput: '{"name": 42}',
       issues: [
-        { path: ["name"], message: "Expected string, received number", code: "invalid_type", expected: "string", received: "number" } as z.core.$ZodIssue,
+        {
+          path: ["name"],
+          message: "Expected string, received number",
+          code: "invalid_type",
+          expected: "string",
+          received: "number",
+        } as z.core.$ZodIssue,
       ],
       schema,
       selectedInput: "candidate",
@@ -665,9 +691,7 @@ describe("structured", () => {
     const result = await structured(
       model,
       schema,
-      prompt()
-        .system`You are a strict JSON assistant.`
-        .user`
+      prompt().system`You are a strict JSON assistant.`.user`
           Return a value.
         `,
       { selfHeal: false },
@@ -681,7 +705,9 @@ describe("structured", () => {
         content: expect.stringContaining(DEFAULT_SCHEMA_INSTRUCTION),
       },
     ]);
-    expect((model.requests[0]?.messages?.[1] as { content?: string } | undefined)?.content).toContain("Return a value.");
+    expect((model.requests[0]?.messages?.[1] as { content?: string } | undefined)?.content).toContain(
+      "Return a value.",
+    );
   });
 
   test("injects format into multimodal user text while preserving image blocks", async () => {
@@ -692,10 +718,7 @@ describe("structured", () => {
     const result = await structured(
       model,
       schema,
-      prompt().user([
-        { type: "text", text: "Read the number from this image." },
-        imageBlock,
-      ]),
+      prompt().user([{ type: "text", text: "Read the number from this image." }, imageBlock]),
       { selfHeal: false },
     );
 
@@ -709,12 +732,18 @@ describe("structured", () => {
     expect(parts[1]).toEqual(imageBlock);
 
     const imageOnlyModel = new MockAdapter(['{"value": 3}']);
-    const imageOnlyResult = await structured(imageOnlyModel, schema, prompt().user([imageBlock]), { selfHeal: false });
+    const imageOnlyResult = await structured(imageOnlyModel, schema, prompt().user([imageBlock]), {
+      selfHeal: false,
+    });
 
     expect(imageOnlyResult.data).toEqual({ value: 3 });
     const imageOnlyContent = imageOnlyModel.requests[0]?.messages?.[0]?.content;
     expect(Array.isArray(imageOnlyContent)).toBe(true);
-    const imageOnlyParts = imageOnlyContent as Array<{ type: string; text?: string; image_url?: { url: string } }>;
+    const imageOnlyParts = imageOnlyContent as Array<{
+      type: string;
+      text?: string;
+      image_url?: { url: string };
+    }>;
     expect(imageOnlyParts[0]?.type).toBe("text");
     expect(imageOnlyParts[0]?.text).toContain(DEFAULT_SCHEMA_INSTRUCTION);
     expect(imageOnlyParts[1]).toEqual(imageBlock);
@@ -727,11 +756,7 @@ describe("structured", () => {
     const result = await structured(
       model,
       schema,
-      prompt()
-        .system`You are helpful.`
-        .user`What is 4+5?`
-        .assistant`The answer is 9.`
-        .user`Confirm as JSON.`,
+      prompt().system`You are helpful.`.user`What is 4+5?`.assistant`The answer is 9.`.user`Confirm as JSON.`,
       { selfHeal: false },
     );
 
@@ -746,12 +771,10 @@ describe("structured", () => {
     const schema = z.object({ value: z.number() });
     const model = new MockAdapter(['{"value": 5}']);
 
-    const result = await structured(
-      model,
-      schema,
-      prompt().user`Return a value.`,
-      { selfHeal: false, systemPrompt: "You are a strict JSON assistant." },
-    );
+    const result = await structured(model, schema, prompt().user`Return a value.`, {
+      selfHeal: false,
+      systemPrompt: "You are a strict JSON assistant.",
+    });
 
     expect(result.data).toEqual({ value: 5 });
     const messages = model.requests[0]?.messages ?? [];
@@ -861,16 +884,14 @@ describe("structured", () => {
 
   test("missing prompt throws a clear error", async () => {
     const schema = z.object({ value: z.number() });
-    const model = new MockAdapter(["{}"])
+    const model = new MockAdapter(["{}"]);
 
     await expect(structured(model, schema, undefined as any)).rejects.toThrow("Missing prompt");
   });
 
   test("keeps think blocks in result while ignoring them for parsing", async () => {
     const schema = z.object({ value: z.number() });
-    const model = new MockAdapter([
-      ["<think>", '{"value": 0}', "</think>", '{"value": 7}'].join("\n"),
-    ]);
+    const model = new MockAdapter([["<think>", '{"value": 0}', "</think>", '{"value": 7}'].join("\n")]);
 
     const result = await structured(model, schema, "Return JSON", {
       selfHeal: false,
@@ -982,11 +1003,12 @@ describe("structured", () => {
     const result = await structured(model, schema, "Return JSON", {
       stream: {
         enabled: true,
-        onData: (event) => events.push({
-          delta: event.delta,
-          snapshot: event.snapshot,
-          done: event.done,
-        }),
+        onData: (event) =>
+          events.push({
+            delta: event.delta,
+            snapshot: event.snapshot,
+            done: event.done,
+          }),
       },
       selfHeal: false,
     });
@@ -1087,10 +1109,11 @@ describe("structured", () => {
     const result = await structured(model, schema, "Return JSON", {
       stream: {
         enabled: true,
-        onData: (event) => events.push({
-          delta: event.delta,
-          snapshotReasoning: event.snapshot.reasoning,
-        }),
+        onData: (event) =>
+          events.push({
+            delta: event.delta,
+            snapshotReasoning: event.snapshot.reasoning,
+          }),
       },
       selfHeal: false,
     });
@@ -1247,7 +1270,7 @@ describe("structured", () => {
   });
 
   test("self-heal on a string prompt keeps the system prompt", async () => {
-    const adapter = new MockAdapter(['nope', '{"value": 7}']);
+    const adapter = new MockAdapter(["nope", '{"value": 7}']);
     const schema = z.object({ value: z.number() });
 
     await structured(adapter, schema, "Return JSON", {

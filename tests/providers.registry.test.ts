@@ -71,9 +71,11 @@ describe("provider registry", () => {
       url = String(input);
       headers = init?.headers;
       body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return new Response(JSON.stringify({
-        choices: [{ message: { role: "assistant", content: "ok" } }],
-      }));
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { role: "assistant", content: "ok" } }],
+        }),
+      );
     }) as typeof fetch;
     const adapter = createModelAdapter({
       provider: "openai-compatible-legacy",
@@ -101,11 +103,7 @@ describe("provider registry", () => {
   });
 
   test("refuses to build a built-in adapter without a baseURL", () => {
-    for (const provider of [
-      "openai-compatible",
-      "openai-compatible-legacy",
-      "anthropic-compatible",
-    ]) {
+    for (const provider of ["openai-compatible", "openai-compatible-legacy", "anthropic-compatible"]) {
       expect(() =>
         createModelAdapter({ provider, model: "m1" } as Parameters<typeof createModelAdapter>[0]),
       ).toThrow(`Provider "${provider}" requires an explicit baseURL`);
@@ -144,10 +142,12 @@ describe("provider registry adapter option forwarding", () => {
     let body: Record<string, unknown> = {};
     const fetcher = (async (_input, init) => {
       body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      return new Response(JSON.stringify({
-        content: [{ type: "text", text: "ok" }],
-        stop_reason: "end_turn",
-      }));
+      return new Response(
+        JSON.stringify({
+          content: [{ type: "text", text: "ok" }],
+          stop_reason: "end_turn",
+        }),
+      );
     }) as typeof fetch;
 
     const adapter = createModelAdapter({
@@ -168,10 +168,12 @@ describe("provider registry adapter option forwarding", () => {
     let url = "";
     const fetcher = (async (input) => {
       url = String(input);
-      return new Response(JSON.stringify({
-        data: [{ embedding: [0.1, 0.2] }],
-        model: "embed-test",
-      }));
+      return new Response(
+        JSON.stringify({
+          data: [{ embedding: [0.1, 0.2] }],
+          model: "embed-test",
+        }),
+      );
     }) as typeof fetch;
 
     const adapter = createModelAdapter({
@@ -189,20 +191,27 @@ describe("provider registry adapter option forwarding", () => {
   });
 
   test("forwards transport.defaultMaxToolRounds to the legacy adapter", async () => {
-    const fetcher = (async () => new Response(JSON.stringify({
-      choices: [{
-        message: {
-          role: "assistant",
-          content: null,
-          tool_calls: [{
-            id: "call_1",
-            type: "function",
-            function: { name: "add", arguments: "{}" },
-          }],
-        },
-        finish_reason: "tool_calls",
-      }],
-    }))) as unknown as typeof fetch;
+    const fetcher = (async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "add", arguments: "{}" },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
 
     const adapter = createModelAdapter({
       provider: "openai-compatible-legacy",
