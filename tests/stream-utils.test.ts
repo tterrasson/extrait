@@ -22,6 +22,41 @@ function emptyBodyResponse(): Response {
 }
 
 describe("consumeSSE", () => {
+  test("releases the reader after success and callback failure", async () => {
+    const complete = mockResponse(["data: hello\n\n"]);
+    await consumeSSE(complete, () => {});
+    expect(complete.body?.locked).toBe(false);
+
+    const failed = mockResponse(["data: hello\n\n"]);
+    await expect(
+      consumeSSE(failed, () => {
+        throw new Error("callback failed");
+      }),
+    ).rejects.toThrow("callback failed");
+    expect(failed.body?.locked).toBe(false);
+  });
+
+  test("limits complete events even when they arrive in one chunk", async () => {
+    const response = mockResponse([`data: ${"x".repeat(8_000_001)}\n\n`]);
+    const events: string[] = [];
+    await expect(consumeSSE(response, (data) => events.push(data))).rejects.toThrow(
+      /without an event boundary/,
+    );
+    expect(events).toEqual([]);
+    expect(response.body?.locked).toBe(false);
+  });
+
+  test("counts ignored fields toward the event limit and resets at boundaries", async () => {
+    await expect(
+      consumeSSE(mockResponse([`:${"x".repeat(4_000_000)}\n`.repeat(2) + "\n"]), () => {}),
+    ).rejects.toThrow(/without an event boundary/);
+    const events: string[] = [];
+    await consumeSSE(mockResponse([`:${"x".repeat(4_000_000)}\n\ndata: ok\n\n`.repeat(2)]), (data) =>
+      events.push(data),
+    );
+    expect(events).toEqual(["ok", "ok"]);
+  });
+
   test("does nothing when body is null", async () => {
     const events: string[] = [];
     await consumeSSE(emptyBodyResponse(), (data) => events.push(data));

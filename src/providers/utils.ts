@@ -108,6 +108,7 @@ export async function readErrorBody(
     // A truncated/aborted error body is still worth reporting.
   } finally {
     await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 
   return truncateBody(out, maxBytes);

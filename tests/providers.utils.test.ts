@@ -94,6 +94,14 @@ describe("providers/utils cleanUndefined", () => {
 });
 
 describe("providers/utils readErrorBody", () => {
+  test("releases the reader after consuming or truncating the error body", async () => {
+    for (const limit of [2, 100]) {
+      const response = new Response("boom");
+      await readErrorBody(response, limit);
+      expect(response.body?.locked).toBe(false);
+    }
+  });
+
   test("returns the trimmed body when it fits", async () => {
     expect(await readErrorBody(new Response("  boom  "))).toBe("boom");
   });

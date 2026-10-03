@@ -26,20 +26,31 @@ export async function consumeSSE(response: Response, onEvent: (data: string) => 
   // chunk) is the second half of a CRLF, not an empty line.
   let skipLF = false;
   let dataLines: string[] = [];
-  let dataChars = 0;
+  let eventChars = 0;
+
+  const checkEventSize = (chars: number): void => {
+    if (chars > MAX_SSE_EVENT_CHARS) {
+      throw new Error(`SSE stream exceeded ${MAX_SSE_EVENT_CHARS} characters without an event boundary.`);
+    }
+  };
 
   const processLine = (line: string): void => {
     if (line.length === 0) {
+      eventChars = 0;
       if (dataLines.length > 0) {
         const data = dataLines.join("\n");
         dataLines = [];
-        dataChars = 0;
         if (data.length > 0) {
           onEvent(data);
         }
       }
       return;
     }
+
+    // Count all lines, including ignored fields and empty `data:` values.
+    // Checking here also covers complete events received in a single chunk.
+    eventChars += line.length + 1;
+    checkEventSize(eventChars);
 
     if (line === "data") {
       dataLines.push("");
@@ -52,7 +63,6 @@ export async function consumeSSE(response: Response, onEvent: (data: string) => 
 
     const value = line.charCodeAt(5) === 32 ? line.slice(6) : line.slice(5);
     dataLines.push(value);
-    dataChars += value.length;
   };
 
   const takeLine = (tail: string): string => {
@@ -93,6 +103,7 @@ export async function consumeSSE(response: Response, onEvent: (data: string) => 
     if (lineStart < chunk.length) {
       partial.push(chunk.slice(lineStart));
       partialChars += chunk.length - lineStart;
+      checkEventSize(eventChars + partialChars);
     }
   };
 
@@ -109,10 +120,6 @@ export async function consumeSSE(response: Response, onEvent: (data: string) => 
       }
 
       processChunk(decoder.decode(value, { stream: true }));
-
-      if (partialChars + dataChars > MAX_SSE_EVENT_CHARS) {
-        throw new Error(`SSE stream exceeded ${MAX_SSE_EVENT_CHARS} characters without an event boundary.`);
-      }
     }
 
     processChunk(decoder.decode());
@@ -128,5 +135,6 @@ export async function consumeSSE(response: Response, onEvent: (data: string) => 
     if (!drained) {
       await reader.cancel().catch(() => {});
     }
+    reader.releaseLock();
   }
 }
