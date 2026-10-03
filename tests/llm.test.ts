@@ -54,7 +54,7 @@ describe("createLLM", () => {
     registry.register("mock", (options: { text: string }) => ({
       provider: "mock",
       model: "m1",
-      async complete(request) {
+      async complete() {
         return {
           text: options.text,
           finishReason: "stop",
@@ -83,7 +83,7 @@ describe("createLLM", () => {
     registry.register("mock", (options: { text: string }) => ({
       provider: "mock",
       model: "m1",
-      async complete(request) {
+      async complete() {
         return {
           text: options.text,
           finishReason: "stop",
@@ -115,7 +115,7 @@ describe("createLLM", () => {
     registry.register("mock", (options: { text: string }) => ({
       provider: "mock",
       model: "m1",
-      async complete(request) {
+      async complete() {
         return {
           text: options.text,
           finishReason: "stop",

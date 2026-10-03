@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { createOpenAICompatibleAdapter } from "@/providers/openai-compatible";
 import { createOpenAICompatibleLegacyAdapter } from "@/providers/openai-compatible-legacy";
 import { createAnthropicCompatibleAdapter } from "@/providers/anthropic-compatible";
 import { createLLM } from "@/llm";

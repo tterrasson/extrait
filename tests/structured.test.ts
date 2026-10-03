@@ -1209,11 +1209,11 @@ describe("structured", () => {
 
   test("self-heal prompt includes reasoning context from previous attempt", async () => {
     const schema = z.object({ value: z.number() });
+    let calls = 0;
     const model: LLMAdapter = {
-      private_calls: 0,
-      async complete(request: LLMRequest): Promise<LLMResponse> {
-        (this as any).private_calls = ((this as any).private_calls ?? 0) + 1;
-        if ((this as any).private_calls === 1) {
+      async complete(): Promise<LLMResponse> {
+        calls += 1;
+        if (calls === 1) {
           return {
             text: "not valid json",
             reasoning: "I should return JSON",
@@ -1225,7 +1225,7 @@ describe("structured", () => {
           finishReason: "stop",
         };
       },
-    } as any;
+    };
 
     const result = await structured(model, schema, "Return JSON", {
       selfHeal: 1,

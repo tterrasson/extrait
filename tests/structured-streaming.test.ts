@@ -377,7 +377,6 @@ describe("streaming preview fuzz", () => {
 
   test("corrupted documents never throw and never stop making progress", () => {
     const random = makeRandom(0xdead);
-    const noise = ["{", "}", "[", "]", '"', ":", ",", "\\", "e", "-", " ", " "];
     for (let iteration = 0; iteration < 500; iteration += 1) {
       const document = randomJsonValue(random, 0);
       if (typeof document !== "object" || document === null) {

@@ -794,7 +794,7 @@ describe("openai-compatible streaming", () => {
 
   test("streams partial tool-call arguments incrementally in MCP mode", async () => {
     let round = 0;
-    const fetcher = (async (_url: unknown, init: RequestInit | undefined) => {
+    const fetcher = (async (_url: unknown, _init: RequestInit | undefined) => {
       round += 1;
       if (round === 1) {
         return sseResponse([

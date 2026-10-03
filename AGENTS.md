@@ -2,7 +2,7 @@
 
 - `bun run test` — run tests
 - `bun run build` — ESM + CJS bundles
-- `bun run lint` — full type check
+- `bun run lint` — full type check, including unused code in source, tests, examples, and benchmarks
 - `bun run typecheck` — quick `--noEmit` check
 - `bun run format` — format source, tests, examples, benchmarks, and JSON configuration
 - `bun run format:check` — verify formatting without changes

@@ -327,7 +327,7 @@ describe("executeMCPToolCalls", () => {
       round: 1,
       request: {
         prompt: "test",
-        transformToolOutput: (output) => ({ cleaned: true }),
+        transformToolOutput: () => ({ cleaned: true }),
       },
     });
     expect(results[0]!.execution.output).toEqual({ cleaned: true });
@@ -369,7 +369,7 @@ describe("executeMCPToolCalls", () => {
       round: 1,
       request: {
         prompt: "test",
-        transformToolOutput: async (output) => {
+        transformToolOutput: async () => {
           await new Promise((resolve) => setTimeout(resolve, 0));
           return "transformed";
         },

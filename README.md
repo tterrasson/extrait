@@ -959,4 +959,6 @@ Run the test suite with Bun.
 bun run test
 ```
 
+Check types and unused code across the source, tests, examples, and benchmarks with `bun run lint`.
 Use `bun run format` to apply the repository's Prettier formatting, or `bun run format:check` to verify it without changes.
+Run `bun run build` to generate the ESM/CJS bundles and TypeScript declarations.

@@ -5,6 +5,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["test", "examples"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "examples/**/*.ts", "bench/**/*.ts"]
 }

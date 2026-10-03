@@ -225,16 +225,8 @@ function brightCyan(text: string): string {
   return color("1;96", text);
 }
 
-function yellow(text: string): string {
-  return color(33, text);
-}
-
 function brightYellow(text: string): string {
   return color("1;93", text);
-}
-
-function magenta(text: string): string {
-  return color(35, text);
 }
 
 function brightMagenta(text: string): string {

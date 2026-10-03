@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { z } from "zod";
 import { dedent, prompt } from "@/prompt";
 
 describe("prompt", () => {
