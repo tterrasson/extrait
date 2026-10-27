@@ -48,13 +48,24 @@ describe("consumeSSE", () => {
 
   test("counts ignored fields toward the event limit and resets at boundaries", async () => {
     await expect(
-      consumeSSE(mockResponse([`:${"x".repeat(4_000_000)}\n`.repeat(2) + "\n"]), () => {}),
+      consumeSSE(mockResponse([`event: ${"x".repeat(4_000_000)}\n`.repeat(2) + "\n"]), () => {}),
     ).rejects.toThrow(/without an event boundary/);
     const events: string[] = [];
     await consumeSSE(mockResponse([`:${"x".repeat(4_000_000)}\n\ndata: ok\n\n`.repeat(2)]), (data) =>
       events.push(data),
     );
     expect(events).toEqual(["ok", "ok"]);
+  });
+
+  test("never trips the event limit on comment-only keep-alives", async () => {
+    // 3M `:x\n` lines ≈ 9M chars with no event between them: a comment line
+    // is the SSE keep-alive, belongs to no event, and must spend none of the
+    // per-event budget — only a stream that grows a single event may abort.
+    const events: string[] = [];
+    const response = mockResponse([":x\n".repeat(1_500_000), ":x\n".repeat(1_500_000)]);
+    await consumeSSE(response, (data) => events.push(data));
+    expect(events).toEqual([]);
+    expect(response.body?.locked).toBe(false);
   });
 
   test("does nothing when body is null", async () => {

@@ -95,6 +95,7 @@ export async function readErrorBody(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let out = "";
+  let truncated = false;
 
   try {
     while (out.length < maxBytes) {
@@ -102,6 +103,19 @@ export async function readErrorBody(
       if (done) {
         break;
       }
+
+      // The budget bounds what is decoded, not just what is kept: one
+      // network chunk can dwarf it, and decoding it whole would materialize
+      // its entire content before truncation. A character is at least one
+      // byte, so the byte cut never overshoots the character budget; the
+      // character it splits in half is dropped, never decoded.
+      const remaining = maxBytes - out.length;
+      if (value.length > remaining) {
+        out += decoder.decode(value.subarray(0, remaining), { stream: true });
+        truncated = true;
+        break;
+      }
+
       out += decoder.decode(value, { stream: true });
     }
   } catch {
@@ -109,6 +123,11 @@ export async function readErrorBody(
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
+  }
+
+  if (truncated) {
+    const normalized = out.trim();
+    return `${normalized.slice(0, maxBytes)}...[truncated]`;
   }
 
   return truncateBody(out, maxBytes);

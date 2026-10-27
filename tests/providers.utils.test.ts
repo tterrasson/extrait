@@ -128,6 +128,26 @@ describe("providers/utils readErrorBody", () => {
     expect(body.length).toBeLessThanOrEqual(5_000 + "...[truncated]".length);
     expect(cancelled).toBe(true);
   });
+
+  test("never decodes more than the budget of a single oversized chunk", async () => {
+    // 2 MB of two-byte characters in one chunk: the cut must fall inside the
+    // chunk, before decoding it — only the budget's worth of bytes is decoded
+    // and the character the cut splits in half is dropped, not materialized.
+    const encoder = new TextEncoder();
+    const bigChunk = encoder.encode("é".repeat(1_000_000));
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bigChunk);
+        controller.close();
+      },
+    });
+
+    const response = new Response(stream);
+    const body = await readErrorBody(response, 1_001);
+
+    expect(body).toBe(`${"é".repeat(500)}...[truncated]`);
+    expect(response.body?.locked).toBe(false);
+  });
 });
 
 describe("providers/utils preferLatestUsage", () => {

@@ -47,8 +47,18 @@ export async function consumeSSE(response: Response, onEvent: (data: string) => 
       return;
     }
 
-    // Count all lines, including ignored fields and empty `data:` values.
-    // Checking here also covers complete events received in a single chunk.
+    // A comment line (leading `:`) is the SSE keep-alive: it belongs to no
+    // event and a server pacing one forever between events is spec-legal, so
+    // it must not spend the per-event budget. Resetting instead would let
+    // `data:` lines interleaved with comments evade the cap, so the counter
+    // simply ignores comments.
+    if (line.charCodeAt(0) === 58) {
+      return;
+    }
+
+    // Count every line but comments, including ignored fields and empty
+    // `data:` values. Checking here also covers complete events received in
+    // a single chunk.
     eventChars += line.length + 1;
     checkEventSize(eventChars);
 
