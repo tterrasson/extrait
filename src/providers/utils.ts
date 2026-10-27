@@ -101,6 +101,7 @@ export async function readErrorBody(
     while (out.length < maxBytes) {
       const { done, value } = await reader.read();
       if (done) {
+        out += decoder.decode();
         break;
       }
 
@@ -125,17 +126,12 @@ export async function readErrorBody(
     reader.releaseLock();
   }
 
-  if (truncated) {
-    const normalized = out.trim();
-    return `${normalized.slice(0, maxBytes)}...[truncated]`;
-  }
-
-  return truncateBody(out, maxBytes);
+  return truncateBody(out, maxBytes, truncated);
 }
 
-function truncateBody(body: string, maxBytes: number): string {
+function truncateBody(body: string, maxBytes: number, truncated = false): string {
   const normalized = body.trim();
-  if (normalized.length <= maxBytes) {
+  if (!truncated && normalized.length <= maxBytes) {
     return normalized;
   }
 

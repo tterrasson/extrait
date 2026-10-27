@@ -148,6 +148,30 @@ describe("providers/utils readErrorBody", () => {
     expect(body).toBe(`${"é".repeat(500)}...[truncated]`);
     expect(response.body?.locked).toBe(false);
   });
+
+  test("flushes a character split across the last chunks", async () => {
+    // `é` is 0xC3 0xA9: a body whose chunks split it must still decode it.
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0x6f, 0x6b, 0xc3]));
+        controller.enqueue(new Uint8Array([0xa9]));
+        controller.close();
+      },
+    });
+
+    expect(await readErrorBody(new Response(stream))).toBe("oké");
+  });
+
+  test("reports a dangling partial character instead of dropping it", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0x6f, 0x6b, 0xc3]));
+        controller.close();
+      },
+    });
+
+    expect(await readErrorBody(new Response(stream))).toBe("ok\uFFFD");
+  });
 });
 
 describe("providers/utils preferLatestUsage", () => {

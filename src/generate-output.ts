@@ -97,6 +97,7 @@ function sanitizeReasoningText(value: string | undefined): string | undefined {
 
 const THINK_TAG_VARIANTS = ["<think>", "</think>"] as const;
 const MAX_THINK_TAG_PREFIX = Math.max(...THINK_TAG_VARIANTS.map((tag) => tag.length)) - 1;
+const CHAR_LESS_THAN = 60;
 
 /**
  * Drops a trailing run of `value` that could be the start of a `<think>` /
@@ -109,14 +110,22 @@ const MAX_THINK_TAG_PREFIX = Math.max(...THINK_TAG_VARIANTS.map((tag) => tag.len
  * result, where a legitimate trailing `<` must survive.
  */
 export function withoutTrailingThinkTagPrefix(value: string): string {
-  const max = Math.min(value.length, MAX_THINK_TAG_PREFIX);
-  for (let length = max; length > 0; length -= 1) {
-    const suffix = value.slice(value.length - length);
-    // A strict prefix of a tag (tag.length > suffix.length) is a partial tag;
-    // a complete tag is left untouched — sanitization already handled it.
-    if (THINK_TAG_VARIANTS.some((tag) => tag.length > suffix.length && tag.startsWith(suffix))) {
-      return value.slice(0, value.length - length);
-    }
+  // A tag holds `<` only at its start, so a partial tag can only begin at the
+  // last `<` of the tail; most chunks have none and return without slicing.
+  const min = Math.max(0, value.length - MAX_THINK_TAG_PREFIX);
+  let start = value.length - 1;
+  while (start >= min && value.charCodeAt(start) !== CHAR_LESS_THAN) {
+    start -= 1;
+  }
+  if (start < min) {
+    return value;
+  }
+
+  const suffix = value.slice(start);
+  // A strict prefix of a tag (tag.length > suffix.length) is a partial tag;
+  // a complete tag is left untouched — sanitization already handled it.
+  if (THINK_TAG_VARIANTS.some((tag) => tag.length > suffix.length && tag.startsWith(suffix))) {
+    return value.slice(0, start);
   }
   return value;
 }
